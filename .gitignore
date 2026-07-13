@@ -1,0 +1,27 @@
+# Codex desktop workspace metadata
+/.agents/
+/.codex/
+
+# Release packages and local QA artifacts
+/outputs/
+/work/*
+!/work/CodexQuotaPanel/
+!/work/CodexQuotaPanel/**
+!/work/CodexQuotaPanel.Tests/
+!/work/CodexQuotaPanel.Tests/**
+!/work/Installer/
+!/work/Installer/**
+
+# .NET and Visual Studio generated files
+**/bin/
+**/obj/
+**/.vs/
+/work/Installer/Debug/
+/work/Installer/Release/
+*.user
+*.suo
+*.cache
+
+# Local diagnostics
+*.log
+*.dmp
