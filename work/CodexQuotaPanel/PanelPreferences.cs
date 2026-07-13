@@ -1,5 +1,7 @@
 using Microsoft.Win32;
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 
 namespace CodexQuotaPanel;
 
@@ -43,6 +45,7 @@ internal sealed record PanelPreferences
 internal static class PanelPreferenceManager
 {
     private const string PreferencesKey = @"Software\CodexQuotaPanel";
+    private const string PreferencesFileName = "preferences.json";
     private const int CurrentPreferencesVersion = 3;
     internal const int MinimumOpacity = 30;
     internal const int MaximumOpacity = 100;
@@ -58,9 +61,25 @@ internal static class PanelPreferenceManager
     internal static readonly int[] OpacityLevels = [100, 85, 70, 55];
     internal static readonly int[] OrbSizePresets = [64, 88, 128, 192];
 
+    private static string PreferencesFilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "CodexQuotaPanel",
+        PreferencesFileName);
+
     public static PanelPreferences Default => Normalize(PanelPreferences.Default);
 
-    public static PanelPreferences Load() => Load(Registry.CurrentUser, PreferencesKey);
+    public static PanelPreferences Load()
+    {
+        // The per-user file is the authoritative store. Keep the registry as a
+        // compatibility fallback for existing installations and installer-set
+        // language preferences.
+        var filePreferences = LoadFromFile();
+        if (filePreferences is not null) return Normalize(filePreferences);
+
+        var registryPreferences = Load(Registry.CurrentUser, PreferencesKey);
+        SaveToFile(registryPreferences);
+        return registryPreferences;
+    }
 
     internal static PanelPreferences Load(RegistryKey root, string preferencesKey)
     {
@@ -117,8 +136,17 @@ internal static class PanelPreferenceManager
         }
     }
 
-    public static void Save(PanelPreferences preferences) =>
+    public static void Save(PanelPreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        preferences = Normalize(preferences);
+
+        // A local file remains writable even when a stale registry key has an
+        // incompatible owner or ACL. Mirroring to the registry preserves
+        // compatibility with older builds.
+        SaveToFile(preferences);
         Save(Registry.CurrentUser, PreferencesKey, preferences);
+    }
 
     internal static void Save(RegistryKey root, string preferencesKey, PanelPreferences preferences)
     {
@@ -183,6 +211,60 @@ internal static class PanelPreferenceManager
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                    System.Security.SecurityException or ArgumentException)
         {
+        }
+
+        try
+        {
+            File.Delete(PreferencesFilePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   System.Security.SecurityException or ArgumentException)
+        {
+        }
+    }
+
+    private static PanelPreferences? LoadFromFile()
+    {
+        try
+        {
+            if (!File.Exists(PreferencesFilePath)) return null;
+            var json = File.ReadAllText(PreferencesFilePath, Encoding.UTF8);
+            return JsonSerializer.Deserialize<PanelPreferences>(json);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   System.Security.SecurityException or JsonException or
+                                   NotSupportedException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static void SaveToFile(PanelPreferences preferences)
+    {
+        var temporaryPath = PreferencesFilePath + ".tmp";
+        try
+        {
+            var directory = Path.GetDirectoryName(PreferencesFilePath);
+            if (string.IsNullOrWhiteSpace(directory)) return;
+
+            Directory.CreateDirectory(directory);
+            var json = JsonSerializer.Serialize(preferences, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+            File.WriteAllText(temporaryPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.Move(temporaryPath, PreferencesFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   System.Security.SecurityException or NotSupportedException or
+                                   ArgumentException)
+        {
+            try { File.Delete(temporaryPath); }
+            catch (Exception cleanupException) when (cleanupException is IOException or
+                                                     UnauthorizedAccessException or
+                                                     System.Security.SecurityException)
+            {
+            }
         }
     }
 
