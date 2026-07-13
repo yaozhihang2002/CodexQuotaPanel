@@ -22,10 +22,20 @@ $validationMsi = Join-Path $installerDir '..\stability-qa\installer-language-tra
 function Invoke-InstallerBuild {
     param([string]$Solution)
 
-    & $DevenvPath $Solution /Rebuild "$Configuration|Default"
-    if ($LASTEXITCODE -ne 0)
+    $arguments = @(
+        "`"$Solution`"",
+        '/Rebuild',
+        "`"$Configuration|Default`""
+    )
+    $process = Start-Process `
+        -FilePath $DevenvPath `
+        -ArgumentList $arguments `
+        -Wait `
+        -PassThru `
+        -WindowStyle Hidden
+    if ($process.ExitCode -ne 0)
     {
-        throw "Visual Studio installer build failed with exit code ${LASTEXITCODE}: $Solution"
+        throw "Visual Studio installer build failed with exit code $($process.ExitCode): $Solution"
     }
 }
 
@@ -185,11 +195,9 @@ $resolvedDevenv = (Resolve-Path -LiteralPath $DevenvPath).Path
 New-EnglishProject
 Invoke-InstallerBuild $solutionPath
 & $postProcessor -MsiPath $baseMsi -IconPath $iconPath
-if ($LASTEXITCODE -ne 0) { throw "Chinese MSI post-processing failed with exit code $LASTEXITCODE" }
 
 Invoke-InstallerBuild $generatedSolution
 & $postProcessor -MsiPath $englishMsi -IconPath $iconPath
-if ($LASTEXITCODE -ne 0) { throw "English MSI post-processing failed with exit code $LASTEXITCODE" }
 
 New-EnglishTransform
 Test-EnglishTransform

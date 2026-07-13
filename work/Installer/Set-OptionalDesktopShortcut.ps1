@@ -71,6 +71,22 @@ function Get-MsiScalar {
     }
 }
 
+function Set-MsiProperty {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+
+    if ($null -eq (Get-MsiScalar "SELECT ``Property`` FROM ``Property`` WHERE ``Property``='$Name'"))
+    {
+        Invoke-MsiNonQuery "INSERT INTO ``Property`` (``Property``, ``Value``) VALUES ('$Name', '$Value')"
+    }
+    else
+    {
+        Invoke-MsiNonQuery "UPDATE ``Property`` SET ``Value``='$Value' WHERE ``Property``='$Name'"
+    }
+}
+
 function Add-MsiIcon {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -186,6 +202,28 @@ try
         Invoke-MsiNonQuery "UPDATE ``Property`` SET ``Value``='$arpIconName' WHERE ``Property``='ARPPRODUCTICON'"
     }
 
+    # Visual Studio Installer sequences custom dialogs by returning to the
+    # outer dialog loop. It does not always emit the reverse navigation
+    # property for the following folder page, leaving its Back button with no
+    # target. Wire the customized path explicitly in both directions.
+    Set-MsiProperty 'CustomCheckA_NextArgs' 'FolderForm'
+    Set-MsiProperty 'FolderForm_PrevArgs' 'CustomCheckA'
+    Set-MsiProperty 'FolderForm_NextArgs' 'ConfirmInstallForm'
+    Set-MsiProperty 'ConfirmInstallForm_PrevArgs' 'FolderForm'
+
+    # The stock welcome dialog uses an aggressive copyright-prosecution
+    # warning. This project is MIT licensed, so use a short, accurate open
+    # source notice instead.
+    $openSourceNotice = if ((Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductLanguage'") -eq '2052')
+    {
+        '{\VSI_MS_Sans_Serif13.0_0_0}CodexQuotaPanel 是依据 MIT 许可证发布的开源软件。'
+    }
+    else
+    {
+        '{\VSI_MS_Sans_Serif13.0_0_0}CodexQuotaPanel is open-source software released under the MIT License.'
+    }
+    Invoke-MsiNonQuery "UPDATE ``Control`` SET ``Text``='$openSourceNotice' WHERE ``Control``='CopyrightWarningText'"
+
     [void](Invoke-ComMethod $database 'Commit')
 
     $condition = Get-MsiScalar "SELECT ``Condition`` FROM ``Component`` WHERE ``Component``='$componentName'"
@@ -195,8 +233,12 @@ try
     $arpIcon = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ARPPRODUCTICON'"
     $arpIconRow = Get-MsiScalar "SELECT ``Name`` FROM ``Icon`` WHERE ``Name``='$arpIconName'"
     $productLanguage = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductLanguage'"
+    $afterOptionsDialog = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='CustomCheckA_NextArgs'"
+    $beforeFolderDialog = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='FolderForm_PrevArgs'"
     $afterFolderDialog = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='FolderForm_NextArgs'"
+    $beforeConfirmationDialog = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ConfirmInstallForm_PrevArgs'"
     $confirmationTitle = Get-MsiScalar "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='ConfirmInstallForm' AND ``Control``='BannerText'"
+    $welcomeNotice = Get-MsiScalar "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='WelcomeForm' AND ``Control``='CopyrightWarningText'"
     $confirmationTitleValid = if ($productLanguage -eq '2052')
     {
         $confirmationTitle -like '*确认安装*'
@@ -211,13 +253,17 @@ try
         -not [string]::IsNullOrEmpty($shortcutIcon) -or
         $arpIcon -ne $arpIconName -or
         $arpIconRow -ne $arpIconName -or
+        $afterOptionsDialog -ne 'FolderForm' -or
+        $beforeFolderDialog -ne 'CustomCheckA' -or
         $afterFolderDialog -ne 'ConfirmInstallForm' -or
-        -not $confirmationTitleValid)
+        $beforeConfirmationDialog -ne 'FolderForm' -or
+        -not $confirmationTitleValid -or
+        $welcomeNotice -notlike '*MIT*')
     {
-        throw "The installer MSI tables did not validate after commit: language=$productLanguage; condition=$condition; component=$boundComponent; target=$shortcutTarget; shortcutIcon=$shortcutIcon; arpIcon=$arpIcon; next=$afterFolderDialog; confirmation=$confirmationTitle"
+        throw "The installer MSI tables did not validate after commit: language=$productLanguage; condition=$condition; component=$boundComponent; target=$shortcutTarget; shortcutIcon=$shortcutIcon; arpIcon=$arpIcon; optionsNext=$afterOptionsDialog; folderBack=$beforeFolderDialog; folderNext=$afterFolderDialog; confirmBack=$beforeConfirmationDialog; confirmation=$confirmationTitle; notice=$welcomeNotice"
     }
 
-    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + EXE logo + branded ARP icon + final confirmation | $resolvedMsi"
+    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + bidirectional navigation + MIT notice + EXE logo + branded ARP icon + final confirmation | $resolvedMsi"
 }
 finally
 {
