@@ -6,7 +6,7 @@ using System.Text.Json;
 
 TestProcessGuard.Install();
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -29,6 +29,12 @@ if (args.Length >= 2 && args[0] == "--alert-layout-preview")
 if (args.Length >= 2 && args[0] == "--alert-editor-preview")
 {
     AlertEditorPreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--data-about-preview")
+{
+    DataAboutPreview.Run(args[1]);
     return;
 }
 
@@ -458,7 +464,7 @@ finally
     Directory.Delete(historyDirectory, recursive: true);
 }
 
-Console.WriteLine("PASS v1.8.7 logic | reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
+Console.WriteLine("PASS v0.1.0 pre-release logic | reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
 
 if (args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -514,6 +515,7 @@ internal sealed class SettingsForm : Form
     {
         var page = MakePage();
         page.AddItem(MakePageIntro(L10n.SettingsDataAbout, L10n.DataIntro));
+        page.AddItem(BuildReleaseNotesCard());
         page.AddItem(MakeToggleRow(L10n.TrendRecording, L10n.TrendRecordingHint, _trendRecordingToggle));
 
         var clearButton = MakeActionButton(L10n.ClearHistory, 138, primary: false);
@@ -569,6 +571,115 @@ internal sealed class SettingsForm : Form
         about.Controls.Add(aboutLayout);
         page.AddItem(about);
         return page;
+    }
+
+    private Control BuildReleaseNotesCard()
+    {
+        const string githubUrl = "https://github.com/yaozhihang2002/CodexQuotaPanel";
+
+        var card = new SettingsCard { Size = new Size(570, 154), Margin = new Padding(0, 0, 0, 10) };
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(18, 12, 18, 12),
+            Margin = Padding.Empty
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));
+
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118f));
+        header.Controls.Add(MakeDockLabel($"{L10n.ReleaseNotesTitle} · v0.1.0",
+            UiPalette.Body(9f, FontStyle.Bold), UiPalette.Text), 0, 0);
+        var badge = new PillLabel
+        {
+            Text = L10n.PreReleaseLabel,
+            PillColor = UiPalette.Mint,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(8, 1, 0, 3)
+        };
+        header.Controls.Add(badge, 1, 0);
+        layout.Controls.Add(header, 0, 0);
+
+        var summary = new ResponsiveTextLabel
+        {
+            Text = L10n.ReleaseNotesSummary,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            Font = UiPalette.Body(7.6f),
+            ForeColor = UiPalette.Muted,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 5, 0, 5),
+            TextAlign = ContentAlignment.TopLeft,
+            UseCompatibleTextRendering = false
+        };
+        layout.Controls.Add(summary, 0, 1);
+
+        var github = BuildInfoLink(L10n.GitHubProject, "yaozhihang2002/CodexQuotaPanel", githubUrl);
+        layout.Controls.Add(github, 0, 2);
+
+        card.Controls.Add(layout);
+        return card;
+    }
+
+    private Control BuildInfoLink(string caption, string text, string target)
+    {
+        var block = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = UiPalette.SurfaceRaised,
+            Padding = new Padding(10, 5, 10, 5)
+        };
+        var link = new LinkLabel
+        {
+            Text = $"{caption}  ·  {text}",
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            AutoEllipsis = true,
+            Font = UiPalette.Body(7.8f, FontStyle.Bold),
+            ForeColor = UiPalette.Mint,
+            LinkColor = UiPalette.Mint,
+            ActiveLinkColor = UiPalette.Sky,
+            VisitedLinkColor = UiPalette.Mint,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleLeft,
+            LinkBehavior = LinkBehavior.HoverUnderline,
+            Cursor = Cursors.Hand,
+            TabStop = true,
+            Margin = Padding.Empty,
+            UseMnemonic = false
+        };
+        link.LinkArea = new LinkArea(0, link.Text.Length);
+        link.LinkClicked += (_, _) => OpenExternalLink(target);
+        block.Controls.Add(link);
+        return block;
+    }
+
+    private void OpenExternalLink(string target)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            MessageBox.Show(this, L10n.OpenLinkFailed, L10n.SettingsTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     internal void SelectPageForTest(int index) => SelectPage(index);

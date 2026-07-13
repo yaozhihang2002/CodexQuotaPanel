@@ -14,9 +14,9 @@ $generatedProject = Join-Path $installerDir 'CodexQuotaPanelSetup.en-us.generate
 $generatedSolution = Join-Path $installerDir 'CodexQuotaPanelInstaller.en-us.generated.sln'
 $iconPath = Join-Path $installerDir '..\CodexQuotaPanel\Assets\CodexQuotaPanel.ico'
 $postProcessor = Join-Path $installerDir 'Set-OptionalDesktopShortcut.ps1'
-$baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-1.8.7-x64.msi"
-$englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-1.8.7-en-us-x64.msi"
-$transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-1.8.7-en-us.mst"
+$baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-0.1.0-x64.msi"
+$englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-0.1.0-en-us-x64.msi"
+$transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-0.1.0-en-us.mst"
 $validationMsi = Join-Path $installerDir '..\stability-qa\installer-language-transform-validation.msi'
 
 function Invoke-InstallerBuild {
@@ -81,8 +81,8 @@ function New-EnglishProject {
         '"ProjectName" = "8:CodexQuotaPanelSetup"' = '"ProjectName" = "8:CodexQuotaPanelSetupEnUs"'
         '"LanguageId" = "3:2052"' = '"LanguageId" = "3:1033"'
         '"UILanguageId" = "3:2052"' = '"UILanguageId" = "3:1033"'
-        'Debug\\CodexQuotaPanel-1.8.7-x64.msi' = 'Debug-en-us\\CodexQuotaPanel-1.8.7-en-us-x64.msi'
-        'Release\\CodexQuotaPanel-1.8.7-x64.msi' = 'Release-en-us\\CodexQuotaPanel-1.8.7-en-us-x64.msi'
+        'Debug\\CodexQuotaPanel-0.1.0-x64.msi' = 'Debug-en-us\\CodexQuotaPanel-0.1.0-en-us-x64.msi'
+        'Release\\CodexQuotaPanel-0.1.0-x64.msi' = 'Release-en-us\\CodexQuotaPanel-0.1.0-en-us-x64.msi'
         '"Description" = "8:Codex 额度悬浮球与托盘面板"' = '"Description" = "8:Codex quota orb and tray panel"'
         '"LangId" = "3:2052"' = '"LangId" = "3:1033"'
         '"Title" = "8:Codex 额度面板安装程序"' = '"Title" = "8:CodexQuotaPanel Installer"'

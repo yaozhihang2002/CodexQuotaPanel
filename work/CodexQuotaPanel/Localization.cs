@@ -117,8 +117,15 @@ internal static class L10n
     public static string RestoreDefaults => Pick("恢复默认设置", "Restore defaults");
     public static string RestoreDefaultsConfirm => Pick("确定将面板设置恢复为默认值吗？你仍可在保存前取消。", "Restore the panel settings to defaults? You can still cancel before saving.");
     public static string AboutThisApp => Pick("关于此应用", "About this app");
-    public static string LocalPrivacyNote => Pick("本地读取额度数据 · 不上传会话内容", "Reads quota data locally · Does not upload session content");
+    public static string LocalPrivacyNote => Pick("本地读取额度数据 · 不上传会话内容 · MIT 开源", "Reads quota data locally · Does not upload session content · MIT licensed");
     public static string VersionLabel => Pick("版本", "Version");
+    public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
+    public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
+    public static string ReleaseNotesSummary => Pick(
+        "首个公开预览版：修复安装快捷方式 Logo，完善中英安装、提醒排版、悬浮球动画与显示稳定性。",
+        "First public preview: fixes the installer shortcut logo and refines bilingual setup, alert layout, orb motion, and rendering stability.");
+    public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
+    public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");
     public static string AlertsOff => Pick("已关闭", "Off");
     public static string AlertsSummary(int warning, int critical) => Pick($"警告 {warning}% · 严重 {critical}%", $"Warning {warning}% · Critical {critical}%");

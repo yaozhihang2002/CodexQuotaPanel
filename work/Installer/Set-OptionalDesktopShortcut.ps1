@@ -108,14 +108,36 @@ try
     $installer = New-Object -ComObject WindowsInstaller.Installer
     $database = Invoke-ComMethod $installer 'OpenDatabase' @($resolvedMsi, 1)
 
-    $iconName = 'CodexQuotaPanelIcon'
-    Add-MsiIcon $iconName $resolvedIcon
+    $arpIconName = 'CodexQuotaPanel.ico'
+    Add-MsiIcon $arpIconName $resolvedIcon
+    if ($null -ne (Get-MsiScalar "SELECT ``Name`` FROM ``Icon`` WHERE ``Name``='CodexQuotaPanelIcon'"))
+    {
+        Invoke-MsiNonQuery "DELETE FROM ``Icon`` WHERE ``Name``='CodexQuotaPanelIcon'"
+    }
 
     $shortcut = Get-MsiScalar "SELECT ``Shortcut`` FROM ``Shortcut`` WHERE ``Directory_``='DesktopFolder'"
     if ([string]::IsNullOrWhiteSpace($shortcut))
     {
         throw 'The generated MSI does not contain a desktop shortcut to make optional.'
     }
+
+    # The setup project contains one payload file. Windows Installer SQL does
+    # not support the LIKE pattern used by regular SQL engines, so validate the
+    # filename first and then read the corresponding first-row keys directly.
+    $applicationFileName = Get-MsiScalar "SELECT ``FileName`` FROM ``File``"
+    if ([string]::IsNullOrWhiteSpace($applicationFileName) -or
+        -not $applicationFileName.EndsWith('CodexQuotaPanel.exe', [StringComparison]::OrdinalIgnoreCase))
+    {
+        throw "The generated MSI does not contain the expected CodexQuotaPanel executable: $applicationFileName"
+    }
+    $applicationComponent = Get-MsiScalar "SELECT ``Component_`` FROM ``File``"
+    $applicationFile = Get-MsiScalar "SELECT ``File`` FROM ``File``"
+    if ([string]::IsNullOrWhiteSpace($applicationComponent) -or
+        [string]::IsNullOrWhiteSpace($applicationFile))
+    {
+        throw 'The generated MSI does not contain the CodexQuotaPanel executable keys.'
+    }
+    $nonAdvertisedTarget = "[#$applicationFile]"
 
     $componentName = 'DesktopShortcutComponent'
     $componentGuid = '{31A7A62B-4302-4EF7-A5A1-2B8D61BAF905}'
@@ -141,7 +163,10 @@ try
     }
 
     Invoke-MsiNonQuery "UPDATE ``Shortcut`` SET ``Component_``='$componentName' WHERE ``Directory_``='DesktopFolder'"
-    Invoke-MsiNonQuery "UPDATE ``Shortcut`` SET ``Icon_``='$iconName', ``IconIndex``=0"
+    # Non-advertised shortcuts inherit the icon embedded in the installed EXE.
+    # This avoids Windows Installer's advertised-shortcut rule that requires a
+    # separate EXE-format icon stream whose extension matches the target.
+    Invoke-MsiNonQuery "UPDATE ``Shortcut`` SET ``Target``='$nonAdvertisedTarget', ``Icon_``=NULL, ``IconIndex``=NULL"
 
     if ($null -eq (Get-MsiScalar "SELECT ``Property`` FROM ``Property`` WHERE ``Property``='CREATEDESKTOPSHORTCUT'"))
     {
@@ -154,19 +179,21 @@ try
 
     if ($null -eq (Get-MsiScalar "SELECT ``Property`` FROM ``Property`` WHERE ``Property``='ARPPRODUCTICON'"))
     {
-        Invoke-MsiNonQuery "INSERT INTO ``Property`` (``Property``, ``Value``) VALUES ('ARPPRODUCTICON', '$iconName')"
+        Invoke-MsiNonQuery "INSERT INTO ``Property`` (``Property``, ``Value``) VALUES ('ARPPRODUCTICON', '$arpIconName')"
     }
     else
     {
-        Invoke-MsiNonQuery "UPDATE ``Property`` SET ``Value``='$iconName' WHERE ``Property``='ARPPRODUCTICON'"
+        Invoke-MsiNonQuery "UPDATE ``Property`` SET ``Value``='$arpIconName' WHERE ``Property``='ARPPRODUCTICON'"
     }
 
     [void](Invoke-ComMethod $database 'Commit')
 
     $condition = Get-MsiScalar "SELECT ``Condition`` FROM ``Component`` WHERE ``Component``='$componentName'"
     $boundComponent = Get-MsiScalar "SELECT ``Component_`` FROM ``Shortcut`` WHERE ``Directory_``='DesktopFolder'"
+    $shortcutTarget = Get-MsiScalar "SELECT ``Target`` FROM ``Shortcut`` WHERE ``Directory_``='DesktopFolder'"
     $shortcutIcon = Get-MsiScalar "SELECT ``Icon_`` FROM ``Shortcut`` WHERE ``Directory_``='DesktopFolder'"
     $arpIcon = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ARPPRODUCTICON'"
+    $arpIconRow = Get-MsiScalar "SELECT ``Name`` FROM ``Icon`` WHERE ``Name``='$arpIconName'"
     $productLanguage = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductLanguage'"
     $afterFolderDialog = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='FolderForm_NextArgs'"
     $confirmationTitle = Get-MsiScalar "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='ConfirmInstallForm' AND ``Control``='BannerText'"
@@ -180,15 +207,17 @@ try
     }
     if ($condition -ne 'CREATEDESKTOPSHORTCUT=1' -or
         $boundComponent -ne $componentName -or
-        $shortcutIcon -ne $iconName -or
-        $arpIcon -ne $iconName -or
+        $shortcutTarget -ne $nonAdvertisedTarget -or
+        -not [string]::IsNullOrEmpty($shortcutIcon) -or
+        $arpIcon -ne $arpIconName -or
+        $arpIconRow -ne $arpIconName -or
         $afterFolderDialog -ne 'ConfirmInstallForm' -or
         -not $confirmationTitleValid)
     {
-        throw "The installer MSI tables did not validate after commit: language=$productLanguage; condition=$condition; component=$boundComponent; shortcutIcon=$shortcutIcon; arpIcon=$arpIcon; next=$afterFolderDialog; confirmation=$confirmationTitle"
+        throw "The installer MSI tables did not validate after commit: language=$productLanguage; condition=$condition; component=$boundComponent; target=$shortcutTarget; shortcutIcon=$shortcutIcon; arpIcon=$arpIcon; next=$afterFolderDialog; confirmation=$confirmationTitle"
     }
 
-    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + branded icon + final confirmation | $resolvedMsi"
+    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + EXE logo + branded ARP icon + final confirmation | $resolvedMsi"
 }
 finally
 {
