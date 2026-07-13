@@ -98,7 +98,7 @@ internal sealed class AppServerQuotaSource : IAsyncDisposable
                     {
                         name = "codex_quota_panel",
                         title = "Codex Quota Panel",
-                        version = "0.1.1"
+                        version = "0.2.0"
                     }
                 },
                 linked.Token).ConfigureAwait(false);

@@ -15,6 +15,7 @@ internal sealed class QuotaForm : Form
     private const int TransitionTimerIntervalMs = 10;
     private const double TransitionOrbPhase = 0.22d;
     private const int OrbResizePreviewDurationMs = 110;
+    private const int OrbDragFrameIntervalMs = 16;
     private const int WsExTransparent = 0x00000020;
     private const int WsExLayered = 0x00080000;
     private const int WsExNoActivate = 0x08000000;
@@ -58,6 +59,7 @@ internal sealed class QuotaForm : Form
     private readonly System.Windows.Forms.Timer _orbResizePreview;
     private readonly System.Windows.Forms.Timer _hoverTimer;
     private readonly ToolTip _toolTip;
+    private readonly Dictionary<Control, Rectangle> _detailLogicalBounds = new();
     private QuotaSnapshot? _snapshot;
     private string? _lastStatus;
     private IReadOnlyList<QuotaHistoryPoint> _history = [];
@@ -108,6 +110,9 @@ internal sealed class QuotaForm : Form
     private Rectangle _expandedBounds;
     private Point _orbDragStartScreen;
     private Point _orbDragStartForm;
+    private Point _pendingOrbDragLocation;
+    private long _lastOrbDragMoveAt;
+    private int _detailLayoutDpi;
 
     public event Action? RefreshRequested;
     public event Action<bool>? TopMostChangedByUser;
@@ -168,7 +173,11 @@ internal sealed class QuotaForm : Form
     public QuotaForm()
     {
         AutoScaleDimensions = new SizeF(96f, 96f);
-        AutoScaleMode = AutoScaleMode.Dpi;
+        // The orb and detail panel share one top-level window whose client size
+        // changes radically. WinForms automatic DPI scaling can therefore size
+        // the expanded window without scaling its absolute-positioned children.
+        // Keep this form on one explicit logical-to-device layout path instead.
+        AutoScaleMode = AutoScaleMode.None;
         ClientSize = ExpandedPanelSize;
         FormBorderStyle = FormBorderStyle.None;
         BackColor = UiPalette.Canvas;
@@ -290,6 +299,10 @@ internal sealed class QuotaForm : Form
         _orb.MouseDown += OrbMouseDown;
         _orb.MouseMove += OrbMouseMove;
         _orb.MouseUp += OrbMouseUp;
+        _orb.MouseCaptureChanged += (_, _) =>
+        {
+            if (!_orb.Capture) _orb.SetAnimationPaused(false);
+        };
         _orb.KeyDown += OrbKeyDown;
         _orb.MouseEnter += (_, _) => ScheduleHoverPreview();
         _orb.MouseLeave += (_, _) => HideHoverPreview();
@@ -312,6 +325,8 @@ internal sealed class QuotaForm : Form
         _orbResizePreview.Tick += AnimateOrbResizePreview;
         _hoverTimer = new System.Windows.Forms.Timer { Interval = 400 };
         _hoverTimer.Tick += (_, _) => ShowHoverPreview();
+        CaptureDetailLogicalBounds();
+        ApplyDetailLayoutForCurrentDpi();
         SetCollapsedInstant();
     }
 
@@ -329,6 +344,12 @@ internal sealed class QuotaForm : Form
     }
 
     protected override bool ShowWithoutActivation => _collapsed;
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyDetailLayoutForCurrentDpi(force: true);
+    }
 
     protected override void WndProc(ref Message message)
     {
@@ -428,6 +449,7 @@ internal sealed class QuotaForm : Form
     protected override void OnDpiChanged(DpiChangedEventArgs e)
     {
         base.OnDpiChanged(e);
+        ApplyDetailLayoutForCurrentDpi(force: true);
         if (_collapsed && !_animating)
         {
             var previousLocation = Location;
@@ -439,7 +461,7 @@ internal sealed class QuotaForm : Form
         else if (!_animating)
         {
             var previousOrbLocation = _collapsedBounds.Location;
-            Bounds = ClampToWorkingArea(Bounds);
+            Bounds = ClampToWorkingArea(new Rectangle(Location, ScaledSize(ExpandedPanelSize)));
             _expandedBounds = Bounds;
             NormalizeStoredCollapsedBounds();
             if (previousOrbLocation != _collapsedBounds.Location)
@@ -1390,6 +1412,7 @@ internal sealed class QuotaForm : Form
                 _collapsed = false;
                 Bounds = _transitionTo;
                 _expandedBounds = Bounds;
+                ApplyDetailLayoutForCurrentDpi();
                 _orb.Visible = false;
                 SetDetailControlsVisible(true);
             }
@@ -1496,6 +1519,7 @@ internal sealed class QuotaForm : Form
         _animating = false;
         _collapsed = false;
         _expandedBounds = Bounds;
+        ApplyDetailLayoutForCurrentDpi();
         ApplyOrbPresentation();
         _orb.Visible = false;
         SetDetailControlsVisible(true);
@@ -1730,6 +1754,7 @@ internal sealed class QuotaForm : Form
             _collapsed = false;
             _animating = false;
             Bounds = fullBounds;
+            ApplyDetailLayoutForCurrentDpi();
             SetDetailControlsVisible(true);
             _orb.Visible = false;
             PerformLayout();
@@ -1990,8 +2015,11 @@ internal sealed class QuotaForm : Form
         HideHoverPreview();
         _orbDragStartScreen = Cursor.Position;
         _orbDragStartForm = Location;
+        _pendingOrbDragLocation = Location;
+        _lastOrbDragMoveAt = 0;
         _orbDragged = false;
         _orbSnapBypass = (ModifierKeys & Keys.Shift) == Keys.Shift;
+        _orb.SetAnimationPaused(true);
         _orb.Capture = true;
     }
 
@@ -2007,6 +2035,11 @@ internal sealed class QuotaForm : Form
         _orbSnapBypass |= (ModifierKeys & Keys.Shift) == Keys.Shift;
         if (_positionLocked) return;
         var next = new Point(_orbDragStartForm.X + delta.Width, _orbDragStartForm.Y + delta.Height);
+        _pendingOrbDragLocation = next;
+        var now = Environment.TickCount64;
+        if (!ShouldApplyOrbDragFrame(_lastOrbDragMoveAt, now)) return;
+
+        _lastOrbDragMoveAt = now;
         Location = next;
         _collapsedBounds = Bounds;
     }
@@ -2019,11 +2052,19 @@ internal sealed class QuotaForm : Form
         if (_orbDragged && !_positionLocked)
         {
             var bypassSnap = _orbSnapBypass || (ModifierKeys & Keys.Shift) == Keys.Shift;
-            var location = ResolveReleasedOrbLocation(Location, bypassSnap);
+            var finalDelta = new Size(
+                Cursor.Position.X - _orbDragStartScreen.X,
+                Cursor.Position.Y - _orbDragStartScreen.Y);
+            _pendingOrbDragLocation = new Point(
+                _orbDragStartForm.X + finalDelta.Width,
+                _orbDragStartForm.Y + finalDelta.Height);
+            var location = ResolveReleasedOrbLocation(_pendingOrbDragLocation, bypassSnap);
             Location = location;
             _collapsedBounds = Bounds;
             OrbPositionChanged?.Invoke(Location);
         }
+        _lastOrbDragMoveAt = 0;
+        _orb.SetAnimationPaused(false);
         _orbSnapBypass = false;
         if (shouldExpand) ShowDetails();
     }
@@ -2130,6 +2171,50 @@ internal sealed class QuotaForm : Form
                 orbSize.Height));
         }
     }
+
+    private void CaptureDetailLogicalBounds()
+    {
+        _detailLogicalBounds.Clear();
+        foreach (Control control in Controls)
+        {
+            if (!ReferenceEquals(control, _orb))
+                _detailLogicalBounds[control] = control.Bounds;
+        }
+        _detailLayoutDpi = 0;
+    }
+
+    private void ApplyDetailLayoutForCurrentDpi(bool force = false)
+    {
+        if (_detailLogicalBounds.Count == 0) return;
+        var dpi = Math.Max(96, DeviceDpi);
+        if (!force && _detailLayoutDpi == dpi) return;
+
+        SuspendLayout();
+        try
+        {
+            foreach (var (control, logicalBounds) in _detailLogicalBounds)
+                control.Bounds = ScaleLogicalBounds(logicalBounds, dpi);
+            _detailLayoutDpi = dpi;
+        }
+        finally
+        {
+            ResumeLayout(performLayout: false);
+        }
+    }
+
+    internal static Rectangle ScaleLogicalBounds(Rectangle logicalBounds, int dpi)
+    {
+        var scale = Math.Max(96, dpi) / 96f;
+        int Scale(int value) => (int)Math.Round(value * scale, MidpointRounding.AwayFromZero);
+        return new Rectangle(
+            Scale(logicalBounds.X),
+            Scale(logicalBounds.Y),
+            Scale(logicalBounds.Width),
+            Scale(logicalBounds.Height));
+    }
+
+    internal static bool ShouldApplyOrbDragFrame(long lastAppliedAt, long now) =>
+        lastAppliedAt <= 0 || now - lastAppliedAt >= OrbDragFrameIntervalMs;
 
     private Size ScaledSize(Size logical)
     {

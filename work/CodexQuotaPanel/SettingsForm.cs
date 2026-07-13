@@ -603,7 +603,7 @@ internal sealed class SettingsForm : Form
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118f));
-        header.Controls.Add(MakeDockLabel($"{L10n.ReleaseNotesTitle} · v0.1.1",
+        header.Controls.Add(MakeDockLabel($"{L10n.ReleaseNotesTitle} · v0.2.0",
             UiPalette.Body(9f, FontStyle.Bold), UiPalette.Text), 0, 0);
         var badge = new PillLabel
         {

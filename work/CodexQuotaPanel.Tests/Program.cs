@@ -6,6 +6,31 @@ using System.Text.Json;
 
 TestProcessGuard.Install();
 
+if (args.Length == 1 && args[0] == "--v020-targeted-check")
+{
+    var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
+    var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
+    var secondaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 302, 332, 70), 168);
+    var primaryButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 462, 242, 28), 168);
+    if (panel != new Rectangle(0, 0, 644, 875) ||
+        primaryRow.Bottom >= secondaryRow.Top || primaryButton.Bottom >= panel.Bottom)
+        throw new InvalidOperationException("The deterministic 175% DPI layout check failed.");
+
+    var frames = 0;
+    var lastFrame = 0L;
+    for (var now = 4L; now <= 1000L; now += 4L)
+    {
+        if (!QuotaForm.ShouldApplyOrbDragFrame(lastFrame, now)) continue;
+        lastFrame = now;
+        frames++;
+    }
+    if (frames is < 60 or > 64)
+        throw new InvalidOperationException($"250 Hz drag input produced {frames} window updates.");
+
+    Console.WriteLine($"PASS v0.2.0 targeted check | 175% panel={panel.Width}x{panel.Height} | 250 Hz input -> {frames} moves/s");
+    return;
+}
+
 if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
@@ -470,7 +495,28 @@ finally
     Directory.Delete(historyDirectory, recursive: true);
 }
 
-Console.WriteLine("PASS v0.1.1 pre-release logic | reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
+var highDpiPanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
+var highDpiPrimaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
+var highDpiSecondaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 302, 332, 70), 168);
+var highDpiPrimaryButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 462, 242, 28), 168);
+Assert(highDpiPanel == new Rectangle(0, 0, 644, 875),
+    "175% DPI panel size did not scale from the logical layout.");
+Assert(highDpiPrimaryRow.Bottom < highDpiSecondaryRow.Top,
+    "175% DPI quota rows overlap after scaling.");
+Assert(highDpiPrimaryButton.Bottom < highDpiPanel.Bottom,
+    "175% DPI primary action escaped the detail panel.");
+var appliedDragFrames = 0;
+var lastAppliedDragFrame = 0L;
+for (var now = 4L; now <= 1000L; now += 4L)
+{
+    if (!QuotaForm.ShouldApplyOrbDragFrame(lastAppliedDragFrame, now)) continue;
+    lastAppliedDragFrame = now;
+    appliedDragFrames++;
+}
+Assert(appliedDragFrames is >= 60 and <= 64,
+    $"250 Hz drag input produced {appliedDragFrames} window updates instead of about 60.");
+
+Console.WriteLine("PASS v0.2.0 pre-release logic | DPI layout, drag pacing, reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
 
 if (args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {

@@ -122,8 +122,8 @@ internal static class L10n
     public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
     public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
     public static string ReleaseNotesSummary => Pick(
-        "保存设置后窗口继续保持打开，可连续调整；同时保留中英安装、快捷方式 Logo 与显示稳定性改进。",
-        "Settings now stay open after saving for continuous adjustments, alongside bilingual setup, shortcut logo, and rendering refinements.");
+        "修复高 DPI 下详情面板留白与文字错位，并降低拖动悬浮球时的重绘负载。",
+        "Fixes high-DPI detail layout and reduces redraw load while dragging the quota orb.");
     public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
     public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");

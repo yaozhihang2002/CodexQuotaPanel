@@ -266,6 +266,7 @@ internal sealed class QuotaOrbControl : Control
         UiPalette.Sky);
     private bool _live;
     private bool _flameAnimationEnabled = true;
+    private bool _animationPaused;
     private int _flameStyle = 1;
     private double _flameIntensity;
     private double _targetFlameIntensity;
@@ -372,6 +373,14 @@ internal sealed class QuotaOrbControl : Control
         _flameAnimationEnabled = enabled;
         UpdateFlameTimer();
         Invalidate();
+    }
+
+    public void SetAnimationPaused(bool paused)
+    {
+        if (_animationPaused == paused) return;
+        _animationPaused = paused;
+        UpdateFlameTimer();
+        if (!paused) Invalidate();
     }
 
     public void SetFlameStyle(int value)
@@ -799,7 +808,7 @@ internal sealed class QuotaOrbControl : Control
     private void UpdateFlameTimer()
     {
         var hasMotion = _targetFlameIntensity > FlameIdleEpsilon || _flameIntensity > FlameIdleEpsilon;
-        if (_flameAnimationEnabled && hasMotion && Visible && IsHandleCreated && !DesignMode)
+        if (_flameAnimationEnabled && !_animationPaused && hasMotion && Visible && IsHandleCreated && !DesignMode)
             _flameTimer.Start();
         else
             _flameTimer.Stop();
@@ -884,9 +893,10 @@ internal sealed class QuotaRingControl : Control
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        var bounds = new RectangleF(10, 10, Width - 20, Height - 20);
-        using var track = new Pen(UiPalette.Track, 8) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        using var value = new Pen(UiPalette.ForRemaining(Remaining), 8) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        var scale = Math.Max(0.5f, Math.Min(Width, Height) / 118f);
+        var bounds = new RectangleF(10 * scale, 10 * scale, Width - 20 * scale, Height - 20 * scale);
+        using var track = new Pen(UiPalette.Track, 8 * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var value = new Pen(UiPalette.ForRemaining(Remaining), 8 * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         e.Graphics.DrawArc(track, bounds, -225, 270);
         e.Graphics.DrawArc(value, bounds, -225, (float)(270 * Remaining / 100d));
 
@@ -896,11 +906,12 @@ internal sealed class QuotaRingControl : Control
         using var textBrush = new SolidBrush(UiPalette.Text);
         using var mutedBrush = new SolidBrush(UiPalette.Muted);
         var numberSize = e.Graphics.MeasureString(percent, numberFont);
-        var numberY = (Height - numberSize.Height) / 2f - 5;
+        var numberY = (Height - numberSize.Height) / 2f - 5 * scale;
         e.Graphics.DrawString(percent, numberFont, textBrush, (Width - numberSize.Width) / 2f, numberY);
         var label = L10n.Remaining;
         var labelSize = e.Graphics.MeasureString(label, labelFont);
-        e.Graphics.DrawString(label, labelFont, mutedBrush, (Width - labelSize.Width) / 2f, numberY + numberSize.Height - 1);
+        e.Graphics.DrawString(label, labelFont, mutedBrush, (Width - labelSize.Width) / 2f,
+            numberY + numberSize.Height - scale);
     }
 }
 
@@ -948,9 +959,12 @@ internal sealed class LimitRowControl : Control
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var cardPath = UiPalette.RoundedRect(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), 10);
+        var scale = Math.Max(0.5f, DeviceDpi / 96f);
+        float S(float value) => value * scale;
+        using var cardPath = UiPalette.RoundedRect(
+            new RectangleF(S(0.5f), S(0.5f), Width - S(1), Height - S(1)), S(10));
         using var cardBrush = new SolidBrush(UiPalette.Surface);
-        using var borderPen = new Pen(UiPalette.Border, 1);
+        using var borderPen = new Pen(UiPalette.Border, Math.Max(1f, scale));
         e.Graphics.FillPath(cardBrush, cardPath);
         e.Graphics.DrawPath(borderPen, cardPath);
 
@@ -960,14 +974,14 @@ internal sealed class LimitRowControl : Control
         using var textBrush = new SolidBrush(UiPalette.Text);
         using var mutedBrush = new SolidBrush(UiPalette.Muted);
 
-        e.Graphics.DrawString(_label, labelFont, textBrush, 12, 7);
+        e.Graphics.DrawString(_label, labelFont, textBrush, S(12), S(7));
         var remainingText = _bucket is null ? "—" : L10n.Pick(
             $"{Math.Round(_bucket.RemainingPercent):0}% 剩余",
             $"{Math.Round(_bucket.RemainingPercent):0}% left");
         var remainingSize = e.Graphics.MeasureString(remainingText, valueFont);
         var color = _bucket is null ? UiPalette.Muted : UiPalette.ForRemaining(_bucket.RemainingPercent);
         using var valueBrush = new SolidBrush(color);
-        e.Graphics.DrawString(remainingText, valueFont, valueBrush, Width - remainingSize.Width - 12, 8);
+        e.Graphics.DrawString(remainingText, valueFont, valueBrush, Width - remainingSize.Width - S(12), S(8));
 
         var cutoffMinute = DateTimeOffset.Now.ToUniversalTime().ToUnixTimeSeconds() / 60 - 24 * 60;
         var trend = _bucket?.WindowMinutes is > 0
@@ -978,41 +992,47 @@ internal sealed class LimitRowControl : Control
             : [];
         if (trend.Length >= 2)
         {
-            DrawTrend(e.Graphics, new RectangleF(12, 27, Width - 24, 16), trend, _trendColor);
+            DrawTrend(e.Graphics, new RectangleF(S(12), S(27), Width - S(24), S(16)), trend, _trendColor, scale);
         }
         else
         {
-            var trackRect = new RectangleF(12, 30, Width - 24, 5);
-            using var trackPath = UiPalette.RoundedRect(trackRect, 2.5f);
+            var trackRect = new RectangleF(S(12), S(30), Width - S(24), S(5));
+            using var trackPath = UiPalette.RoundedRect(trackRect, S(2.5f));
             using var trackBrush = new SolidBrush(UiPalette.Track);
             e.Graphics.FillPath(trackBrush, trackPath);
             if (_bucket is not null && _bucket.RemainingPercent > 0)
             {
-                var fillWidth = Math.Max(6, trackRect.Width * (float)(_bucket.RemainingPercent / 100d));
-                using var fillPath = UiPalette.RoundedRect(new RectangleF(trackRect.X, trackRect.Y, fillWidth, trackRect.Height), 2.5f);
+                var fillWidth = Math.Max(S(6), trackRect.Width * (float)(_bucket.RemainingPercent / 100d));
+                using var fillPath = UiPalette.RoundedRect(
+                    new RectangleF(trackRect.X, trackRect.Y, fillWidth, trackRect.Height), S(2.5f));
                 using var fillBrush = new SolidBrush(color);
                 e.Graphics.FillPath(fillBrush, fillPath);
             }
         }
 
         var detail = _bucket is null ? L10n.WaitingSnapshot : FormatReset(_bucket.ResetsAt);
-        e.Graphics.DrawString(detail, detailFont, mutedBrush, 12, 48);
+        e.Graphics.DrawString(detail, detailFont, mutedBrush, S(12), S(48));
         using var trendFont = UiPalette.Mono(6.8f, FontStyle.Bold);
         var trendLabel = trend.Length >= 2 ? L10n.Trend24Hours : L10n.TrendAccumulating;
         var trendSize = e.Graphics.MeasureString(trendLabel, trendFont);
-        e.Graphics.DrawString(trendLabel, trendFont, mutedBrush, Width - trendSize.Width - 12, 50);
+        e.Graphics.DrawString(trendLabel, trendFont, mutedBrush, Width - trendSize.Width - S(12), S(50));
     }
 
-    private static void DrawTrend(Graphics graphics, RectangleF bounds, IReadOnlyList<QuotaHistoryPoint> points, Color color)
+    private static void DrawTrend(
+        Graphics graphics,
+        RectangleF bounds,
+        IReadOnlyList<QuotaHistoryPoint> points,
+        Color color,
+        float scale)
     {
         using var background = new SolidBrush(Color.FromArgb(55, UiPalette.Track));
-        using var baseline = new Pen(Color.FromArgb(70, UiPalette.Border), 1);
+        using var baseline = new Pen(Color.FromArgb(70, UiPalette.Border), Math.Max(1f, scale));
         graphics.FillRectangle(background, bounds);
         graphics.DrawLine(baseline, bounds.Left, bounds.Top + bounds.Height / 2f, bounds.Right, bounds.Top + bounds.Height / 2f);
 
         var nowMinute = DateTimeOffset.Now.ToUniversalTime().ToUnixTimeSeconds() / 60;
         var cutoff = nowMinute - 24 * 60;
-        using var line = new Pen(color, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var line = new Pen(color, 1.6f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         PointF? previousPoint = null;
         QuotaHistoryPoint? previousSample = null;
         PointF? lastPoint = null;
@@ -1033,7 +1053,11 @@ internal sealed class LimitRowControl : Control
         }
         if (lastPoint is null) return;
         using var dot = new SolidBrush(color);
-        graphics.FillEllipse(dot, lastPoint.Value.X - 2.2f, lastPoint.Value.Y - 2.2f, 4.4f, 4.4f);
+        graphics.FillEllipse(dot,
+            lastPoint.Value.X - 2.2f * scale,
+            lastPoint.Value.Y - 2.2f * scale,
+            4.4f * scale,
+            4.4f * scale);
     }
 
     public static string FormatWindow(int? minutes) => L10n.FormatWindow(minutes);

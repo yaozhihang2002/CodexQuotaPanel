@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fullOutput))
 }
 
 $assembly = [Reflection.AssemblyName]::GetAssemblyName($fullOutput)
-if ($assembly.Version.ToString() -ne '0.1.1.0')
+if ($assembly.Version.ToString() -ne '0.2.0.0')
 {
     throw "Unexpected setup launcher version: $($assembly.Version)"
 }
