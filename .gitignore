@@ -18,6 +18,9 @@
 **/.vs/
 /work/Installer/Debug/
 /work/Installer/Release/
+/work/Installer/Release-en-us/
+/work/Installer/CodexQuotaPanelSetup.en-us.generated.vdproj
+/work/Installer/CodexQuotaPanelInstaller.en-us.generated.sln
 *.user
 *.suo
 *.cache

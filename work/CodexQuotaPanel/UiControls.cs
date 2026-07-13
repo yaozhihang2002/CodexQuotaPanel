@@ -167,11 +167,16 @@ internal static class UiPalette
     private static void ApplyScaledTypographyRecursive(Control control, float scale)
     {
         var current = control.Font;
-        if (current is not null && !IsIconOrEmojiFont(current.Name))
+        var hasBaseline = TypographyBaselines.TryGetValue(control, out var existingBaseline);
+        var inheritsParentFont = !hasBaseline && control.Parent is not null &&
+                                 current is not null && control.Parent.Font.Equals(current);
+        if (!inheritsParentFont && current is not null && !IsIconOrEmojiFont(current.Name))
         {
-            var baseline = TypographyBaselines.GetValue(control, item =>
-                new TypographyBaseline(item.Font.SizeInPoints, item.Font.Style,
-                    IsMonospaceFont(item.Font.Name)));
+            var baseline = hasBaseline
+                ? existingBaseline!
+                : TypographyBaselines.GetValue(control, item =>
+                    new TypographyBaseline(item.Font.SizeInPoints, item.Font.Style,
+                        IsMonospaceFont(item.Font.Name)));
             var scaledSize = baseline.SizeInPoints * scale;
             control.Font = baseline.Monospace
                 ? CreateFont(MonospaceFontName(), Math.Max(scaledSize, MinimumCompactSize), baseline.Style)

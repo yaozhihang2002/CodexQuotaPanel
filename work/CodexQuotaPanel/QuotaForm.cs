@@ -1652,6 +1652,7 @@ internal sealed class QuotaForm : Form
         Bitmap? orbPreview = null;
         Bitmap? transparentPanel = null;
         var restoreVisible = Visible;
+        var restoreOrbVisible = _orb.Visible;
         try
         {
             if (restoreVisible)
@@ -1674,7 +1675,18 @@ internal sealed class QuotaForm : Form
         }
         finally
         {
-            if (restoreVisible && !Visible && !IsHidden && !_animating) Show();
+            if (restoreVisible)
+                _orb.Visible = restoreOrbVisible;
+            if (restoreVisible && !Visible && !IsHidden && !_animating)
+            {
+                Show();
+                cover?.BringToFront();
+                _orb.Invalidate();
+                Invalidate(true);
+                _orb.Update();
+                Update();
+                DwmFlush();
+            }
             cover?.Close();
             cover?.Dispose();
             orbPreview?.Dispose();

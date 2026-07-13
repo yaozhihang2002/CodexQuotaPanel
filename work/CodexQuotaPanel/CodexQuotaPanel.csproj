@@ -7,13 +7,14 @@
     <Nullable>enable</Nullable>
     <AssemblyName>CodexQuotaPanel</AssemblyName>
     <RootNamespace>CodexQuotaPanel</RootNamespace>
-    <Version>1.8.6</Version>
-    <AssemblyVersion>1.8.6.0</AssemblyVersion>
-    <FileVersion>1.8.6.0</FileVersion>
+    <Version>1.8.7</Version>
+    <AssemblyVersion>1.8.7.0</AssemblyVersion>
+    <FileVersion>1.8.7.0</FileVersion>
     <Product>Codex Quota Panel</Product>
     <Company>CodexQuotaPanel</Company>
     <Description>Local Windows quota orb for Codex usage windows.</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\CodexQuotaPanel.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>

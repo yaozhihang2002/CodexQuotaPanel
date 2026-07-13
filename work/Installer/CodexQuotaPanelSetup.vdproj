@@ -1,12 +1,12 @@
-"DeployProject"
+﻿"DeployProject"
 {
     "VSVersion" = "3:800"
     "ProjectType" = "8:{978C614F-708E-4E1A-B201-565925725DBA}"
     "IsWebType" = "8:FALSE"
     "ProjectName" = "8:CodexQuotaPanelSetup"
-    "LanguageId" = "3:1033"
-    "CodePage" = "3:1252"
-    "UILanguageId" = "3:1033"
+    "LanguageId" = "3:2052"
+    "CodePage" = "3:936"
+    "UILanguageId" = "3:2052"
     "SccProjectName" = "8:"
     "SccLocalPath" = "8:"
     "SccAuxPath" = "8:"
@@ -27,7 +27,7 @@
             "DisplayName" = "8:Debug"
             "IsDebugOnly" = "11:TRUE"
             "IsReleaseOnly" = "11:FALSE"
-            "OutputFilename" = "8:Debug\\CodexQuotaPanel-1.8.6-x64.msi"
+            "OutputFilename" = "8:Debug\\CodexQuotaPanel-1.8.7-x64.msi"
             "PackageFilesAs" = "3:2"
             "PackageFileSize" = "3:-2147483648"
             "CabType" = "3:1"
@@ -54,7 +54,7 @@
             "DisplayName" = "8:Release"
             "IsDebugOnly" = "11:FALSE"
             "IsReleaseOnly" = "11:TRUE"
-            "OutputFilename" = "8:Release\\CodexQuotaPanel-1.8.6-x64.msi"
+            "OutputFilename" = "8:Release\\CodexQuotaPanel-1.8.7-x64.msi"
             "PackageFilesAs" = "3:2"
             "PackageFileSize" = "3:-2147483648"
             "CabType" = "3:1"
@@ -86,7 +86,7 @@
         {
             "Name" = "8:DefaultFeature"
             "Title" = "8:CodexQuotaPanel"
-            "Description" = "8:Codex quota orb and tray panel"
+            "Description" = "8:Codex 额度悬浮球与托盘面板"
         }
         "ExternalPersistence"
         {
@@ -156,6 +156,17 @@
                     }
                 }
             }
+            "{1525181F-901A-416C-8A58-119130FE478E}:_D4C2B2D0EBEB4B62A20B69247518409A"
+            {
+                "Name" = "8:#1916"
+                "AlwaysCreate" = "11:FALSE"
+                "Condition" = "8:"
+                "Transitive" = "11:FALSE"
+                "Property" = "8:DesktopFolder"
+                "Folders"
+                {
+                }
+            }
         }
         "LaunchCondition"
         {
@@ -165,30 +176,30 @@
         }
         "MsiBootstrapper"
         {
-            "LangId" = "3:1033"
+            "LangId" = "3:2052"
             "RequiresElevation" = "11:FALSE"
         }
         "Product"
         {
             "Name" = "8:Microsoft Visual Studio"
             "ProductName" = "8:CodexQuotaPanel"
-            "ProductCode" = "8:{99F324E3-35AD-4A41-8E94-7231B9F2C00A}"
-            "PackageCode" = "8:{7383F915-2AE2-4F36-AB43-9158D68284BE}"
+            "ProductCode" = "8:{6AE59A13-441D-4EB6-926F-A7F5BCC19193}"
+            "PackageCode" = "8:{02667670-B066-405A-A231-F6A3B49AA48C}"
             "UpgradeCode" = "8:{CB0C02D8-EFA9-48AA-8782-26C4E926B224}"
             "AspNetVersion" = "8:"
             "RestartWWWService" = "11:FALSE"
             "RemovePreviousVersions" = "11:TRUE"
             "DetectNewerInstalledVersion" = "11:TRUE"
             "InstallAllUsers" = "11:FALSE"
-            "ProductVersion" = "8:1.8.6"
+            "ProductVersion" = "8:1.8.7"
             "Manufacturer" = "8:CodexQuotaPanel"
             "ARPHELPTELEPHONE" = "8:"
             "ARPHELPLINK" = "8:"
-            "Title" = "8:CodexQuotaPanel Installer"
-            "Subject" = "8:Local Codex quota panel"
+            "Title" = "8:Codex 额度面板安装程序"
+            "Subject" = "8:本地 Codex 额度面板"
             "ARPCONTACT" = "8:CodexQuotaPanel"
-            "Keywords" = "8:Codex quota panel"
-            "ARPCOMMENTS" = "8:Local-only quota orb for Windows 10 and Windows 11"
+            "Keywords" = "8:Codex 额度面板"
+            "ARPCOMMENTS" = "8:适用于 Windows 10 和 Windows 11 的本地额度悬浮球"
             "ARPURLINFOABOUT" = "8:"
             "ARPPRODUCTICON" = "8:"
             "ARPIconIndex" = "3:0"
@@ -251,6 +262,20 @@
                 "Icon" = "8:"
                 "Feature" = "8:"
             }
+            "{970C0BB2-C7D0-45D7-ABFA-7EC378858BC0}:_6B5AF9D601E441FBA987DE829BB80332"
+            {
+                "Name" = "8:CodexQuotaPanel"
+                "Arguments" = "8:"
+                "Description" = "8:Open Codex quota panel"
+                "ShowCmd" = "3:1"
+                "IconIndex" = "3:0"
+                "Transitive" = "11:FALSE"
+                "Target" = "8:_9A51A9E7F3B84F61B0A31C286BBA3A15"
+                "Folder" = "8:_D4C2B2D0EBEB4B62A20B69247518409A"
+                "WorkingFolder" = "8:_31A69E2F937747B896F82FB339E9838F"
+                "Icon" = "8:"
+                "Feature" = "8:"
+            }
         }
         "UserInterface"
         {
@@ -276,7 +301,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_24A28DDC672C43399D8C8DA0974A5499"
                     {
                         "Sequence" = "3:100"
-                        "DisplayName" = "8:Welcome"
+                        "DisplayName" = "8:欢迎"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdWelcomeDlg.wid"
@@ -323,8 +348,8 @@
                     }
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_5CA075926254470FB6DA1F20B20E49D8"
                     {
-                        "Sequence" = "3:300"
-                        "DisplayName" = "8:Confirm Installation"
+                        "Sequence" = "3:400"
+                        "DisplayName" = "8:确认安装"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdConfirmDlg.wid"
@@ -343,6 +368,180 @@
                             }
                         }
                     }
+                    "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_B820473F55C442478CD1FDBD12DA6D0C"
+                    {
+                        "Sequence" = "3:200"
+                        "DisplayName" = "8:安装选项"
+                        "UseDynamicProperties" = "11:TRUE"
+                        "IsDependency" = "11:FALSE"
+                        "SourcePath" = "8:<VsdDialogDir>\\VsdCustomCheck1Dlg.wid"
+                        "Properties"
+                        {
+                            "BannerBitmap"
+                            {
+                                "Name" = "8:BannerBitmap"
+                                "DisplayName" = "8:#1001"
+                                "Description" = "8:#1101"
+                                "Type" = "3:8"
+                                "ContextData" = "8:Bitmap"
+                                "Attributes" = "3:4"
+                                "Setting" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "BannerText"
+                            {
+                                "Name" = "8:BannerText"
+                                "DisplayName" = "8:#1014"
+                                "Description" = "8:#1114"
+                                "Type" = "3:3"
+                                "ContextData" = "8:"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:2"
+                                "Value" = "8:安装选项"
+                                "DefaultValue" = "8:#1214"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "BodyText"
+                            {
+                                "Name" = "8:BodyText"
+                                "DisplayName" = "8:#1015"
+                                "Description" = "8:#1115"
+                                "Type" = "3:3"
+                                "ContextData" = "8:"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:2"
+                                "Value" = "8:请选择安装程序要创建的快捷方式。"
+                                "DefaultValue" = "8:#1215"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox1Label"
+                            {
+                                "Name" = "8:Checkbox1Label"
+                                "DisplayName" = "8:#1034"
+                                "Description" = "8:#1134"
+                                "Type" = "3:3"
+                                "ContextData" = "8:"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:2"
+                                "Value" = "8:创建桌面快捷方式"
+                                "DefaultValue" = "8:#1234"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox1Property"
+                            {
+                                "Name" = "8:Checkbox1Property"
+                                "DisplayName" = "8:#1030"
+                                "Description" = "8:#1130"
+                                "Type" = "3:14"
+                                "ContextData" = "8:Public"
+                                "Attributes" = "3:2"
+                                "Setting" = "3:2"
+                                "Value" = "8:CREATEDESKTOPSHORTCUT"
+                                "DefaultValue" = "8:CHECKBOXA1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox1Value"
+                            {
+                                "Name" = "8:Checkbox1Value"
+                                "DisplayName" = "8:#1038"
+                                "Description" = "8:#1138"
+                                "Type" = "3:2"
+                                "ContextData" = "8:Unchecked=;Checked=1"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:2"
+                                "Value" = "8:1"
+                                "DefaultValue" = "8:"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox1Visible"
+                            {
+                                "Name" = "8:Checkbox1Visible"
+                                "DisplayName" = "8:#1026"
+                                "Description" = "8:#1126"
+                                "Type" = "3:5"
+                                "ContextData" = "8:1;True=1;False=0"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:0"
+                                "Value" = "3:1"
+                                "DefaultValue" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox2Visible"
+                            {
+                                "Name" = "8:Checkbox2Visible"
+                                "DisplayName" = "8:#1027"
+                                "Description" = "8:#1127"
+                                "Type" = "3:5"
+                                "ContextData" = "8:1;True=1;False=0"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:0"
+                                "Value" = "3:0"
+                                "DefaultValue" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox3Visible"
+                            {
+                                "Name" = "8:Checkbox3Visible"
+                                "DisplayName" = "8:#1028"
+                                "Description" = "8:#1128"
+                                "Type" = "3:5"
+                                "ContextData" = "8:1;True=1;False=0"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:0"
+                                "Value" = "3:0"
+                                "DefaultValue" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "Checkbox4Visible"
+                            {
+                                "Name" = "8:Checkbox4Visible"
+                                "DisplayName" = "8:#1029"
+                                "Description" = "8:#1129"
+                                "Type" = "3:5"
+                                "ContextData" = "8:1;True=1;False=0"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:0"
+                                "Value" = "3:0"
+                                "DefaultValue" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                        }
+                    }
+                    "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_3F6C890282EF4E77B84E3B56D72B544F"
+                    {
+                        "Sequence" = "3:300"
+                        "DisplayName" = "8:安装文件夹"
+                        "UseDynamicProperties" = "11:TRUE"
+                        "IsDependency" = "11:FALSE"
+                        "SourcePath" = "8:<VsdDialogDir>\\VsdFolderDlg.wid"
+                        "Properties"
+                        {
+                            "BannerBitmap"
+                            {
+                                "Name" = "8:BannerBitmap"
+                                "DisplayName" = "8:#1001"
+                                "Description" = "8:#1101"
+                                "Type" = "3:8"
+                                "ContextData" = "8:Bitmap"
+                                "Attributes" = "3:4"
+                                "Setting" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                            "InstallAllUsersVisible"
+                            {
+                                "Name" = "8:InstallAllUsersVisible"
+                                "DisplayName" = "8:#1059"
+                                "Description" = "8:#1159"
+                                "Type" = "3:5"
+                                "ContextData" = "8:1;True=1;False=0"
+                                "Attributes" = "3:0"
+                                "Setting" = "3:0"
+                                "Value" = "3:0"
+                                "DefaultValue" = "3:1"
+                                "UsePlugInResources" = "11:TRUE"
+                            }
+                        }
+                    }
                 }
             }
             "{DF760B10-853B-4699-99F2-AFF7185B4A62}:_EBECAD3898334C6087049C578332A826"
@@ -355,7 +554,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_B2BF116427354098B40F653AC1262B28"
                     {
                         "Sequence" = "3:100"
-                        "DisplayName" = "8:Progress"
+                        "DisplayName" = "8:安装进度"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdProgressDlg.wid"
@@ -399,7 +598,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_7206DB09790147CAB5D471EEFB9DB79B"
                     {
                         "Sequence" = "3:100"
-                        "DisplayName" = "8:Finished"
+                        "DisplayName" = "8:安装完成"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdFinishedDlg.wid"
@@ -443,7 +642,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_B8458D7170DD482E8D3A21A6A73DF800"
                     {
                         "Sequence" = "3:100"
-                        "DisplayName" = "8:Welcome"
+                        "DisplayName" = "8:欢迎"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdAdminWelcomeDlg.wid"
@@ -491,7 +690,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_4E01C2B3C5814166B1D77BB9E2C92F46"
                     {
                         "Sequence" = "3:300"
-                        "DisplayName" = "8:Confirm Installation"
+                        "DisplayName" = "8:确认安装"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdAdminConfirmDlg.wid"
@@ -522,7 +721,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_5042D3FDB71C42538548FA9C90D4E7BC"
                     {
                         "Sequence" = "3:100"
-                        "DisplayName" = "8:Progress"
+                        "DisplayName" = "8:安装进度"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdAdminProgressDlg.wid"
@@ -566,7 +765,7 @@
                     "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_D787F16B44334CD8B4514CE35681446C"
                     {
                         "Sequence" = "3:100"
-                        "DisplayName" = "8:Finished"
+                        "DisplayName" = "8:安装完成"
                         "UseDynamicProperties" = "11:TRUE"
                         "IsDependency" = "11:FALSE"
                         "SourcePath" = "8:<VsdDialogDir>\\VsdAdminFinishedDlg.wid"

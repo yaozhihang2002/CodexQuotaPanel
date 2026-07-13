@@ -26,6 +26,11 @@ internal sealed class AlertSettingsForm : Form
     private readonly ComboBox _quietEnd;
     private readonly Label _errorLabel;
     private readonly ActionButton _applyButton;
+    private readonly TableLayoutPanel _root;
+    private readonly Panel _contentHost;
+    private readonly TableLayoutPanel _content;
+    private readonly Control _header;
+    private readonly Control _footer;
 
     public AlertSettingsValues SelectedValues => new(
         _enabled.Checked,
@@ -40,8 +45,8 @@ internal sealed class AlertSettingsForm : Form
         preferences = PanelPreferenceManager.Normalize(preferences);
         AutoScaleDimensions = new SizeF(96f, 96f);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(430, 430);
-        MinimumSize = new Size(360, 380);
+        ClientSize = new Size(486, 410);
+        MinimumSize = new Size(430, 390);
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
@@ -53,7 +58,7 @@ internal sealed class AlertSettingsForm : Form
         Text = L10n.Pick("额度提醒设置", "Quota alert settings");
         AccessibleName = L10n.Pick("Codex 额度提醒设置", "Codex quota alert settings");
 
-        var root = new TableLayoutPanel
+        _root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.Transparent,
@@ -62,72 +67,64 @@ internal sealed class AlertSettingsForm : Form
             Margin = Padding.Empty,
             Padding = new Padding(1)
         };
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        Controls.Add(root);
+        _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        Controls.Add(_root);
 
-        var header = BuildHeader();
-        root.Controls.Add(header, 0, 0);
+        _header = BuildHeader();
+        _root.Controls.Add(_header, 0, 0);
 
-        var contentHost = new Panel
+        _contentHost = new Panel
         {
             Dock = DockStyle.Fill,
             AutoScroll = true,
             BackColor = Color.Transparent,
-            Padding = new Padding(20, 4, 20, 8),
+            Padding = new Padding(22, 6, 22, 10),
             Margin = Padding.Empty,
             TabStop = false
         };
-        root.Controls.Add(contentHost, 0, 1);
+        _root.Controls.Add(_contentHost, 0, 1);
 
-        var content = new TableLayoutPanel
+        _content = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = Color.Transparent,
             ColumnCount = 1,
-            RowCount = 6,
+            RowCount = 4,
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        for (var row = 0; row < content.RowCount; row++)
-            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        contentHost.Controls.Add(content);
+        _content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        for (var row = 0; row < _content.RowCount; row++)
+            _content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _contentHost.Controls.Add(_content);
 
         _enabled = MakeCheckBox(L10n.Pick("启用额度提醒", "Enable quota alerts"));
         _enabled.Checked = preferences.AlertsEnabled;
-        content.Controls.Add(_enabled, 0, 0);
+        _enabled.Margin = new Padding(2, 2, 0, 7);
+        _content.Controls.Add(_enabled, 0, 0);
 
         _warning = MakeNumeric(preferences.WarningThreshold, 2, 100);
         _critical = MakeNumeric(preferences.CriticalThreshold, 1, 99);
-        content.Controls.Add(BuildThresholdCard(), 0, 1);
+        _content.Controls.Add(BuildThresholdCard(), 0, 1);
 
         _quietEnabled = MakeCheckBox(L10n.Pick("免打扰时段", "Quiet hours"));
         _quietEnabled.Checked = preferences.QuietHoursEnabled;
-        _quietEnabled.Margin = new Padding(0, 8, 0, 5);
-        content.Controls.Add(_quietEnabled, 0, 2);
 
         _quietStart = MakeTimeCombo();
         _quietEnd = MakeTimeCombo();
         FillTimes(_quietStart, preferences.QuietStartMinutes);
         FillTimes(_quietEnd, preferences.QuietEndMinutes);
-        content.Controls.Add(BuildTimeRow(), 0, 3);
-
-        var quietHint = MakeWrappingLabel(
-            L10n.Pick("免打扰期间不弹出；结束后在下一次额度更新时重新判断",
-                "No popups during quiet hours; the next update evaluates again"),
-            UiPalette.Body(7.3f), UiPalette.Muted);
-        quietHint.Margin = new Padding(0, 8, 0, 4);
-        content.Controls.Add(quietHint, 0, 4);
+        _content.Controls.Add(BuildQuietHoursCard(), 0, 2);
 
         _errorLabel = MakeWrappingLabel(string.Empty, UiPalette.Body(7.3f, FontStyle.Bold), UiPalette.Coral);
         _errorLabel.MinimumSize = new Size(0, 22);
-        _errorLabel.Margin = new Padding(0, 2, 0, 4);
-        content.Controls.Add(_errorLabel, 0, 5);
+        _errorLabel.Margin = new Padding(2, 4, 0, 2);
+        _content.Controls.Add(_errorLabel, 0, 3);
 
         var cancelButton = MakeActionButton(
             L10n.Pick("取消", "Cancel"),
@@ -139,7 +136,8 @@ internal sealed class AlertSettingsForm : Form
             L10n.Pick("保存提醒设置", "Save alert settings"),
             primary: true);
         _applyButton.Click += (_, _) => ApplyAndClose();
-        root.Controls.Add(BuildFooter(cancelButton, _applyButton), 0, 2);
+        _footer = BuildFooter(cancelButton, _applyButton);
+        _root.Controls.Add(_footer, 0, 2);
         AcceptButton = _applyButton;
         CancelButton = cancelButton;
 
@@ -149,7 +147,11 @@ internal sealed class AlertSettingsForm : Form
         _critical.ValueChanged += (_, _) => ValidateInputs();
         _quietStart.SelectedIndexChanged += (_, _) => ValidateInputs();
         _quietEnd.SelectedIndexChanged += (_, _) => ValidateInputs();
-        Shown += (_, _) => PositionNearCursor();
+        Load += (_, _) =>
+        {
+            FitToTypography();
+            PositionNearCursor();
+        };
         MouseDown += DragWindow;
         UpdateEnabledState();
         UpdateRegion();
@@ -166,6 +168,11 @@ internal sealed class AlertSettingsForm : Form
     }
 
     internal bool InputsValid => _applyButton.Enabled;
+    internal bool HasVisibleScrollbars =>
+        _contentHost.VerticalScroll.Visible || _contentHost.HorizontalScroll.Visible;
+    internal string LayoutMetrics =>
+        $"client={ClientSize.Width}x{ClientSize.Height}; header={_header.Bounds}; " +
+        $"contentHost={_contentHost.Bounds}; content={_content.Bounds}; footer={_footer.Bounds}";
 
     internal void SetThresholdsForTest(int warning, int critical)
     {
@@ -249,29 +256,45 @@ internal sealed class AlertSettingsForm : Form
 
     private Control BuildThresholdCard()
     {
-        var card = new TableLayoutPanel
+        var cards = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            BackColor = UiPalette.Surface,
+            BackColor = Color.Transparent,
             ColumnCount = 2,
             RowCount = 1,
-            Padding = new Padding(12, 10, 12, 10),
-            Margin = new Padding(0, 5, 0, 4)
+            Padding = Padding.Empty,
+            Margin = new Padding(0, 0, 0, 10)
         };
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        card.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        card.Controls.Add(BuildThresholdGroup(
-            L10n.Pick("警告阈值", "Warning threshold"), UiPalette.Amber, _warning), 0, 0);
-        card.Controls.Add(BuildThresholdGroup(
-            L10n.Pick("严重阈值", "Critical threshold"), UiPalette.Coral, _critical), 1, 0);
-        return card;
+        cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        cards.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var warningCard = BuildThresholdGroup(
+            L10n.Pick("警告阈值", "Warning threshold"), UiPalette.Amber, _warning);
+        warningCard.Margin = new Padding(0, 0, 5, 0);
+        cards.Controls.Add(warningCard, 0, 0);
+
+        var criticalCard = BuildThresholdGroup(
+            L10n.Pick("严重阈值", "Critical threshold"), UiPalette.Coral, _critical);
+        criticalCard.Margin = new Padding(5, 0, 0, 0);
+        cards.Controls.Add(criticalCard, 1, 0);
+        return cards;
     }
 
     private static Control BuildThresholdGroup(string text, Color color, NumericUpDown input)
     {
+        var card = new AlertSectionPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = UiPalette.Surface,
+            BorderColor = UiPalette.Border,
+            CornerRadius = 11,
+            Padding = new Padding(14, 12, 14, 13)
+        };
         var group = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -280,33 +303,84 @@ internal sealed class AlertSettingsForm : Form
             BackColor = Color.Transparent,
             ColumnCount = 1,
             RowCount = 2,
-            Margin = new Padding(4)
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
         };
         group.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         group.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         group.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        var caption = MakeWrappingLabel("●  " + text, UiPalette.Body(8f, FontStyle.Bold), color);
-        caption.Margin = new Padding(0, 0, 0, 6);
+        var caption = MakeWrappingLabel("●  " + text, UiPalette.Body(8.3f, FontStyle.Bold), color);
+        caption.Margin = new Padding(0, 0, 0, 8);
         group.Controls.Add(caption, 0, 0);
 
-        var valueRow = new FlowLayoutPanel
+        var valueRow = new TableLayoutPanel
         {
+            Dock = DockStyle.Fill,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
             BackColor = Color.Transparent,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        valueRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        valueRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        input.Dock = DockStyle.Fill;
+        input.Margin = Padding.Empty;
+        valueRow.Controls.Add(input, 0, 0);
+        var percent = MakeWrappingLabel("%", UiPalette.Mono(8.4f, FontStyle.Bold), UiPalette.Muted);
+        percent.Dock = DockStyle.None;
+        percent.Anchor = AnchorStyles.Left;
+        percent.Margin = new Padding(8, 0, 0, 0);
+        valueRow.Controls.Add(percent, 1, 0);
+        group.Controls.Add(valueRow, 0, 1);
+        card.Controls.Add(group);
+        return card;
+    }
+
+    private Control BuildQuietHoursCard()
+    {
+        var card = new AlertSectionPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = UiPalette.Surface,
+            BorderColor = UiPalette.Border,
+            CornerRadius = 11,
+            Padding = new Padding(14, 11, 14, 12),
+            Margin = Padding.Empty
+        };
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = Color.Transparent,
+            ColumnCount = 1,
+            RowCount = 3,
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
-        input.Margin = Padding.Empty;
-        valueRow.Controls.Add(input);
-        var percent = MakeWrappingLabel("%", UiPalette.Mono(8f, FontStyle.Bold), UiPalette.Muted);
-        percent.Margin = new Padding(5, 5, 0, 0);
-        valueRow.Controls.Add(percent);
-        group.Controls.Add(valueRow, 0, 1);
-        return group;
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        _quietEnabled.Margin = new Padding(0, 0, 0, 8);
+        layout.Controls.Add(_quietEnabled, 0, 0);
+        layout.Controls.Add(BuildTimeRow(), 0, 1);
+
+        var quietHint = MakeWrappingLabel(
+            L10n.Pick("免打扰期间不弹出提醒；结束后会在下一次额度更新时重新判断。",
+                "No alerts during quiet hours; the next quota update evaluates again."),
+            UiPalette.Body(7.5f), UiPalette.Muted);
+        quietHint.Margin = new Padding(1, 9, 0, 0);
+        layout.Controls.Add(quietHint, 0, 2);
+        card.Controls.Add(layout);
+        return card;
     }
 
     private Control BuildTimeRow()
@@ -323,17 +397,26 @@ internal sealed class AlertSettingsForm : Form
             Padding = Padding.Empty
         };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42f));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _quietStart.Dock = DockStyle.Top;
         _quietEnd.Dock = DockStyle.Top;
-        _quietStart.Margin = new Padding(0, 0, 8, 0);
-        _quietEnd.Margin = new Padding(8, 0, 0, 0);
+        _quietStart.Margin = new Padding(0, 0, 10, 0);
+        _quietEnd.Margin = new Padding(10, 0, 0, 0);
         row.Controls.Add(_quietStart, 0, 0);
-        var separator = MakeWrappingLabel(L10n.Pick("至", "to"),
-            UiPalette.Body(8f, FontStyle.Bold), UiPalette.Muted);
-        separator.Margin = new Padding(0, 7, 0, 0);
+        var separator = new Label
+        {
+            Text = L10n.Pick("至", "to"),
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = UiPalette.Body(8f, FontStyle.Bold),
+            ForeColor = UiPalette.Muted,
+            BackColor = Color.Transparent,
+            UseCompatibleTextRendering = false
+        };
+        separator.Margin = Padding.Empty;
         row.Controls.Add(separator, 1, 0);
         row.Controls.Add(_quietEnd, 2, 0);
         return row;
@@ -358,7 +441,6 @@ internal sealed class AlertSettingsForm : Form
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         cancelButton.Margin = new Padding(0, 0, 8, 0);
         applyButton.Margin = Padding.Empty;
-        footer.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty }, 0, 0);
         footer.Controls.Add(cancelButton, 1, 0);
         footer.Controls.Add(applyButton, 2, 0);
         return footer;
@@ -400,6 +482,27 @@ internal sealed class AlertSettingsForm : Form
     {
         DialogResult = DialogResult.Cancel;
         Close();
+    }
+
+    private void FitToTypography()
+    {
+        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        var typographyScale = Math.Clamp(Font.SizeInPoints / 8.5f, 1f, 1.5f);
+        var preferredWidth = 486 + (int)Math.Round((typographyScale - 1f) * 160f);
+        var clientWidth = Math.Clamp(preferredWidth, 430, Math.Max(430, area.Width - 32));
+        ClientSize = new Size(clientWidth, ClientSize.Height);
+
+        _root.PerformLayout();
+        _content.PerformLayout();
+        var contentWidth = Math.Max(280, clientWidth - _contentHost.Padding.Horizontal - 4);
+        var contentHeight = _content.GetPreferredSize(new Size(contentWidth, 0)).Height +
+                            _contentHost.Padding.Vertical;
+        var headerHeight = _header.GetPreferredSize(new Size(clientWidth, 0)).Height;
+        var footerHeight = _footer.GetPreferredSize(new Size(clientWidth, 0)).Height;
+        var preferredHeight = headerHeight + contentHeight + footerHeight + 4;
+        var clientHeight = Math.Clamp(preferredHeight, 410, Math.Max(410, area.Height - 32));
+        ClientSize = new Size(clientWidth, clientHeight);
+        _contentHost.AutoScroll = preferredHeight > clientHeight;
     }
 
     private void PositionNearCursor()
@@ -449,7 +552,8 @@ internal sealed class AlertSettingsForm : Form
 
     private static NumericUpDown MakeNumeric(int value, int minimum, int maximum) => new()
     {
-        Size = new Size(92, 30),
+        Size = new Size(124, 34),
+        MinimumSize = new Size(112, 34),
         Minimum = minimum,
         Maximum = maximum,
         Value = Math.Clamp(value, minimum, maximum),
@@ -462,7 +566,7 @@ internal sealed class AlertSettingsForm : Form
 
     private static ComboBox MakeTimeCombo() => new()
     {
-        MinimumSize = new Size(100, 31),
+        MinimumSize = new Size(132, 34),
         DropDownStyle = ComboBoxStyle.DropDownList,
         FlatStyle = FlatStyle.Flat,
         BackColor = UiPalette.SurfaceRaised,
@@ -532,6 +636,47 @@ internal sealed class AlertSettingsForm : Form
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+}
+
+internal sealed class AlertSectionPanel : Panel
+{
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Color BorderColor { get; set; } = UiPalette.Border;
+
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public int CornerRadius { get; set; } = 11;
+
+    public AlertSectionPanel()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer |
+                 ControlStyles.ResizeRedraw |
+                 ControlStyles.UserPaint |
+                 ControlStyles.SupportsTransparentBackColor, true);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = UiPalette.RoundedRect(
+            new RectangleF(0.5f, 0.5f, Math.Max(1, Width - 1f), Math.Max(1, Height - 1f)),
+            CornerRadius);
+        using var brush = new SolidBrush(BackColor);
+        e.Graphics.FillPath(brush, path);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = UiPalette.RoundedRect(
+            new RectangleF(0.5f, 0.5f, Math.Max(1, Width - 1f), Math.Max(1, Height - 1f)),
+            CornerRadius);
+        using var pen = new Pen(BorderColor);
+        e.Graphics.DrawPath(pen, path);
+    }
 }
 
 /// <summary>
