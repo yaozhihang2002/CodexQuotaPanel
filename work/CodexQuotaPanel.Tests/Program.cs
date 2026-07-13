@@ -24,7 +24,7 @@ if (args.Length == 1 && args[0] == "--v020-targeted-check")
         lastFrame = now;
         frames++;
     }
-    if (frames is < 60 or > 64)
+    if (frames is < 120 or > 128)
         throw new InvalidOperationException($"250 Hz drag input produced {frames} window updates.");
 
     Console.WriteLine($"PASS v0.2.0 targeted check | 175% panel={panel.Width}x{panel.Height} | 250 Hz input -> {frames} moves/s");
@@ -513,8 +513,8 @@ for (var now = 4L; now <= 1000L; now += 4L)
     lastAppliedDragFrame = now;
     appliedDragFrames++;
 }
-Assert(appliedDragFrames is >= 60 and <= 64,
-    $"250 Hz drag input produced {appliedDragFrames} window updates instead of about 60.");
+Assert(appliedDragFrames is >= 120 and <= 128,
+    $"250 Hz drag input produced {appliedDragFrames} window updates instead of about 120.");
 
 Console.WriteLine("PASS v0.2.0 pre-release logic | DPI layout, drag pacing, reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
 

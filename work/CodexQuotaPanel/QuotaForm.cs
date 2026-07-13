@@ -15,7 +15,9 @@ internal sealed class QuotaForm : Form
     private const int TransitionTimerIntervalMs = 10;
     private const double TransitionOrbPhase = 0.22d;
     private const int OrbResizePreviewDurationMs = 110;
-    private const int OrbDragFrameIntervalMs = 16;
+    // Keep motion responsive on 120/144 Hz displays while still coalescing the
+    // redundant events emitted by 500/1000 Hz gaming mice.
+    private const int OrbDragFrameIntervalMs = 8;
     private const int WsExTransparent = 0x00000020;
     private const int WsExLayered = 0x00080000;
     private const int WsExNoActivate = 0x08000000;
