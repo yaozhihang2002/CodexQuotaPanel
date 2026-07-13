@@ -202,11 +202,14 @@ try
         Invoke-MsiNonQuery "UPDATE ``Property`` SET ``Value``='$arpIconName' WHERE ``Property``='ARPPRODUCTICON'"
     }
 
-    # Visual Studio Installer sequences custom dialogs by returning to the
-    # outer dialog loop. It does not always emit the reverse navigation
-    # property for the following folder page, leaving its Back button with no
-    # target. Wire the customized path explicitly in both directions.
-    Set-MsiProperty 'CustomCheckA_NextArgs' 'FolderForm'
+    # The custom options page must return to the outer dialog sequence when
+    # moving forward so Windows Installer can run its costing actions and
+    # create target paths. Directly opening FolderForm here causes error 2707.
+    # Only add the missing reverse link so Back returns to the options page.
+    if ($null -ne (Get-MsiScalar "SELECT ``Property`` FROM ``Property`` WHERE ``Property``='CustomCheckA_NextArgs'"))
+    {
+        Invoke-MsiNonQuery "DELETE FROM ``Property`` WHERE ``Property``='CustomCheckA_NextArgs'"
+    }
     Set-MsiProperty 'FolderForm_PrevArgs' 'CustomCheckA'
     Set-MsiProperty 'FolderForm_NextArgs' 'ConfirmInstallForm'
     Set-MsiProperty 'ConfirmInstallForm_PrevArgs' 'FolderForm'
@@ -253,7 +256,7 @@ try
         -not [string]::IsNullOrEmpty($shortcutIcon) -or
         $arpIcon -ne $arpIconName -or
         $arpIconRow -ne $arpIconName -or
-        $afterOptionsDialog -ne 'FolderForm' -or
+        -not [string]::IsNullOrEmpty($afterOptionsDialog) -or
         $beforeFolderDialog -ne 'CustomCheckA' -or
         $afterFolderDialog -ne 'ConfirmInstallForm' -or
         $beforeConfirmationDialog -ne 'FolderForm' -or

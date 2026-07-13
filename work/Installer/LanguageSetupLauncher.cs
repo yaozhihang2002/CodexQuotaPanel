@@ -58,6 +58,7 @@ namespace CodexQuotaPanelSetup
 
     internal sealed class LanguageForm : Form
     {
+        private const string ProductCode = "{7C4B8703-F064-4FA9-84C3-AC9DE740A824}";
         private const string ChineseMsiResource = "CodexQuotaPanel.Installer.zh-cn.msi";
         private const string EnglishTransformResource = "CodexQuotaPanel.Installer.en-us.mst";
         private static readonly Color Background = Color.FromArgb(18, 23, 21);
@@ -215,12 +216,15 @@ namespace CodexQuotaPanelSetup
         private void ContinueInstallation(object sender, EventArgs e)
         {
             bool english = _english.Checked;
+            bool reinstall = IsProductInstalled();
             string temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
                 "CodexQuotaPanelSetup-" + Guid.NewGuid().ToString("N"));
 
             _continueButton.Enabled = false;
-            _status.Text = english ? "Starting Setup…" : "正在启动安装程序…";
+            _status.Text = reinstall
+                ? (english ? "Updating the installed version…" : "正在覆盖已安装版本…")
+                : (english ? "Starting Setup…" : "正在启动安装程序…");
             Cursor = Cursors.WaitCursor;
 
             try
@@ -233,6 +237,7 @@ namespace CodexQuotaPanelSetup
 
                 string arguments = "/i " + Quote(msiPath);
                 if (english) arguments += " TRANSFORMS=" + Quote(transformPath);
+                if (reinstall) arguments += " REINSTALL=ALL REINSTALLMODE=amusv";
 
                 Hide();
                 using (Process process = Process.Start(new ProcessStartInfo
@@ -313,6 +318,15 @@ namespace CodexQuotaPanelSetup
         {
             return "\"" + value.Replace("\"", "\"\"") + "\"";
         }
+
+        private static bool IsProductInstalled()
+        {
+            int state = MsiQueryProductState(ProductCode);
+            return state == 1 || state == 3 || state == 4 || state == 5;
+        }
+
+        [System.Runtime.InteropServices.DllImport("msi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int MsiQueryProductState(string productCode);
 
         private static void TryDeleteDirectory(string path)
         {
