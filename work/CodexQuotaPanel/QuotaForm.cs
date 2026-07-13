@@ -830,6 +830,20 @@ internal sealed class QuotaForm : Form
         Invalidate(true);
     }
 
+    public Point GetRestorableOrbLocation()
+    {
+        if (_collapsed && !_animating)
+            return ClampOrbLocation(Location);
+
+        if (!_collapsedBounds.IsEmpty)
+            return ClampOrbLocation(_collapsedBounds.Location);
+
+        var orbSize = ScaledOrbSize();
+        return ClampOrbLocation(new Point(
+            Bounds.Right - orbSize.Width,
+            Bounds.Bottom - orbSize.Height));
+    }
+
     public void EnsureVisibleOnCurrentDisplays()
     {
         if (InvokeRequired)

@@ -345,8 +345,9 @@ internal sealed class QuotaApplicationContext : ApplicationContext
 
     private void SaveCurrentOrbLocation()
     {
-        if (!_form.IsOrb) return;
-        _preferences = _preferences with { OrbX = _form.Location.X, OrbY = _form.Location.Y };
+        if (_form.IsDisposed) return;
+        var location = _form.GetRestorableOrbLocation();
+        _preferences = _preferences with { OrbX = location.X, OrbY = location.Y };
         PanelPreferenceManager.Save(_preferences);
     }
 
@@ -605,6 +606,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     {
         if (_exiting) return;
         _exiting = true;
+        SaveCurrentOrbLocation();
         _lifetime.Cancel();
         _tray.Visible = false;
         _form.CloseForExit();
@@ -614,6 +616,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     protected override void ExitThreadCore()
     {
         if (!_exiting) _exiting = true;
+        SaveCurrentOrbLocation();
         _lifetime.Cancel();
         _tray.Visible = false;
         DetachSystemEvents();
