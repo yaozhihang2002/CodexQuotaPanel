@@ -78,6 +78,7 @@ internal sealed class QuotaForm : Form
     private bool _hoverPreviewEnabled = true;
     private bool _consumptionFlameEnabled = true;
     private bool _applyingLanguage;
+    private bool _hasRestoredOrbLocation;
     private int _orbLogicalSize = DefaultOrbLogicalSize;
     private int _orbOpacityPercent = 100;
     private int _viewState = OrbViewState;
@@ -823,6 +824,7 @@ internal sealed class QuotaForm : Form
         }
         if (x is null || y is null || !_collapsed || _animating) return;
 
+        _hasRestoredOrbLocation = true;
         var location = ClampOrbLocation(new Point(x.Value, y.Value));
         NormalizeCollapsedGeometry(location);
         ApplyOrbPresentation();
@@ -1170,7 +1172,8 @@ internal sealed class QuotaForm : Form
         if (_collapsed && !_animating)
         {
             NormalizeCollapsedGeometry(Location);
-            PositionAtWorkingAreaEdge();
+            if (!_hasRestoredOrbLocation)
+                PositionAtWorkingAreaEdge();
             _collapsedBounds = Bounds;
         }
         else if (!_animating)
