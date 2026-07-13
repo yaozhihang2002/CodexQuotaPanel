@@ -60,7 +60,7 @@ internal static class L10n
     public static string Cancel => Pick("取消", "Cancel");
     public static string Edit => Pick("编辑…", "Edit…");
     public static string SettingsUnsavedState => Pick("即时预览 · 尚未保存", "Live preview · Not saved yet");
-    public static string SettingsSavedState => Pick("所有更改已保存", "All changes saved");
+    public static string SettingsSavedState => Pick("更改已保存 · 可继续修改", "Changes saved · Continue editing");
     public static string GeneralIntro => Pick("启动方式和界面语言", "Startup behavior and display language");
     public static string StartWithWindows => Pick("随 Windows 启动", "Start with Windows");
     public static string StartWithWindowsHint => Pick("登录后在后台启动额度面板", "Launch the quota panel after you sign in");
@@ -122,8 +122,8 @@ internal static class L10n
     public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
     public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
     public static string ReleaseNotesSummary => Pick(
-        "首个公开预览版：修复安装快捷方式 Logo，完善中英安装、提醒排版、悬浮球动画与显示稳定性。",
-        "First public preview: fixes the installer shortcut logo and refines bilingual setup, alert layout, orb motion, and rendering stability.");
+        "保存设置后窗口继续保持打开，可连续调整；同时保留中英安装、快捷方式 Logo 与显示稳定性改进。",
+        "Settings now stay open after saving for continuous adjustments, alongside bilingual setup, shortcut logo, and rendering refinements.");
     public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
     public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");

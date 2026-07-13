@@ -13,7 +13,7 @@ internal static class DataAboutPreview
             SettingsFontScalePercent = 125
         };
         using var settings = new SettingsForm(preferences, startupEnabled: false, snapshot: null,
-            diagnostics: "CodexQuotaPanel v0.1.0 pre-release");
+            diagnostics: "CodexQuotaPanel v0.1.1 pre-release");
         settings.Show();
         Application.DoEvents();
         settings.SelectPageForTest(4);
@@ -28,7 +28,7 @@ internal static class DataAboutPreview
 
         settings.SavePreview(outputPath);
         settings.Hide();
-        Console.WriteLine($"PASS data & about preview | v0.1.0 pre-release + GitHub project | {Path.GetFullPath(outputPath)}");
+        Console.WriteLine($"PASS data & about preview | v0.1.1 pre-release + GitHub project | {Path.GetFullPath(outputPath)}");
     }
 
     private static IEnumerable<Control> Descendants(Control root)

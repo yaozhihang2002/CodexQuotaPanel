@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$MsiPath,
     [Parameter(Mandatory = $true)]
@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fullOutput))
 }
 
 $assembly = [Reflection.AssemblyName]::GetAssemblyName($fullOutput)
-if ($assembly.Version.ToString() -ne '0.1.0.0')
+if ($assembly.Version.ToString() -ne '0.1.1.0')
 {
     throw "Unexpected setup launcher version: $($assembly.Version)"
 }

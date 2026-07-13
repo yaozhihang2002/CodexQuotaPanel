@@ -199,9 +199,12 @@ internal static class StabilitySuite
 
             var selected = settings.SelectedPreferences;
             settings.SaveForTest();
-            Check(settings.DialogResult == DialogResult.OK && !settings.IsDirty &&
+            Check(settings.DialogResult == DialogResult.None && settings.Visible && !settings.IsDirty &&
                   settings.SelectedPreferences == selected && previewCount > 80,
-                "Save & apply accepts every staged direct-control change");
+                "Save & apply accepts every staged change and keeps settings open");
+            settings.SetOrbSizeForTest(129);
+            Pump();
+            Check(settings.IsDirty, "Settings remains editable after an in-place save");
         }
 
         using (var cancel = new SettingsForm(baseline, startupEnabled: true, snapshot))

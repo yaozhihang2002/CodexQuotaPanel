@@ -6,7 +6,7 @@ using System.Text.Json;
 
 TestProcessGuard.Install();
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -29,6 +29,12 @@ if (args.Length >= 2 && args[0] == "--alert-layout-preview")
 if (args.Length >= 2 && args[0] == "--alert-editor-preview")
 {
     AlertEditorPreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--settings-save-preview")
+{
+    SettingsSavePreview.Run(args[1]);
     return;
 }
 
@@ -464,7 +470,7 @@ finally
     Directory.Delete(historyDirectory, recursive: true);
 }
 
-Console.WriteLine("PASS v0.1.0 pre-release logic | reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
+Console.WriteLine("PASS v0.1.1 pre-release logic | reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
 
 if (args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
@@ -781,11 +787,17 @@ if (args.Length >= 2 && args[0] == "--preview")
 
     using (var settingsSaveCheck = new SettingsForm(settingsPreviewPreferences, startupEnabled: true, rpc))
     {
+        settingsSaveCheck.Show();
+        Application.DoEvents();
         settingsSaveCheck.SetOrbSizeForTest(101);
         settingsSaveCheck.SaveForTest();
-        Assert(settingsSaveCheck.DialogResult == DialogResult.OK &&
-               settingsSaveCheck.SelectedPreferences.OrbSize == 101,
-            "Save & apply did not accept the exact setting value.");
+        Assert(settingsSaveCheck.DialogResult == DialogResult.None && settingsSaveCheck.Visible &&
+               !settingsSaveCheck.IsDirty && settingsSaveCheck.SelectedPreferences.OrbSize == 101,
+            "Save & apply did not keep the settings window open with a clean saved baseline.");
+        settingsSaveCheck.SetOrbSizeForTest(103);
+        Assert(settingsSaveCheck.IsDirty,
+            "Settings could not continue editing after an in-place save.");
+        settingsSaveCheck.Close();
     }
 
     using (var settingsCancelCheck = new SettingsForm(settingsPreviewPreferences, startupEnabled: true, rpc))

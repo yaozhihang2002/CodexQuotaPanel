@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.1 — Pre-release
+
+- 点击“保存并应用”后立即持久化设置，但不再关闭设置窗口。
+- 保存后可以继续修改；取消或关闭只撤销上一次保存之后的未保存内容。
+- 保存状态改为“更改已保存 · 可继续修改”，反馈更加明确。
+- README 增加醒目的安装包与发布页面直达链接。
+
+### 下载建议
+
+- 普通用户：`CodexQuotaPanel-0.1.1-Setup.exe`
+- 便携使用：`CodexQuotaPanel-0.1.1-portable-x64.zip`
+- 仅需中文 MSI：`CodexQuotaPanel-0.1.1-x64.msi`
+
 ## v0.1.0 — Pre-release
 
 CodexQuotaPanel 的首个公开测试版本。

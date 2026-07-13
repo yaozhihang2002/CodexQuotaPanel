@@ -285,62 +285,61 @@ internal sealed class QuotaApplicationContext : ApplicationContext
                 cleared ? ToolTipIcon.Info : ToolTipIcon.Warning);
         };
         settings.ResetRequested += () => resetRequested = true;
+        settings.SaveRequested += () =>
+        {
+            var selected = PanelPreferenceManager.Normalize(settings.SelectedPreferences);
+            if (!resetRequested)
+            {
+                selected = selected with
+                {
+                    OrbX = _preferences.OrbX,
+                    OrbY = _preferences.OrbY,
+                    LastViewMode = _preferences.LastViewMode
+                };
+            }
+
+            try
+            {
+                if (settings.StartupEnabled != StartupManager.IsEnabled())
+                    StartupManager.SetEnabled(settings.StartupEnabled);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                       System.Security.SecurityException or ArgumentException)
+            {
+                MessageBox.Show(
+                    L10n.Pick("无法修改开机启动设置，请检查当前用户权限。", "Could not change the startup setting. Check the current user permissions."),
+                    L10n.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
+            if (resetRequested) PanelPreferenceManager.DeleteAll();
+            var languageChanged = selected.Language != _preferences.Language;
+            _preferences = selected;
+            ApplyPreferencePreview(lastPreview, _preferences);
+            lastPreview = settings.SelectedPreferences;
+            if (resetRequested)
+            {
+                _form.ShowOrb(animate: false);
+                _form.MoveOrbToCurrentDisplay();
+                _preferences = _preferences with { LastViewMode = QuotaForm.OrbViewState };
+                SaveCurrentOrbLocation();
+            }
+            PanelPreferenceManager.Save(_preferences);
+            UpdateGlobalHotKeyRegistration(showFailure: true);
+            if (languageChanged) ApplyMenuLanguage();
+            UpdateRuntimeMenu();
+            settings.MarkSaved(StartupManager.IsEnabled());
+            resetRequested = false;
+        };
 
         _settingsItem.Enabled = false;
-        DialogResult result;
         try
         {
-            result = settings.ShowDialog();
+            settings.ShowDialog();
         }
         finally
         {
             _settingsItem.Enabled = true;
         }
-
-        if (result != DialogResult.OK)
-        {
-            ApplyPreferencePreview(lastPreview, original);
-            UpdateRuntimeMenu();
-            return;
-        }
-
-        var selected = PanelPreferenceManager.Normalize(settings.SelectedPreferences);
-        if (!resetRequested)
-        {
-            selected = selected with
-            {
-                OrbX = _preferences.OrbX,
-                OrbY = _preferences.OrbY,
-                LastViewMode = _preferences.LastViewMode
-            };
-        }
-        try
-        {
-            if (settings.StartupEnabled != originalStartup)
-                StartupManager.SetEnabled(settings.StartupEnabled);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-                                   System.Security.SecurityException or ArgumentException)
-        {
-            MessageBox.Show(
-                L10n.Pick("无法修改开机启动设置，请检查当前用户权限。", "Could not change the startup setting. Check the current user permissions."),
-                L10n.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-
-        if (resetRequested) PanelPreferenceManager.DeleteAll();
-        var languageChanged = selected.Language != _preferences.Language;
-        _preferences = selected;
-        ApplyPreferencePreview(lastPreview, _preferences);
-        if (resetRequested)
-        {
-            _form.ShowOrb(animate: false);
-            _form.MoveOrbToCurrentDisplay();
-            _preferences = _preferences with { LastViewMode = QuotaForm.OrbViewState };
-            SaveCurrentOrbLocation();
-        }
-        PanelPreferenceManager.Save(_preferences);
-        UpdateGlobalHotKeyRegistration(showFailure: true);
-        if (languageChanged) ApplyMenuLanguage();
         UpdateRuntimeMenu();
     }
 

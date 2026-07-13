@@ -7,14 +7,14 @@ namespace CodexQuotaPanel;
 
 /// <summary>
 /// A single, staged settings surface. Preference previews are reversible: closing
-/// with Cancel raises one final preview containing the preferences supplied to the
-/// constructor. Destructive history clearing is intentionally immediate, while a
-/// defaults reset is staged until Save.
+/// with Cancel raises one final preview containing the most recently saved values.
+/// Saving applies immediately without closing, destructive history clearing is
+/// intentionally immediate, and a defaults reset remains staged until Save.
 /// </summary>
 internal sealed class SettingsForm : Form
 {
-    private readonly PanelPreferences _originalPreferences;
-    private readonly bool _originalStartupEnabled;
+    private PanelPreferences _savedPreferences;
+    private bool _savedStartupEnabled;
     private readonly QuotaSnapshot? _snapshot;
     private readonly string _diagnostics;
     private readonly List<SettingsNavButton> _navigation = [];
@@ -22,7 +22,6 @@ internal sealed class SettingsForm : Form
 
     private PanelPreferences _workingPreferences;
     private bool _initializing;
-    private bool _accepted;
     private bool _resetPending;
     private bool _syncingOrbSize;
     private bool _syncingFontScale;
@@ -58,8 +57,8 @@ internal sealed class SettingsForm : Form
 
     public PanelPreferences SelectedPreferences => PanelPreferenceManager.Normalize(_workingPreferences);
     public bool StartupEnabled => _startupToggle.Checked;
-    internal bool IsDirty => !_accepted && (_resetPending ||
-        SelectedPreferences != _originalPreferences || StartupEnabled != _originalStartupEnabled);
+    internal bool IsDirty => _resetPending ||
+        SelectedPreferences != _savedPreferences || StartupEnabled != _savedStartupEnabled;
     internal int SelectedOrbSize => (int)_orbSizeInput.Value;
     internal int SelectedFontScalePercent => (int)_fontScaleInput.Value;
     internal bool SaveButtonVisible => _saveButton.Parent is { } parent &&
@@ -70,6 +69,7 @@ internal sealed class SettingsForm : Form
     public event Action? MoveToCurrentDisplayRequested;
     public event Action? ClearHistoryRequested;
     public event Action? ResetRequested;
+    public event Action? SaveRequested;
 
     public SettingsForm(
         PanelPreferences preferences,
@@ -77,10 +77,10 @@ internal sealed class SettingsForm : Form
         QuotaSnapshot? snapshot = null,
         string? diagnostics = null)
     {
-        _originalPreferences = PanelPreferenceManager.Normalize(preferences);
-        _workingPreferences = _originalPreferences;
+        _savedPreferences = PanelPreferenceManager.Normalize(preferences);
+        _workingPreferences = _savedPreferences;
         UiPalette.SetTheme(_workingPreferences.ThemeMode);
-        _originalStartupEnabled = startupEnabled;
+        _savedStartupEnabled = startupEnabled;
         _snapshot = snapshot;
         _diagnostics = diagnostics ?? L10n.Pick("诊断信息暂不可用", "Diagnostics are currently unavailable");
         _initializing = true;
@@ -603,7 +603,7 @@ internal sealed class SettingsForm : Form
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118f));
-        header.Controls.Add(MakeDockLabel($"{L10n.ReleaseNotesTitle} · v0.1.0",
+        header.Controls.Add(MakeDockLabel($"{L10n.ReleaseNotesTitle} · v0.1.1",
             UiPalette.Body(9f, FontStyle.Bold), UiPalette.Text), 0, 0);
         var badge = new PillLabel
         {
@@ -692,7 +692,7 @@ internal sealed class SettingsForm : Form
             area.Top + Math.Max(0, (area.Height - Height) / 2));
     }
 
-    internal void SaveForTest() => SaveAndClose();
+    internal void SaveForTest() => SaveAndStayOpen();
     internal void SetLanguageForTest(int language)
     {
         language = Math.Clamp(language, 0, 1);
@@ -789,7 +789,7 @@ internal sealed class SettingsForm : Form
         _saveButton = MakeActionButton(L10n.Save, 138, primary: true);
         _saveButton.Dock = DockStyle.Fill;
         _saveButton.Margin = new Padding(4, 7, 0, 7);
-        _saveButton.Click += (_, _) => SaveAndClose();
+        _saveButton.Click += (_, _) => SaveAndStayOpen();
         layout.Controls.Add(_saveButton, 2, 0);
         footer.Controls.Add(layout);
 
@@ -1184,14 +1184,25 @@ internal sealed class SettingsForm : Form
         RaisePreview();
     }
 
-    private void SaveAndClose()
+    private void SaveAndStayOpen()
     {
         UpdateFromDirectControls();
-        _accepted = true;
-        UpdateDirtyState();
         if (_resetPending) ResetRequested?.Invoke();
-        DialogResult = DialogResult.OK;
-        Close();
+        if (SaveRequested is null)
+        {
+            MarkSaved(StartupEnabled);
+            return;
+        }
+
+        SaveRequested.Invoke();
+    }
+
+    internal void MarkSaved(bool startupEnabled)
+    {
+        _savedPreferences = SelectedPreferences;
+        _savedStartupEnabled = startupEnabled;
+        _resetPending = false;
+        UpdateDirtyState();
     }
 
     private void CancelAndClose()
@@ -1202,12 +1213,11 @@ internal sealed class SettingsForm : Form
 
     private void OnSettingsFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_accepted) return;
-        _workingPreferences = _originalPreferences;
+        _workingPreferences = _savedPreferences;
         _initializing = true;
-        _startupToggle.Checked = _originalStartupEnabled;
+        _startupToggle.Checked = _savedStartupEnabled;
         _initializing = false;
-        PreviewPreferencesChanged?.Invoke(_originalPreferences);
+        PreviewPreferencesChanged?.Invoke(_savedPreferences);
         if (DialogResult == DialogResult.None) DialogResult = DialogResult.Cancel;
     }
 
