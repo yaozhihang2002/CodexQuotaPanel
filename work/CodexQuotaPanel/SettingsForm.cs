@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
-using System.Reflection;
-using System.Runtime.InteropServices;
 
 namespace CodexQuotaPanel;
 
@@ -54,6 +52,11 @@ internal sealed class SettingsForm : Form
     private readonly Label _alertSummary;
     private readonly SettingsToggle _alertSoundToggle;
     private readonly SettingsToggle _trendRecordingToggle;
+    private readonly SettingsToggle _checkUpdatesToggle;
+    private readonly CancellationTokenSource _operationLifetime = new();
+    private ActionButton _updateCheckButton = null!;
+    private Label _updateStatusLabel = null!;
+    private bool _checkingForUpdates;
 
     public PanelPreferences SelectedPreferences => PanelPreferenceManager.Normalize(_workingPreferences);
     public bool StartupEnabled => _startupToggle.Checked;
@@ -70,6 +73,7 @@ internal sealed class SettingsForm : Form
     public event Action? ClearHistoryRequested;
     public event Action? ResetRequested;
     public event Action? SaveRequested;
+    public event Func<CancellationToken, Task<UpdateCheckResult>>? CheckForUpdatesRequested;
 
     public SettingsForm(
         PanelPreferences preferences,
@@ -210,6 +214,7 @@ internal sealed class SettingsForm : Form
         _alertSummary = MakeSummaryLabel();
         _alertSoundToggle = MakeToggle(L10n.AlertSound);
         _trendRecordingToggle = MakeToggle(L10n.TrendRecording);
+        _checkUpdatesToggle = MakeToggle(L10n.CheckUpdatesOnStartup);
 
         AddPage(contentHost, BuildGeneralPage());
         AddPage(contentHost, BuildAppearancePage());
@@ -228,6 +233,16 @@ internal sealed class SettingsForm : Form
         UpdateDirtyState();
 
         FormClosing += OnSettingsFormClosing;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _operationLifetime.Cancel();
+            _operationLifetime.Dispose();
+        }
+        base.Dispose(disposing);
     }
 
     protected override void OnShown(EventArgs e)
@@ -255,15 +270,7 @@ internal sealed class SettingsForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        // Use a dark native caption where supported (Windows 10 1809+ / Windows 11).
-        // Failure is harmless on older builds.
-        try
-        {
-            var enabled = 1;
-            _ = DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int));
-        }
-        catch (DllNotFoundException) { }
-        catch (EntryPointNotFoundException) { }
+        NativeTheme.Apply(this);
     }
 
     private Panel BuildHeader()
@@ -515,7 +522,12 @@ internal sealed class SettingsForm : Form
     {
         var page = MakePage();
         page.AddItem(MakePageIntro(L10n.SettingsDataAbout, L10n.DataIntro));
-        page.AddItem(BuildReleaseNotesCard());
+        page.AddItem(BuildVersionUpdatesCard());
+        page.AddItem(MakeControlRow(
+            L10n.SettingsTransfer,
+            L10n.SettingsTransferHint,
+            BuildSettingsTransferControl(),
+            318));
         page.AddItem(MakeToggleRow(L10n.TrendRecording, L10n.TrendRecordingHint, _trendRecordingToggle));
 
         var clearButton = MakeActionButton(L10n.ClearHistory, 138, primary: false);
@@ -535,7 +547,7 @@ internal sealed class SettingsForm : Form
         page.AddItem(MakeControlRow(L10n.RestoreDefaults,
             L10n.Pick("重置界面、交互、提醒和本地数据选项", "Reset appearance, interaction, alerts, and local-data options"), resetButton));
 
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "—";
+        var version = ProductVersionInfo.Current;
         var about = new SettingsCard { Size = new Size(570, 126), Margin = new Padding(0, 0, 0, 10) };
         var aboutLayout = new TableLayoutPanel
         {
@@ -573,24 +585,62 @@ internal sealed class SettingsForm : Form
         return page;
     }
 
-    private Control BuildReleaseNotesCard()
+    private Control BuildSettingsTransferControl()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Size = new Size(304, 38),
+            BackColor = Color.Transparent,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var import = MakeActionButton(L10n.ImportSettings, 142, primary: false);
+        import.Dock = DockStyle.Fill;
+        import.Margin = new Padding(0, 3, 5, 3);
+        import.Click += (_, _) => ImportSettings();
+        layout.Controls.Add(import, 0, 0);
+
+        var export = MakeActionButton(L10n.ExportSettings, 142, primary: false);
+        export.Dock = DockStyle.Fill;
+        export.Margin = new Padding(5, 3, 0, 3);
+        export.Click += (_, _) => ExportSettings();
+        layout.Controls.Add(export, 1, 0);
+        return layout;
+    }
+
+    private Control BuildVersionUpdatesCard()
     {
         const string githubUrl = "https://github.com/yaozhihang2002/CodexQuotaPanel";
 
-        var card = new SettingsCard { Size = new Size(570, 154), Margin = new Padding(0, 0, 0, 10) };
+        var card = new SettingsCard
+        {
+            Size = new Size(570, 274),
+            Margin = new Padding(0, 0, 0, 10),
+            AccessibleName = L10n.VersionAndUpdates
+        };
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.Transparent,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 7,
             Padding = new Padding(18, 12, 18, 12),
             Margin = Padding.Empty
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 13f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));
 
         var header = new TableLayoutPanel
         {
@@ -603,7 +653,8 @@ internal sealed class SettingsForm : Form
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118f));
-        header.Controls.Add(MakeDockLabel($"{L10n.ReleaseNotesTitle} · v0.2.0",
+        var version = ProductVersionInfo.Current;
+        header.Controls.Add(MakeDockLabel($"{L10n.VersionAndUpdates} · v{version}",
             UiPalette.Body(9f, FontStyle.Bold), UiPalette.Text), 0, 0);
         var badge = new PillLabel
         {
@@ -631,6 +682,77 @@ internal sealed class SettingsForm : Form
 
         var github = BuildInfoLink(L10n.GitHubProject, "yaozhihang2002/CodexQuotaPanel", githubUrl);
         layout.Controls.Add(github, 0, 2);
+
+        var separator = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = UiPalette.Border,
+            Margin = new Padding(0, 6, 0, 6),
+            AccessibleRole = AccessibleRole.Separator
+        };
+        layout.Controls.Add(separator, 0, 3);
+
+        var automaticUpdateHeader = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        automaticUpdateHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        automaticUpdateHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64f));
+        automaticUpdateHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        automaticUpdateHeader.Controls.Add(MakeDockLabel(
+            L10n.AutomaticUpdateChecks,
+            UiPalette.Body(8.7f, FontStyle.Bold),
+            UiPalette.Text), 0, 0);
+        _checkUpdatesToggle.Anchor = AnchorStyles.None;
+        _checkUpdatesToggle.Margin = Padding.Empty;
+        automaticUpdateHeader.Controls.Add(_checkUpdatesToggle, 1, 0);
+        layout.Controls.Add(automaticUpdateHeader, 0, 4);
+
+        var updateHint = new ResponsiveTextLabel
+        {
+            Text = L10n.CheckUpdatesOnStartupHint,
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            AutoEllipsis = true,
+            Font = UiPalette.Body(7.1f),
+            ForeColor = UiPalette.Muted,
+            BackColor = Color.Transparent,
+            Margin = Padding.Empty,
+            TextAlign = ContentAlignment.TopLeft,
+            UseCompatibleTextRendering = false
+        };
+        layout.Controls.Add(updateHint, 0, 5);
+
+        var updateActions = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        updateActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        updateActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132f));
+        updateActions.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _updateStatusLabel = MakeDockLabel(
+            L10n.UpdateNotChecked,
+            UiPalette.Body(7.1f, FontStyle.Bold),
+            UiPalette.Faint);
+        _updateStatusLabel.TextAlign = ContentAlignment.MiddleRight;
+        _updateStatusLabel.Margin = new Padding(0, 0, 10, 0);
+        updateActions.Controls.Add(_updateStatusLabel, 0, 0);
+        _updateCheckButton = MakeActionButton(L10n.CheckNow, 124, primary: false);
+        _updateCheckButton.Dock = DockStyle.Fill;
+        _updateCheckButton.Margin = new Padding(0, 3, 0, 3);
+        _updateCheckButton.Click += async (_, _) => await CheckForUpdatesAsync();
+        updateActions.Controls.Add(_updateCheckButton, 1, 0);
+        layout.Controls.Add(updateActions, 0, 6);
 
         card.Controls.Add(layout);
         return card;
@@ -680,6 +802,156 @@ internal sealed class SettingsForm : Form
             MessageBox.Show(this, L10n.OpenLinkFailed, L10n.SettingsTitle,
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_checkingForUpdates || IsDisposed) return;
+        var check = CheckForUpdatesRequested;
+        if (check is null)
+        {
+            _updateStatusLabel.Text = L10n.UpdateUnavailable;
+            _updateStatusLabel.ForeColor = UiPalette.Amber;
+            return;
+        }
+
+        _checkingForUpdates = true;
+        _updateCheckButton.Enabled = false;
+        _updateStatusLabel.Text = L10n.UpdateChecking;
+        _updateStatusLabel.ForeColor = UiPalette.Faint;
+        try
+        {
+            var result = await check(_operationLifetime.Token);
+            if (IsDisposed || _operationLifetime.IsCancellationRequested) return;
+            switch (result.Status)
+            {
+                case UpdateCheckStatus.UpdateAvailable when
+                    result.ReleaseUri is not null && !string.IsNullOrWhiteSpace(result.LatestTag):
+                    _updateStatusLabel.Text = L10n.UpdateAvailable(result.LatestTag);
+                    _updateStatusLabel.ForeColor = UiPalette.Mint;
+                    if (MessageBox.Show(
+                            this,
+                            L10n.OpenReleasePrompt(result.LatestTag),
+                            L10n.CheckForUpdates,
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Information,
+                            MessageBoxDefaultButton.Button1) == DialogResult.Yes)
+                        OpenExternalLink(result.ReleaseUri.AbsoluteUri);
+                    break;
+                case UpdateCheckStatus.UpToDate:
+                    _updateStatusLabel.Text = L10n.UpdateCurrent(result.CurrentVersion);
+                    _updateStatusLabel.ForeColor = UiPalette.Mint;
+                    break;
+                default:
+                    _updateStatusLabel.Text = L10n.UpdateUnavailable;
+                    _updateStatusLabel.ForeColor = UiPalette.Amber;
+                    MessageBox.Show(
+                        this,
+                        L10n.UpdateUnavailable,
+                        L10n.CheckForUpdates,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    break;
+            }
+        }
+        catch (OperationCanceledException) when (_operationLifetime.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _checkingForUpdates = false;
+            if (!IsDisposed) _updateCheckButton.Enabled = true;
+        }
+    }
+
+    private void ImportSettings()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = L10n.ImportSettings,
+            Filter = L10n.SettingsFileFilter,
+            CheckFileExists = true,
+            Multiselect = false,
+            RestoreDirectory = true
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (!SettingsTransferService.TryImport(
+                dialog.FileName,
+                _savedPreferences,
+                out var imported,
+                out var failure))
+        {
+            ShowSettingsTransferFailure(failure);
+            return;
+        }
+
+        var previous = _workingPreferences;
+        var startupEnabled = StartupEnabled;
+        _workingPreferences = imported;
+        ApplyPreferencesToControls(_workingPreferences, startupEnabled);
+        if (previous.ThemeMode != _workingPreferences.ThemeMode)
+        {
+            var previousColors = UiPalette.ResolveColors(previous.ThemeMode);
+            UiPalette.SetTheme(_workingPreferences.ThemeMode);
+            UiPalette.ApplyTheme(this, previousColors);
+            NativeTheme.Apply(this);
+        }
+        if (previous.Language != _workingPreferences.Language)
+        {
+            L10n.SetLanguage((AppLanguage)_workingPreferences.Language);
+            ApplyLanguageToOpenForm();
+        }
+        RaisePreview();
+        MessageBox.Show(
+            this,
+            L10n.ImportSettingsSuccess,
+            L10n.SettingsTransfer,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
+    private void ExportSettings()
+    {
+        UpdateFromDirectControls();
+        using var dialog = new SaveFileDialog
+        {
+            Title = L10n.ExportSettings,
+            Filter = L10n.SettingsFileFilter,
+            AddExtension = true,
+            DefaultExt = "json",
+            FileName = $"CodexQuotaPanel-settings-{DateTime.Now:yyyyMMdd}.json",
+            OverwritePrompt = true,
+            RestoreDirectory = true
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (!SettingsTransferService.TryExport(dialog.FileName, SelectedPreferences, out var failure))
+        {
+            ShowSettingsTransferFailure(failure);
+            return;
+        }
+        MessageBox.Show(
+            this,
+            L10n.ExportSettingsSuccess,
+            L10n.SettingsTransfer,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
+    private void ShowSettingsTransferFailure(SettingsTransferFailure failure)
+    {
+        var message = failure switch
+        {
+            SettingsTransferFailure.TooLarge => L10n.SettingsTransferTooLarge,
+            SettingsTransferFailure.UnsupportedVersion => L10n.SettingsTransferUnsupported,
+            SettingsTransferFailure.InvalidFormat => L10n.SettingsTransferInvalid,
+            _ => L10n.SettingsTransferIoError
+        };
+        MessageBox.Show(
+            this,
+            message,
+            L10n.SettingsTransfer,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
     }
 
     internal void SelectPageForTest(int index) => SelectPage(index);
@@ -858,6 +1130,7 @@ internal sealed class SettingsForm : Form
         _globalHotKeyToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _alertSoundToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _trendRecordingToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
+        _checkUpdatesToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
     }
 
     private void OrbSizeSliderChanged()
@@ -919,6 +1192,7 @@ internal sealed class SettingsForm : Form
             GlobalHotKeyEnabled = _globalHotKeyToggle.Checked,
             AlertSoundEnabled = _alertSoundToggle.Checked,
             TrendRecordingEnabled = _trendRecordingToggle.Checked,
+            CheckForUpdatesOnStartup = _checkUpdatesToggle.Checked,
             ThemeMode = selectedTheme,
             Language = selectedLanguage
         });
@@ -928,6 +1202,7 @@ internal sealed class SettingsForm : Form
             var previousColors = UiPalette.ResolveColors(previousPreferences.ThemeMode);
             UiPalette.SetTheme(_workingPreferences.ThemeMode);
             UiPalette.ApplyTheme(this, previousColors);
+            NativeTheme.Apply(this);
         }
         TopMost = _workingPreferences.AlwaysOnTop;
         _flameStyleCombo.Enabled = _workingPreferences.ConsumptionFlameEnabled;
@@ -966,6 +1241,7 @@ internal sealed class SettingsForm : Form
             _relocalizing = false;
         }
         UiPalette.ApplyScaledTypography(this, _workingPreferences.SettingsFontScalePercent);
+        NativeTheme.Apply(this);
         UpdateSummaries();
         UpdateDirtyState();
         UpdateOrbPreview();
@@ -1050,6 +1326,7 @@ internal sealed class SettingsForm : Form
         _globalHotKeyToggle.Checked = preferences.GlobalHotKeyEnabled;
         _alertSoundToggle.Checked = preferences.AlertSoundEnabled;
         _trendRecordingToggle.Checked = preferences.TrendRecordingEnabled;
+        _checkUpdatesToggle.Checked = preferences.CheckForUpdatesOnStartup;
         TopMost = preferences.AlwaysOnTop;
         UpdateSummaries();
         _initializing = false;
@@ -1213,6 +1490,7 @@ internal sealed class SettingsForm : Form
 
     private void OnSettingsFormClosing(object? sender, FormClosingEventArgs e)
     {
+        _operationLifetime.Cancel();
         _workingPreferences = _savedPreferences;
         _initializing = true;
         _startupToggle.Checked = _savedStartupEnabled;
@@ -1398,15 +1676,12 @@ internal sealed class SettingsForm : Form
         TabStop = true
     };
 
-    private static ComboBox MakeCombo() => new()
+    private static ComboBox MakeCombo() => new ThemedComboBox
     {
         Size = new Size(166, 32),
-        DropDownStyle = ComboBoxStyle.DropDownList,
-        FlatStyle = FlatStyle.Flat,
         BackColor = UiPalette.SurfaceRaised,
         ForeColor = UiPalette.Text,
         Font = UiPalette.Body(8f),
-        IntegralHeight = false,
         DropDownHeight = 160
     };
 
@@ -1455,8 +1730,6 @@ internal sealed class SettingsForm : Form
         UseMnemonic = false
     };
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int valueSize);
 }
 
 internal sealed class BufferedSettingsHost : Panel
@@ -1473,11 +1746,21 @@ internal sealed class BufferedSettingsHost : Panel
 
     protected override void OnPaintBackground(PaintEventArgs e) =>
         e.Graphics.Clear(BackColor);
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        // ControlStyles.Opaque skips the normal background pass. Clear during
+        // the real paint pass so live dark/light switching cannot expose the
+        // default black surface in the host padding.
+        e.Graphics.Clear(BackColor);
+        base.OnPaint(e);
+    }
 }
 
 internal sealed class ResponsiveSettingsPage : Panel
 {
     private readonly TableLayoutPanel _content;
+    private bool _repaintQueued;
 
     public ResponsiveSettingsPage()
     {
@@ -1490,7 +1773,7 @@ internal sealed class ResponsiveSettingsPage : Panel
         Margin = Padding.Empty;
         Padding = new Padding(2, 2, 7, 10);
 
-        _content = new TableLayoutPanel
+        _content = new BufferedTableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
@@ -1507,16 +1790,28 @@ internal sealed class ResponsiveSettingsPage : Panel
     }
 
     protected override void OnPaintBackground(PaintEventArgs e) =>
-        e.Graphics.Clear(UiPalette.Canvas);
+        e.Graphics.Clear(BackColor);
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        // The scroll page is also opaque for low-flicker wheel scrolling, so it
+        // must repaint every uncovered pixel itself after a theme change.
+        e.Graphics.Clear(BackColor);
+        base.OnPaint(e);
+    }
 
     protected override void OnScroll(ScrollEventArgs se)
     {
         base.OnScroll(se);
-        // WinForms normally accelerates scrolling by copying the previous pixels.
-        // Force one buffered repaint so rounded cards and transparent labels cannot
-        // leave copied text behind during rapid mouse-wheel input.
-        Invalidate(invalidateChildren: true);
-        Update();
+        // Coalesce rapid wheel messages into one buffered repaint. A synchronous
+        // Update() here used to block the UI thread and leave copied text trails.
+        if (_repaintQueued || !IsHandleCreated) return;
+        _repaintQueued = true;
+        BeginInvoke((Action)(() =>
+        {
+            _repaintQueued = false;
+            if (!IsDisposed) Invalidate(invalidateChildren: true);
+        }));
     }
 
     public void AddItem(Control control)
@@ -1684,8 +1979,8 @@ internal sealed class SettingsToggle : CheckBox
         var trackBounds = new RectangleF(0.5f, 1.5f, Width - 1, Height - 3);
         using var track = UiPalette.RoundedRect(trackBounds, trackBounds.Height / 2f);
         var trackColor = Checked
-            ? (_hovered ? Color.FromArgb(127, 238, 190) : UiPalette.Mint)
-            : (_hovered ? Color.FromArgb(70, 75, 71) : UiPalette.Track);
+            ? (_hovered ? UiPalette.Mix(UiPalette.Mint, UiPalette.Text, 0.12f) : UiPalette.Mint)
+            : (_hovered ? UiPalette.Mix(UiPalette.Track, UiPalette.Text, 0.12f) : UiPalette.Track);
         using var trackBrush = new SolidBrush(trackColor);
         e.Graphics.FillPath(trackBrush, track);
 

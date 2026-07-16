@@ -1,0 +1,43 @@
+name: Build and deterministic checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'work/CodexQuotaPanel/**'
+      - 'work/CodexQuotaPanel.Tests/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'work/CodexQuotaPanel/**'
+      - 'work/CodexQuotaPanel.Tests/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore work/CodexQuotaPanel.Tests/CodexQuotaPanel.Tests.csproj
+
+      - name: Build Release
+        run: dotnet build work/CodexQuotaPanel.Tests/CodexQuotaPanel.Tests.csproj -c Release --no-restore
+
+      - name: Run deterministic headless checks
+        run: dotnet run --project work/CodexQuotaPanel.Tests/CodexQuotaPanel.Tests.csproj -c Release --no-build -- --targeted-check

@@ -110,6 +110,30 @@ internal static class L10n
     public static string AlertSound => Pick("额外播放提示音", "Play an extra alert sound");
     public static string AlertSoundHint => Pick("显示额度通知时额外播放一次系统提示音", "Play one extra system sound when a quota notification is shown");
     public static string DataIntro => Pick("本地趋势、恢复工具和版本信息", "Local trends, recovery tools, and version details");
+    public static string CheckUpdatesOnStartup => Pick("启动后检查更新（包括预发布）", "Check for updates after startup (including pre-releases)");
+    public static string CheckUpdatesOnStartupHint => Pick("可选启动时检查，最多每 24 小时一次；不上传数据，也不会自动下载安装包", "Optional at startup, at most once every 24 hours; sends no private data and never downloads or runs installers");
+    public static string CheckForUpdates => Pick("检查更新", "Check for updates");
+    public static string CheckForUpdatesHint => Pick("查看 GitHub Release（包括预发布）；不会自动下载或运行安装包", "Checks GitHub Releases, including pre-releases; never downloads or runs an installer automatically");
+    public static string CheckNow => Pick("立即检查", "Check now");
+    public static string UpdateNotChecked => Pick("尚未检查", "Not checked");
+    public static string UpdateChecking => Pick("正在检查…", "Checking…");
+    public static string UpdateUnavailable => Pick("暂时无法检查更新", "Update check unavailable");
+    public static string UpdateCurrent(string version) => Pick($"已是最新版 · {version}", $"Up to date · {version}");
+    public static string UpdateAvailable(string version) => Pick($"发现新版本 · {version}", $"New version · {version}");
+    public static string OpenReleasePrompt(string version) => Pick(
+        $"发现预发布版本 {version}。是否在浏览器中打开 GitHub Release 页面？\n\n程序不会自动下载或运行任何文件。",
+        $"Pre-release {version} is available. Open its GitHub Release page in your browser?\n\nThe app will not download or run any file automatically.");
+    public static string SettingsTransfer => Pick("设置导入与导出", "Import & export settings");
+    public static string SettingsTransferHint => Pick("仅包含可移植的外观、交互与提醒设置；不包含位置、开机启动、历史或账户数据", "Includes portable appearance, interaction, and alert settings only; excludes position, startup registration, history, and account data");
+    public static string ImportSettings => Pick("导入…", "Import…");
+    public static string ExportSettings => Pick("导出…", "Export…");
+    public static string SettingsFileFilter => Pick("Codex 额度面板设置 (*.json)|*.json|所有文件 (*.*)|*.*", "Codex Quota Panel settings (*.json)|*.json|All files (*.*)|*.*");
+    public static string ImportSettingsSuccess => Pick("设置已导入并进入即时预览。点击“保存并应用”后才会写入本机。", "Settings were imported into live preview. They are written to this device only after Save & apply.");
+    public static string ExportSettingsSuccess => Pick("可移植设置已导出；文件不包含悬浮球位置、历史、路径、账号或额度数据。", "Portable settings exported. The file contains no orb position, history, paths, account, or quota data.");
+    public static string SettingsTransferIoError => Pick("无法读写所选设置文件，请检查路径和文件权限。", "The selected settings file could not be read or written. Check the path and file permissions.");
+    public static string SettingsTransferInvalid => Pick("这不是有效的 Codex 额度面板设置文件。", "This is not a valid Codex Quota Panel settings file.");
+    public static string SettingsTransferTooLarge => Pick("设置文件异常过大，已停止导入。", "The settings file is unexpectedly large, so import was stopped.");
+    public static string SettingsTransferUnsupported => Pick("此设置文件来自更新的格式版本，请先升级程序后再导入。", "This settings file uses a newer format. Update the app before importing it.");
     public static string TrendRecording => Pick("记录本地 24 小时趋势", "Record local 24-hour trends");
     public static string TrendRecordingHint => Pick("数据只保存在本机，可随时清除", "Stored only on this device and can be cleared anytime");
     public static string ClearHistory => Pick("清除趋势历史", "Clear trend history");
@@ -119,11 +143,13 @@ internal static class L10n
     public static string AboutThisApp => Pick("关于此应用", "About this app");
     public static string LocalPrivacyNote => Pick("本地读取额度数据 · 不上传会话内容 · MIT 开源", "Reads quota data locally · Does not upload session content · MIT licensed");
     public static string VersionLabel => Pick("版本", "Version");
+    public static string VersionAndUpdates => Pick("版本与更新", "Version & updates");
+    public static string AutomaticUpdateChecks => Pick("启动时自动检查", "Check automatically at startup");
     public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
     public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
     public static string ReleaseNotesSummary => Pick(
-        "修复高 DPI 下详情面板留白与文字错位，并降低拖动悬浮球时的重绘负载。",
-        "Fixes high-DPI detail layout and reduces redraw load while dragging the quota orb.");
+        "新增崩溃恢复、安全模式与设置导入导出，并优化多显示器、主题和五档火焰反馈。",
+        "Crash recovery, safe mode, portable settings, multi-monitor fixes, refined themes, and five-stage flame feedback.");
     public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
     public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");

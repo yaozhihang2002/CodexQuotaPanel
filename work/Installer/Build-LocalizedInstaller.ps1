@@ -1,7 +1,9 @@
 ﻿param(
     [Parameter(Mandatory = $true)]
     [string]$DevenvPath,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$Version = '0.3.0'
 )
 
 Set-StrictMode -Version Latest
@@ -14,9 +16,9 @@ $generatedProject = Join-Path $installerDir 'CodexQuotaPanelSetup.en-us.generate
 $generatedSolution = Join-Path $installerDir 'CodexQuotaPanelInstaller.en-us.generated.sln'
 $iconPath = Join-Path $installerDir '..\CodexQuotaPanel\Assets\CodexQuotaPanel.ico'
 $postProcessor = Join-Path $installerDir 'Set-OptionalDesktopShortcut.ps1'
-$baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-0.2.0-x64.msi"
-$englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-0.2.0-en-us-x64.msi"
-$transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-0.2.0-en-us.mst"
+$baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-x64.msi"
+$englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-$Version-en-us-x64.msi"
+$transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-en-us.mst"
 $validationMsi = Join-Path $installerDir '..\stability-qa\installer-language-transform-validation.msi'
 
 function Invoke-InstallerBuild {
@@ -87,12 +89,16 @@ function Get-MsiScalar {
 
 function New-EnglishProject {
     $text = Get-Content -LiteralPath $projectPath -Raw -Encoding UTF8
+    if (-not $text.Contains('"ProductVersion" = "8:' + $Version + '"'))
+    {
+        throw "Installer ProductVersion does not match requested version $Version."
+    }
     $replacements = [ordered]@{
         '"ProjectName" = "8:CodexQuotaPanelSetup"' = '"ProjectName" = "8:CodexQuotaPanelSetupEnUs"'
         '"LanguageId" = "3:2052"' = '"LanguageId" = "3:1033"'
         '"UILanguageId" = "3:2052"' = '"UILanguageId" = "3:1033"'
-        'Debug\\CodexQuotaPanel-0.2.0-x64.msi' = 'Debug-en-us\\CodexQuotaPanel-0.2.0-en-us-x64.msi'
-        'Release\\CodexQuotaPanel-0.2.0-x64.msi' = 'Release-en-us\\CodexQuotaPanel-0.2.0-en-us-x64.msi'
+        "Debug\\CodexQuotaPanel-$Version-x64.msi" = "Debug-en-us\\CodexQuotaPanel-$Version-en-us-x64.msi"
+        "Release\\CodexQuotaPanel-$Version-x64.msi" = "Release-en-us\\CodexQuotaPanel-$Version-en-us-x64.msi"
         '"Description" = "8:Codex 额度悬浮球与托盘面板"' = '"Description" = "8:Codex quota orb and tray panel"'
         '"LangId" = "3:2052"' = '"LangId" = "3:1033"'
         '"Title" = "8:Codex 额度面板安装程序"' = '"Title" = "8:CodexQuotaPanel Installer"'
@@ -201,4 +207,4 @@ Invoke-InstallerBuild $generatedSolution
 
 New-EnglishTransform
 Test-EnglishTransform
-Write-Output "PASS localized installer | zh-CN base + en-US transform | $transformPath"
+Write-Output "PASS localized installer v$Version | zh-CN base + en-US transform | $transformPath"

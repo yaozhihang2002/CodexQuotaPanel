@@ -6,6 +6,7 @@ internal readonly record struct ConsumptionRate(
     int SampleIntervals)
 {
     public static ConsumptionRate Idle => new(0d, 0d, 0);
+    public FlameActivityLevel Activity => FlameActivity.Classify(Intensity);
 }
 
 internal static class QuotaConsumptionRate
@@ -79,8 +80,9 @@ internal static class QuotaConsumptionRate
         if (bestIntervals == 0)
             return ConsumptionRate.Idle;
 
-        // Ease into the lively range so a normal background trickle remains a
-        // small cool flame while sustained rapid use becomes visibly energetic.
+        // Ease into the lively range.  FlameActivity maps the normalized value
+        // to frozen/cool/warm/hot/inferno presentation states without coupling
+        // the history estimator to any one visual style.
         var intensity = 1d - Math.Exp(-bestRate / 7d);
         if (bestNewestMinute != long.MinValue)
         {

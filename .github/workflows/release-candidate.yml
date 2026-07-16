@@ -1,0 +1,208 @@
+name: Build release candidate (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: Version expected in CodexQuotaPanel.csproj (for example 0.3.0)
+        required: true
+        type: string
+      publish:
+        description: Publish a GitHub pre-release after building
+        required: true
+        default: false
+        type: boolean
+      confirmation:
+        description: To publish, enter exactly "PUBLISH v<version>"; otherwise leave NO
+        required: true
+        default: "NO"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    name: Validate and package
+    runs-on: windows-2022
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Validate project version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath 'work/CodexQuotaPanel/CodexQuotaPanel.csproj' -Raw
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'CodexQuotaPanel.csproj does not contain a Version value.'
+          }
+          if ($version -cne '${{ inputs.expected_version }}') {
+            throw "Requested version ${{ inputs.expected_version }} does not match project version $version."
+          }
+          $expectedWin32Version = "$version.0"
+          $assemblyVersion = [string]$project.Project.PropertyGroup.AssemblyVersion
+          $fileVersion = [string]$project.Project.PropertyGroup.FileVersion
+          $informationalVersion = [string]$project.Project.PropertyGroup.InformationalVersion
+          if ($assemblyVersion -cne $expectedWin32Version -or $fileVersion -cne $expectedWin32Version) {
+            throw "AssemblyVersion/FileVersion must both be $expectedWin32Version; found $assemblyVersion / $fileVersion."
+          }
+          if ($informationalVersion -cne $version) {
+            throw "InformationalVersion must be $version; found $informationalVersion."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore work/CodexQuotaPanel.Tests/CodexQuotaPanel.Tests.csproj
+
+      - name: Build
+        run: dotnet build work/CodexQuotaPanel.Tests/CodexQuotaPanel.Tests.csproj -c Release --no-restore
+
+      - name: Run deterministic checks
+        run: dotnet run --project work/CodexQuotaPanel.Tests/CodexQuotaPanel.Tests.csproj -c Release --no-build -- --targeted-check
+
+      - name: Publish self-contained Windows payload
+        run: dotnet publish work/CodexQuotaPanel/CodexQuotaPanel.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o work/installer-stage/win-x64
+
+      - name: Install pinned Visual Studio Installer Projects extension
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $installationPath = & $vswhere -latest -products * -version '[17.0,18.0)' -property installationPath
+          if ([string]::IsNullOrWhiteSpace($installationPath)) {
+            throw 'Visual Studio 2022 was not found on the pinned windows-2022 runner.'
+          }
+
+          $devenv = Join-Path $installationPath 'Common7/IDE/devenv.com'
+          $vsixInstaller = Join-Path $installationPath 'Common7/IDE/VSIXInstaller.exe'
+          $vsix = Join-Path $env:RUNNER_TEMP 'MicrosoftVisualStudio2022InstallerProjects-3.0.0.vsix'
+          Invoke-WebRequest `
+            -Uri 'https://marketplace.visualstudio.com/_apis/public/gallery/publishers/VisualStudioClient/vsextensions/MicrosoftVisualStudio2022InstallerProjects/3.0.0/vspackage' `
+            -OutFile $vsix
+          $process = Start-Process -FilePath $vsixInstaller `
+            -ArgumentList @('/quiet', '/admin', '/force', $vsix) `
+            -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            throw "Visual Studio Installer Projects installation failed with exit code $($process.ExitCode)."
+          }
+          "DEVENV_PATH=$devenv" >> $env:GITHUB_ENV
+
+      - name: Build bilingual MSI and language transform
+        shell: pwsh
+        run: |
+          & 'work/Installer/Build-LocalizedInstaller.ps1' `
+            -DevenvPath $env:DEVENV_PATH `
+            -Configuration Release `
+            -Version '${{ steps.version.outputs.version }}'
+
+      - name: Assemble the five release attachments
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $candidate = Join-Path $PWD 'outputs/candidate'
+          New-Item -ItemType Directory -Path $candidate -Force | Out-Null
+
+          $portable = Join-Path $candidate "CodexQuotaPanel-$version-portable-x64.zip"
+          $setup = Join-Path $candidate "CodexQuotaPanel-$version-Setup.exe"
+          $source = Join-Path $candidate "CodexQuotaPanel-$version-source.zip"
+          $msi = Join-Path $candidate "CodexQuotaPanel-$version-x64.msi"
+          $builtMsi = "work/Installer/Release/CodexQuotaPanel-$version-x64.msi"
+          $transform = "work/Installer/Release/CodexQuotaPanel-$version-en-us.mst"
+
+          Compress-Archive -Path 'work/installer-stage/win-x64/*' `
+            -DestinationPath $portable -CompressionLevel Optimal
+          Copy-Item -LiteralPath $builtMsi -Destination $msi
+          & 'work/Installer/Build-LanguageSetupLauncher.ps1' `
+            -MsiPath $builtMsi `
+            -EnglishTransformPath $transform `
+            -OutputPath $setup `
+            -Version $version
+          git archive --format=zip --output=$source HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "git archive failed with exit code $LASTEXITCODE."
+          }
+
+          $attachments = @($setup, $portable, $source, $msi)
+          foreach ($attachment in $attachments) {
+            if (-not (Test-Path -LiteralPath $attachment)) {
+              throw "Expected release attachment was not created: $attachment"
+            }
+          }
+
+          $hashLines = $attachments |
+            ForEach-Object { Get-Item -LiteralPath $_ } |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+          $checksumName = "SHA256SUMS-v$version.txt"
+          [IO.File]::WriteAllLines(
+            (Join-Path $candidate $checksumName),
+            $hashLines,
+            [Text.UTF8Encoding]::new($false))
+
+          $actualNames = Get-ChildItem -LiteralPath $candidate -File | Sort-Object Name | Select-Object -ExpandProperty Name
+          $expectedNames = @(
+            "CodexQuotaPanel-$version-Setup.exe",
+            "CodexQuotaPanel-$version-portable-x64.zip",
+            "CodexQuotaPanel-$version-source.zip",
+            "CodexQuotaPanel-$version-x64.msi",
+            $checksumName
+          ) | Sort-Object
+          if (Compare-Object $expectedNames $actualNames) {
+            throw "Release attachment set is not exact: $($actualNames -join ', ')"
+          }
+
+      - name: Upload candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodexQuotaPanel-${{ steps.version.outputs.version }}-candidate
+          path: outputs/candidate/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish explicitly confirmed pre-release
+    needs: candidate
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    if: >-
+      ${{ inputs.publish == true &&
+          inputs.confirmation == format('PUBLISH v{0}', inputs.expected_version) &&
+          github.ref_type == 'tag' &&
+          github.ref_name == format('v{0}', inputs.expected_version) }}
+    steps:
+      - name: Download validated candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: CodexQuotaPanel-${{ needs.candidate.outputs.version }}-candidate
+          path: candidate
+
+      - name: Create pre-release without overwriting an existing release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'v${{ needs.candidate.outputs.version }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release $tag already exists; refusing to overwrite it."
+          }
+          $assets = Get-ChildItem -LiteralPath 'candidate' -File | ForEach-Object FullName
+          gh release create $tag $assets --verify-tag --prerelease `
+            --title "$tag Pre-release" `
+            --notes 'Manually confirmed release candidate built by GitHub Actions.'

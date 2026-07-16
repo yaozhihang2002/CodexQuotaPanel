@@ -22,6 +22,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private readonly EventWaitHandle _showSignal;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly AlertDedupState _alertState = AlertStateStore.Load();
+    private readonly GitHubReleaseUpdateService _updateService = new();
     private const int GlobalHotKeyId = 0x4351;
     private const uint ModAlt = 0x0001;
     private const uint ModControl = 0x0002;
@@ -32,14 +33,24 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private bool _hotKeyRegistered;
     private bool _systemEventsAttached;
     private bool _exiting;
+    private bool _safeMode;
     private int? _trayIconRemainingPercent;
     private bool _trayIconLive;
     private PanelPreferences _preferences;
+    private PanelPreferences _persistedPreferences;
     private QuotaSnapshot? _latestSnapshot;
 
-    public QuotaApplicationContext(EventWaitHandle showSignal)
+    public QuotaApplicationContext(
+        EventWaitHandle showSignal,
+        PanelPreferences initialPreferences,
+        bool safeMode = false)
     {
-        _preferences = PanelPreferenceManager.Load();
+        ArgumentNullException.ThrowIfNull(initialPreferences);
+        _safeMode = safeMode;
+        _persistedPreferences = PanelPreferenceManager.Normalize(initialPreferences);
+        _preferences = safeMode
+            ? CreateSafeModePreferences(_persistedPreferences)
+            : _persistedPreferences;
         L10n.SetLanguage((AppLanguage)_preferences.Language);
         UiPalette.SetTheme(_preferences.ThemeMode);
         _history = new QuotaHistoryStore(enabled: _preferences.TrendRecordingEnabled);
@@ -49,19 +60,19 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _form.OrbPositionChanged += point =>
         {
             _preferences = _preferences with { OrbX = point.X, OrbY = point.Y };
-            PanelPreferenceManager.Save(_preferences);
+            PersistRuntimePreferences();
         };
         _form.TopMostChangedByUser += value =>
         {
             if (_applyingPreferences) return;
             _preferences = _preferences with { AlwaysOnTop = value };
-            PanelPreferenceManager.Save(_preferences);
+            PersistRuntimePreferences();
         };
         _form.ViewStateChanged += state =>
         {
             if (_applyingPreferences) return;
             _preferences = _preferences with { LastViewMode = state };
-            PanelPreferenceManager.Save(_preferences);
+            PersistRuntimePreferences();
             UpdateMenuState();
         };
         _form.GlobalHotKeyPressed += OnGlobalHotKeyPressed;
@@ -126,18 +137,48 @@ internal sealed class QuotaApplicationContext : ApplicationContext
                 UpdateTrayIcon(_latestSnapshot?.RemainingPercent, live: false);
         });
         AttachSystemEvents();
-        _form.ShowOrb(animate: false);
+        // Restore while still invisible so startup never flashes at the default
+        // location before moving to the user's saved monitor position.
         _form.RestoreOrbLocation(_preferences.OrbX, _preferences.OrbY);
         ApplyStartupView();
         if (_preferences.LastViewMode != _form.ViewState)
         {
             _preferences = _preferences with { LastViewMode = _form.ViewState };
-            PanelPreferenceManager.Save(_preferences);
+            PersistRuntimePreferences();
         }
         UpdateGlobalHotKeyRegistration(showFailure: false);
         UpdateMenuState();
         _coordinatorStartTask = _coordinator.StartAsync();
         _showTask = Task.Run(WaitForShowSignal);
+        if (_safeMode)
+            ShowInformation(
+                L10n.Pick(
+                    "安全模式仅对本次运行生效，原有设置未被覆盖。",
+                    "Safe mode applies only to this run; saved settings were not overwritten."),
+                ToolTipIcon.Info);
+        else if (_preferences.CheckForUpdatesOnStartup)
+            _ = CheckForUpdatesOnStartupAsync();
+    }
+
+    internal static PanelPreferences CreateSafeModePreferences(PanelPreferences preferences)
+    {
+        preferences = PanelPreferenceManager.Normalize(preferences);
+        return preferences with
+        {
+            OrbOpacityPercent = 100,
+            OrbClickThrough = false,
+            AlwaysOnTop = true,
+            StartupViewMode = 1,
+            LastViewMode = QuotaForm.OrbViewState,
+            OrbSize = PanelPreferenceManager.DefaultOrbSize,
+            PositionLocked = false,
+            SnapToEdge = false,
+            HoverPreviewEnabled = false,
+            TrendRecordingEnabled = false,
+            ConsumptionFlameEnabled = false,
+            CheckForUpdatesOnStartup = false,
+            ThemeMode = 0
+        };
     }
 
     private void ApplyPreferencesToForm(PanelPreferences preferences)
@@ -255,10 +296,13 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private void ShowSettingsCenter()
     {
         _menu.Close();
-        var original = _preferences;
+        // Safe mode is only a runtime presentation overlay. Keep the settings
+        // editor anchored to the user's last persisted choices so pressing Save
+        // cannot silently replace them with safety defaults.
+        var original = _safeMode ? _persistedPreferences : _preferences;
         var originalStartup = StartupManager.IsEnabled();
         var resetRequested = false;
-        var lastPreview = original;
+        var lastPreview = _preferences;
         var diagnostics = SanitizedDiagnostics.Create(
             _latestSnapshot?.Source,
             _latestSnapshot?.ObservedAt,
@@ -268,8 +312,9 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         settings.PreviewPreferencesChanged += preview =>
         {
             preview = PanelPreferenceManager.Normalize(preview);
-            ApplyPreferencePreview(lastPreview, preview);
-            lastPreview = preview;
+            var runtimePreview = _safeMode ? CreateSafeModePreferences(preview) : preview;
+            ApplyPreferencePreview(lastPreview, runtimePreview);
+            lastPreview = runtimePreview;
         };
         settings.MoveToCurrentDisplayRequested += () =>
         {
@@ -284,17 +329,20 @@ internal sealed class QuotaApplicationContext : ApplicationContext
                 cleared ? L10n.Pick("趋势数据已清除", "Trend history cleared") : L10n.Pick("未能完全清除趋势数据", "Trend history could not be fully cleared"),
                 cleared ? ToolTipIcon.Info : ToolTipIcon.Warning);
         };
+        settings.CheckForUpdatesRequested += cancellationToken =>
+            _updateService.CheckAsync(force: true, cancellationToken);
         settings.ResetRequested += () => resetRequested = true;
         settings.SaveRequested += () =>
         {
             var selected = PanelPreferenceManager.Normalize(settings.SelectedPreferences);
             if (!resetRequested)
             {
+                var deviceState = _safeMode ? _persistedPreferences : _preferences;
                 selected = selected with
                 {
-                    OrbX = _preferences.OrbX,
-                    OrbY = _preferences.OrbY,
-                    LastViewMode = _preferences.LastViewMode
+                    OrbX = deviceState.OrbX,
+                    OrbY = deviceState.OrbY,
+                    LastViewMode = deviceState.LastViewMode
                 };
             }
 
@@ -311,19 +359,37 @@ internal sealed class QuotaApplicationContext : ApplicationContext
                     L10n.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
 
-            if (resetRequested) PanelPreferenceManager.DeleteAll();
-            var languageChanged = selected.Language != _preferences.Language;
-            _preferences = selected;
-            ApplyPreferencePreview(lastPreview, _preferences);
-            lastPreview = settings.SelectedPreferences;
             if (resetRequested)
             {
                 _form.ShowOrb(animate: false);
                 _form.MoveOrbToCurrentDisplay();
-                _preferences = _preferences with { LastViewMode = QuotaForm.OrbViewState };
-                SaveCurrentOrbLocation();
+                var location = _form.GetRestorableOrbLocation();
+                selected = selected with
+                {
+                    OrbX = location.X,
+                    OrbY = location.Y,
+                    LastViewMode = QuotaForm.OrbViewState
+                };
             }
-            PanelPreferenceManager.Save(_preferences);
+            if (!PanelPreferenceManager.TrySave(selected))
+            {
+                MessageBox.Show(
+                    settings,
+                    L10n.Pick(
+                        "设置无法写入本机配置文件。当前预览仍然有效，但尚未保存；请检查磁盘空间或文件权限后重试。",
+                        "Settings could not be written to the local configuration file. The preview is still active but not saved; check disk space or file permissions and try again."),
+                    L10n.SettingsTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var languageChanged = selected.Language != _preferences.Language;
+            _persistedPreferences = selected;
+            _preferences = selected;
+            _safeMode = false;
+            ApplyPreferencePreview(lastPreview, _preferences);
+            lastPreview = _preferences;
             UpdateGlobalHotKeyRegistration(showFailure: true);
             if (languageChanged) ApplyMenuLanguage();
             UpdateRuntimeMenu();
@@ -345,10 +411,38 @@ internal sealed class QuotaApplicationContext : ApplicationContext
 
     private void SaveCurrentOrbLocation()
     {
-        if (_form.IsDisposed) return;
+        if (_form.IsDisposed || _safeMode) return;
         var location = _form.GetRestorableOrbLocation();
         _preferences = _preferences with { OrbX = location.X, OrbY = location.Y };
-        PanelPreferenceManager.Save(_preferences);
+        PersistRuntimePreferences();
+    }
+
+    private void PersistRuntimePreferences()
+    {
+        if (_safeMode) return;
+        if (PanelPreferenceManager.TrySave(_preferences))
+            _persistedPreferences = _preferences;
+    }
+
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        try
+        {
+            var result = await _updateService.CheckAsync(
+                force: false,
+                _lifetime.Token).ConfigureAwait(false);
+            if (result.Status != UpdateCheckStatus.UpdateAvailable ||
+                string.IsNullOrWhiteSpace(result.LatestTag))
+                return;
+            SafeUi(() => ShowInformation(
+                L10n.Pick(
+                    $"发现新版本 {result.LatestTag}，可在“数据与关于”中查看。",
+                    $"Version {result.LatestTag} is available. Open Data & About to review it."),
+                ToolTipIcon.Info));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
     }
 
     private void ShowDetailsFromTray()
@@ -407,7 +501,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         if (_applyingPreferences) return;
         _preferences = _preferences with { OrbClickThrough = _clickThroughItem.Checked };
         _form.SetOrbClickThroughPreference(_preferences.OrbClickThrough);
-        PanelPreferenceManager.Save(_preferences);
+        PersistRuntimePreferences();
         if (!_preferences.OrbClickThrough) return;
 
         _tray.BalloonTipTitle = L10n.Pick("悬浮球已开启鼠标穿透", "Orb click-through enabled");
@@ -492,7 +586,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         {
             _preferences = _preferences with { OrbClickThrough = false };
             _form.SetOrbClickThroughPreference(false);
-            PanelPreferenceManager.Save(_preferences);
+            PersistRuntimePreferences();
             UpdateRuntimeMenu();
             _form.ShowOrb();
             ShowInformation(L10n.Pick("已关闭鼠标穿透并恢复悬浮球操作", "Mouse click-through disabled; orb controls restored"), ToolTipIcon.Info);
@@ -634,6 +728,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         trayIcon?.Dispose();
         _form.Dispose();
         _menu.Dispose();
+        _updateService.Dispose();
         _lifetime.Dispose();
         base.ExitThreadCore();
     }

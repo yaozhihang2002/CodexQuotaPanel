@@ -365,7 +365,7 @@ internal static class StabilitySuite
         form.SetConsumptionFlameEnabled(true);
         Pump();
         Check(form.ConsumptionIntensity == 0d && !form.OrbControl.FlameTimerRunning,
-            "Idle blue flame remains static with no timer");
+            "Frozen idle indicator remains static with no timer");
         form.SetHistory(fastHistory);
         Pump();
         Check(form.ConsumptionIntensity > 0.8d && form.OrbControl.FlameTimerRunning,

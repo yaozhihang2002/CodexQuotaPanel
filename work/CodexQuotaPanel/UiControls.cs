@@ -38,17 +38,20 @@ internal static class UiPalette
         Color Amber,
         Color Coral);
 
+    // Neutral surfaces keep the Windows UI familiar while the mint accent
+    // remains recognisably Codex.  Muted/faint and semantic colours retain at
+    // least normal-text contrast on their corresponding canvas and surface.
     private static readonly Colors DarkColors = new(
-        Color.FromArgb(20, 22, 21), Color.FromArgb(29, 32, 30), Color.FromArgb(36, 39, 37),
-        Color.FromArgb(52, 56, 52), Color.FromArgb(54, 58, 55), Color.FromArgb(239, 235, 220),
-        Color.FromArgb(151, 153, 143), Color.FromArgb(102, 105, 99), Color.FromArgb(106, 228, 176),
-        Color.FromArgb(126, 196, 255), Color.FromArgb(244, 185, 88), Color.FromArgb(255, 107, 102));
+        Color.FromArgb(16, 19, 18), Color.FromArgb(24, 28, 26), Color.FromArgb(34, 40, 37),
+        Color.FromArgb(55, 65, 59), Color.FromArgb(62, 73, 67), Color.FromArgb(242, 245, 243),
+        Color.FromArgb(168, 177, 172), Color.FromArgb(135, 145, 139), Color.FromArgb(88, 214, 166),
+        Color.FromArgb(118, 191, 242), Color.FromArgb(234, 180, 91), Color.FromArgb(240, 107, 103));
 
     private static readonly Colors LightColors = new(
-        Color.FromArgb(247, 248, 245), Color.FromArgb(255, 255, 252), Color.FromArgb(235, 238, 233),
-        Color.FromArgb(207, 213, 205), Color.FromArgb(200, 207, 199), Color.FromArgb(31, 36, 33),
-        Color.FromArgb(82, 91, 85), Color.FromArgb(112, 121, 114), Color.FromArgb(20, 145, 105),
-        Color.FromArgb(42, 121, 184), Color.FromArgb(181, 111, 12), Color.FromArgb(207, 68, 65));
+        Color.FromArgb(245, 247, 246), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 242, 240),
+        Color.FromArgb(201, 210, 205), Color.FromArgb(220, 227, 223), Color.FromArgb(24, 32, 28),
+        Color.FromArgb(94, 107, 100), Color.FromArgb(103, 115, 108), Color.FromArgb(8, 123, 88),
+        Color.FromArgb(40, 111, 168), Color.FromArgb(154, 95, 0), Color.FromArgb(184, 63, 59));
 
     private static Colors _colors = DarkColors;
 
@@ -125,6 +128,16 @@ internal static class UiPalette
 
     public static Color ForRemaining(double remaining) =>
         remaining <= 20 ? Coral : remaining <= 45 ? Amber : Mint;
+
+    public static Color Mix(Color from, Color to, float amount)
+    {
+        amount = Math.Clamp(amount, 0f, 1f);
+        return Color.FromArgb(
+            (int)Math.Round(from.A + (to.A - from.A) * amount),
+            (int)Math.Round(from.R + (to.R - from.R) * amount),
+            (int)Math.Round(from.G + (to.G - from.G) * amount),
+            (int)Math.Round(from.B + (to.B - from.B) * amount));
+    }
 
     // Display and body text intentionally share the platform's natural-width UI face.
     // This keeps Chinese text readable and avoids the cramped metrics of condensed fonts.
@@ -254,7 +267,6 @@ internal static class UiPalette
 
 internal sealed class QuotaOrbControl : Control
 {
-    private const double FlameIdleEpsilon = 0.005d;
     private readonly System.Windows.Forms.Timer _flameTimer;
     private QuotaSnapshot? _snapshot;
     private LimitBucket? _outerBucket;
@@ -271,6 +283,7 @@ internal sealed class QuotaOrbControl : Control
     private double _flameIntensity;
     private double _targetFlameIntensity;
     private double _flamePhase;
+    private FlameActivityLevel _flameActivity = FlameActivityLevel.Frozen;
 
     internal string OuterLabel => RingWindowCatalog.FormatShort(_configuration.Outer.WindowMinutes);
     internal string InnerLabel => RingWindowCatalog.FormatShort(_configuration.Inner.WindowMinutes);
@@ -282,6 +295,7 @@ internal sealed class QuotaOrbControl : Control
     internal bool FlameAnimationEnabled => _flameAnimationEnabled;
     internal int FlameStyle => _flameStyle;
     internal bool FlameTimerRunning => _flameTimer.Enabled;
+    internal FlameActivityLevel ActivityLevel => FlameActivity.Classify(_targetFlameIntensity);
 
     public QuotaOrbControl()
     {
@@ -301,14 +315,17 @@ internal sealed class QuotaOrbControl : Control
         _flameTimer.Tick += (_, _) =>
         {
             _flameIntensity += (_targetFlameIntensity - _flameIntensity) * 0.18d;
-            if (_targetFlameIntensity <= FlameIdleEpsilon && _flameIntensity <= FlameIdleEpsilon)
+            if (_targetFlameIntensity <= FlameActivity.FrozenMaximum &&
+                _flameIntensity <= FlameActivity.FrozenMaximum)
             {
                 _flameIntensity = 0d;
                 _flamePhase = 0d;
+                _flameActivity = FlameActivityLevel.Frozen;
                 _flameTimer.Stop();
             }
             else
             {
+                _flameActivity = FlameActivity.Classify(_flameIntensity, _flameActivity);
                 _flamePhase += 0.07d + _flameIntensity * 0.24d;
             }
             Invalidate();
@@ -357,13 +374,21 @@ internal sealed class QuotaOrbControl : Control
     public void SetConsumptionIntensity(double intensity)
     {
         _targetFlameIntensity = Math.Clamp(intensity, 0d, 1d);
-        if (!_flameTimer.Enabled)
+        // Hidden/test controls render the requested state immediately.  A live,
+        // visible orb instead eases out of the frozen state so a sudden sample
+        // cannot flash directly from ice to a full inferno.
+        if (!_flameTimer.Enabled &&
+            (!IsHandleCreated || !Visible || !_flameAnimationEnabled))
             _flameIntensity = _targetFlameIntensity;
-        if (_targetFlameIntensity <= FlameIdleEpsilon && _flameIntensity <= FlameIdleEpsilon)
+        if (_targetFlameIntensity <= FlameActivity.FrozenMaximum &&
+            _flameIntensity <= FlameActivity.FrozenMaximum)
         {
             _flameIntensity = 0d;
             _flamePhase = 0d;
+            _flameActivity = FlameActivityLevel.Frozen;
         }
+        else
+            _flameActivity = FlameActivity.Classify(_flameIntensity, _flameActivity);
         UpdateFlameTimer();
         Invalidate();
     }
@@ -455,16 +480,17 @@ internal sealed class QuotaOrbControl : Control
 
         if (_flameAnimationEnabled)
         {
+            var activity = FlameActivity.Classify(_flameIntensity, _flameActivity);
             switch (_flameStyle)
             {
                 case 0:
-                    DrawMinimalEmber(graphics, scale);
+                    DrawMinimalEmber(graphics, scale, activity);
                     break;
                 case 2:
-                    DrawPixelFlame(graphics, scale);
+                    DrawPixelFlame(graphics, scale, activity);
                     break;
                 default:
-                    DrawFluidFlame(graphics, scale);
+                    DrawFluidFlame(graphics, scale, activity);
                     break;
             }
         }
@@ -485,23 +511,50 @@ internal sealed class QuotaOrbControl : Control
             statusDiameter);
     }
 
-    private void DrawFluidFlame(Graphics graphics, float scale)
+    private void DrawFluidFlame(Graphics graphics, float scale, FlameActivityLevel activity)
     {
+        if (activity == FlameActivityLevel.Frozen)
+        {
+            DrawFluidFrostSeed(graphics, scale);
+            return;
+        }
+
         var intensity = (float)Math.Clamp(_flameIntensity, 0d, 1d);
+        var inferno = activity == FlameActivityLevel.Inferno
+            ? SmoothStep(FlameActivity.Progress(intensity, activity))
+            : 0f;
         var pulse = (float)Math.Sin(_flamePhase);
-        var sway = pulse * (0.35f + intensity * 1.15f) * scale;
-        var width = (5.8f + intensity * 5.4f) * scale;
-        var height = (7.2f + intensity * 9.8f + Math.Abs(pulse) * intensity * 1.8f) * scale;
+        var sway = pulse * (0.35f + intensity * 1.05f + inferno * 0.25f) * scale;
+        var width = (5.8f + intensity * 5.1f + inferno * 2.9f) * scale;
+        // Grow an inferno mostly sideways: the centre labels end around y=57 at
+        // the reference size, so extra height would collide with quota text.
+        var height = (7.2f + intensity * 9.2f + Math.Abs(pulse) * intensity * 1.5f + inferno * 1.1f) * scale;
         var centerX = Width / 2f + sway;
         var baseY = Math.Min(Height - 8f * scale, 76f * scale);
         var topY = baseY - height;
 
-        var cool = Color.FromArgb(92, 190, 255);
-        var warm = Color.FromArgb(255, 183, 76);
-        var hot = Color.FromArgb(255, 91, 72);
-        var flameColor = intensity < 0.58f
-            ? Blend(cool, warm, intensity / 0.58f)
-            : Blend(warm, hot, (intensity - 0.58f) / 0.42f);
+        var flameColor = FlameColor(intensity, activity);
+
+        if (inferno > 0.01f)
+        {
+            using var sideBrush = new SolidBrush(Color.FromArgb(
+                Math.Clamp((int)(220f * inferno), 0, 220),
+                Blend(flameColor, Color.FromArgb(255, 178, 72), 0.42f)));
+            using var leftTongue = CreateFlamePath(
+                centerX - width * 0.43f,
+                baseY + 0.2f * scale,
+                width * (0.34f + inferno * 0.24f),
+                height * (0.45f + inferno * 0.25f),
+                -sway * 0.42f - 0.7f * scale);
+            using var rightTongue = CreateFlamePath(
+                centerX + width * 0.43f,
+                baseY + 0.2f * scale,
+                width * (0.31f + inferno * 0.23f),
+                height * (0.42f + inferno * 0.24f),
+                sway * 0.35f + 0.65f * scale);
+            graphics.FillPath(sideBrush, leftTongue);
+            graphics.FillPath(sideBrush, rightTongue);
+        }
 
         using var outer = CreateFlamePath(centerX, baseY, width, height, sway * 0.45f);
         // A restrained halo softens the tiny flame silhouette without turning
@@ -518,7 +571,7 @@ internal sealed class QuotaOrbControl : Control
             LinearGradientMode.Vertical);
         graphics.FillPath(outerBrush, outer);
 
-        var innerIntensity = Math.Clamp((intensity - 0.12f) / 0.88f, 0f, 1f);
+        var innerIntensity = Math.Clamp((intensity - 0.08f) / 0.92f, 0f, 1f);
         if (innerIntensity > 0f)
         {
             var innerHeight = height * (0.46f + innerIntensity * 0.12f);
@@ -529,14 +582,20 @@ internal sealed class QuotaOrbControl : Control
                 innerWidth,
                 innerHeight,
                 -sway * 0.18f);
-            using var innerBrush = new SolidBrush(Color.FromArgb(
-                205,
-                Blend(Color.FromArgb(208, 246, 255), Color.FromArgb(255, 241, 174), innerIntensity)));
+            var coreColor = FlameCoreColor(intensity, activity);
+            using var innerBrush = new SolidBrush(Color.FromArgb(215 + (int)(inferno * 32f), coreColor));
             graphics.FillPath(innerBrush, inner);
         }
 
-        if (intensity > 0.68f)
-            DrawFluidEmbers(graphics, centerX, topY, width, height, sway, scale, intensity, flameColor);
+        var emberVisibility = activity switch
+        {
+            FlameActivityLevel.Hot => SmoothStep(FlameActivity.Progress(intensity, activity)),
+            FlameActivityLevel.Inferno => 1f,
+            _ => 0f
+        };
+        if (emberVisibility > 0.01f)
+            DrawFluidEmbers(graphics, centerX, topY, width, height, sway, scale,
+                intensity, flameColor, emberVisibility, inferno);
     }
 
     private void DrawFluidEmbers(
@@ -548,15 +607,20 @@ internal sealed class QuotaOrbControl : Control
         float sway,
         float scale,
         float intensity,
-        Color flameColor)
+        Color flameColor,
+        float visibility,
+        float inferno)
     {
         // Staggered, tapered embers replace the old isolated circular spark.
         // Their short lifetime and opposing drift keep the motion organic while
         // remaining legible on a 56 px orb.
-        ReadOnlySpan<float> phaseOffsets = stackalloc float[] { 0.08f, 0.47f, 0.79f };
-        ReadOnlySpan<float> sideOffsets = stackalloc float[] { 0.62f, -0.42f, 0.88f };
+        ReadOnlySpan<float> phaseOffsets = stackalloc float[] { 0.08f, 0.47f, 0.79f, 0.28f, 0.66f };
+        ReadOnlySpan<float> sideOffsets = stackalloc float[] { 0.62f, -0.42f, 0.88f, -0.84f, 0.25f };
+        var emberCount = inferno > 0f
+            ? 3 + (int)MathF.Round(inferno * 2f)
+            : 1 + (int)MathF.Round(visibility * 2f);
 
-        for (var index = 0; index < phaseOffsets.Length; index++)
+        for (var index = 0; index < emberCount; index++)
         {
             var life = (float)((_flamePhase * (0.205d + index * 0.018d) + phaseOffsets[index]) % 1d);
             var envelope = MathF.Sin(life * MathF.PI);
@@ -568,7 +632,7 @@ internal sealed class QuotaOrbControl : Control
             var y = topY + flameHeight * (0.56f - life * 0.62f);
             var emberHeight = (1.25f + intensity * 1.05f - life * 0.34f) * scale;
             var emberWidth = Math.Max(0.34f * scale, emberHeight * 0.3f);
-            var alpha = Math.Clamp((int)(168f * envelope * (1f - life * 0.35f)), 0, 168);
+            var alpha = Math.Clamp((int)(168f * envelope * (1f - life * 0.35f) * visibility), 0, 168);
 
             using var trail = new Pen(Color.FromArgb(alpha / 4, flameColor), Math.Max(0.42f, 0.34f * scale))
             {
@@ -596,14 +660,23 @@ internal sealed class QuotaOrbControl : Control
         }
     }
 
-    private void DrawMinimalEmber(Graphics graphics, float scale)
+    private void DrawMinimalEmber(Graphics graphics, float scale, FlameActivityLevel activity)
     {
+        if (activity == FlameActivityLevel.Frozen)
+        {
+            DrawMinimalFrostSeed(graphics, scale);
+            return;
+        }
+
         var intensity = (float)Math.Clamp(_flameIntensity, 0d, 1d);
         var breath = 0.5f + 0.5f * (float)Math.Sin(_flamePhase * 0.72d);
         var drift = (float)Math.Sin(_flamePhase * 0.43d + 0.8d) * 0.42f * scale;
-        var color = FlameColor(intensity);
-        var emberWidth = (5.2f + intensity * 3.3f + breath * 0.45f) * scale;
-        var emberHeight = (3.3f + intensity * 2.2f + breath * 0.35f) * scale;
+        var inferno = activity == FlameActivityLevel.Inferno
+            ? SmoothStep(FlameActivity.Progress(intensity, activity))
+            : 0f;
+        var color = FlameColor(intensity, activity);
+        var emberWidth = (5.2f + intensity * 3.3f + breath * 0.45f + inferno * 1.4f) * scale;
+        var emberHeight = (3.3f + intensity * 2.2f + breath * 0.35f + inferno * 0.5f) * scale;
         var centerX = Width / 2f + drift;
         var baseY = Math.Min(Height - 8.5f * scale, 76f * scale);
         var centerY = baseY - emberHeight * 0.45f;
@@ -647,9 +720,15 @@ internal sealed class QuotaOrbControl : Control
                 centerX + emberWidth * (0.13f + breath * 0.08f),
                 centerY - emberHeight * 0.2f);
 
-        if (intensity <= 0.58f) return;
+        var wispVisibility = activity switch
+        {
+            FlameActivityLevel.Hot => SmoothStep(FlameActivity.Progress(intensity, activity)),
+            FlameActivityLevel.Inferno => 1f,
+            _ => 0f
+        };
+        if (wispVisibility <= 0.01f) return;
         var wispLife = 0.5f + 0.5f * (float)Math.Sin(_flamePhase * 0.8d + 1.1d);
-        var wispHeight = (2.1f + intensity * 2.6f + wispLife * 1.2f) * scale;
+        var wispHeight = (1.4f + wispVisibility * (0.7f + intensity * 2.6f + wispLife * 1.2f)) * scale;
         using var wisp = CreateFlamePath(
             centerX + emberWidth * 0.16f,
             centerY - emberHeight * 0.35f,
@@ -657,16 +736,44 @@ internal sealed class QuotaOrbControl : Control
             wispHeight,
             -drift * 0.7f);
         using var wispBrush = new SolidBrush(Color.FromArgb(
-            55 + (int)(intensity * 55f),
+            Math.Clamp((int)((55f + intensity * 55f) * wispVisibility), 0, 110),
             Blend(Color.White, color, 0.55f)));
         graphics.FillPath(wispBrush, wisp);
+
+        if (inferno <= 0.01f) return;
+        var secondLife = 0.5f + 0.5f * (float)Math.Sin(_flamePhase * 0.92d + 3.2d);
+        using var secondWisp = CreateFlamePath(
+            centerX - emberWidth * 0.18f,
+            centerY - emberHeight * 0.25f,
+            Math.Max(0.7f * scale, emberWidth * 0.14f),
+            (2.6f + inferno * 3.2f + secondLife) * scale,
+            drift * 0.62f);
+        using var secondBrush = new SolidBrush(Color.FromArgb(
+            Math.Clamp((int)(120f * inferno), 0, 120),
+            Blend(Color.FromArgb(255, 241, 183), color, 0.38f)));
+        graphics.FillPath(secondBrush, secondWisp);
     }
 
-    private void DrawPixelFlame(Graphics graphics, float scale)
+    private void DrawPixelFlame(Graphics graphics, float scale, FlameActivityLevel activity)
     {
+        if (activity == FlameActivityLevel.Frozen)
+        {
+            DrawPixelFrostSeed(graphics, scale, 0f);
+            return;
+        }
+
         var intensity = (float)Math.Clamp(_flameIntensity, 0d, 1d);
+        if (activity == FlameActivityLevel.Cool)
+        {
+            var thaw = SmoothStep(FlameActivity.Progress(intensity, activity));
+            if (thaw < 0.35f)
+            {
+                DrawPixelFrostSeed(graphics, scale, thaw);
+                return;
+            }
+        }
         var frame = (int)Math.Floor((_flamePhase * 1.65d) % 4d);
-        var color = FlameColor(intensity);
+        var color = FlameColor(intensity, activity);
         var cell = Math.Max(2, (int)Math.Round((2.35f + intensity * 0.55f) * scale));
         var originX = (int)Math.Round(Width / 2f - cell / 2f);
         var baseY = (int)Math.Round(Math.Min(Height - 7f * scale, 77f * scale));
@@ -679,8 +786,8 @@ internal sealed class QuotaOrbControl : Control
 
             using var outer = new SolidBrush(Color.FromArgb(245, Blend(color, UiPalette.Canvas, 0.18f)));
             using var middle = new SolidBrush(Color.FromArgb(250, color));
-            using var core = new SolidBrush(Color.FromArgb(255,
-                Blend(Color.FromArgb(211, 247, 255), Color.FromArgb(255, 238, 130), intensity)));
+            var coreColor = FlameCoreColor(intensity, activity);
+            using var core = new SolidBrush(coreColor);
 
             Span<Point> outerCells = stackalloc Point[]
             {
@@ -707,13 +814,156 @@ internal sealed class QuotaOrbControl : Control
             };
             DrawPixelCells(graphics, core, originX, baseY, cell, coreCells);
 
-            if (intensity > 0.52f)
+            var hotProgress = activity switch
+            {
+                FlameActivityLevel.Hot => SmoothStep(FlameActivity.Progress(intensity, activity)),
+                FlameActivityLevel.Inferno => 1f,
+                _ => 0f
+            };
+            var infernoProgress = activity == FlameActivityLevel.Inferno
+                ? SmoothStep(FlameActivity.Progress(intensity, activity))
+                : 0f;
+
+            if (hotProgress > 0.18f)
             {
                 var emberX = frame is 0 or 1 ? 2 : -2;
                 FillPixelCell(graphics, middle, originX, baseY, cell, emberX, 5);
-                if (intensity > 0.82f && frame is 1 or 3)
+                if (hotProgress > 0.68f && frame is 1 or 3)
                     FillPixelCell(graphics, outer, originX, baseY, cell, -emberX, 4);
             }
+
+            if (infernoProgress > 0.12f)
+            {
+                FillPixelCell(graphics, outer, originX, baseY, cell, -3, 0);
+                FillPixelCell(graphics, outer, originX, baseY, cell, 3, 0);
+            }
+            if (infernoProgress > 0.38f)
+                FillPixelCell(graphics, middle, originX, baseY, cell, frame is 0 or 3 ? -2 : 2, 2);
+            if (infernoProgress > 0.68f)
+                FillPixelCell(graphics, middle, originX, baseY, cell, frame is 0 or 1 ? 1 : -1, 5);
+        }
+        finally
+        {
+            graphics.Restore(state);
+        }
+    }
+
+    private void DrawMinimalFrostSeed(Graphics graphics, float scale)
+    {
+        var width = 5.35f * scale;
+        var height = 3.45f * scale;
+        var centerX = Width / 2f;
+        var baseY = Math.Min(Height - 8.5f * scale, 76f * scale);
+        var centerY = baseY - height * 0.45f;
+        var ice = Color.FromArgb(112, 205, 252);
+
+        using (var glow = new SolidBrush(Color.FromArgb(36, ice)))
+            graphics.FillEllipse(glow,
+                centerX - width * 0.95f,
+                centerY - height * 1.1f,
+                width * 1.9f,
+                height * 2.2f);
+        using var seed = CreateEmberPath(centerX, centerY, width, height);
+        using (var fill = new LinearGradientBrush(
+                   new RectangleF(centerX - width / 2f, centerY - height / 2f, width, height),
+                   Blend(Color.White, ice, 0.26f),
+                   Blend(ice, UiPalette.Canvas, 0.18f),
+                   LinearGradientMode.Vertical))
+            graphics.FillPath(fill, seed);
+        using (var rim = new Pen(Color.FromArgb(205, ice), Math.Max(0.65f, 0.72f * scale))
+               {
+                   LineJoin = LineJoin.Round
+               })
+            graphics.DrawPath(rim, seed);
+        using var glint = new Pen(Color.FromArgb(220, Color.White), Math.Max(0.55f, 0.6f * scale))
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+        graphics.DrawLine(glint,
+            centerX - width * 0.2f, centerY - height * 0.12f,
+            centerX + width * 0.08f, centerY - height * 0.27f);
+    }
+
+    private void DrawFluidFrostSeed(Graphics graphics, float scale)
+    {
+        var width = 5.9f * scale;
+        var height = 7.45f * scale;
+        var centerX = Width / 2f;
+        var baseY = Math.Min(Height - 8f * scale, 76f * scale);
+        var topY = baseY - height;
+        var ice = Color.FromArgb(108, 201, 255);
+
+        using var seed = CreateFlamePath(centerX, baseY, width, height, 0f);
+        using (var halo = new Pen(Color.FromArgb(42, ice), Math.Max(1f, 1.55f * scale))
+               {
+                   LineJoin = LineJoin.Round
+               })
+            graphics.DrawPath(halo, seed);
+        using (var fill = new LinearGradientBrush(
+                   new RectangleF(centerX - width, topY, width * 2f, height),
+                   Blend(Color.White, ice, 0.22f),
+                   Blend(ice, UiPalette.Canvas, 0.16f),
+                   LinearGradientMode.Vertical))
+            graphics.FillPath(fill, seed);
+        using (var rim = new Pen(Color.FromArgb(195, ice), Math.Max(0.62f, 0.7f * scale))
+               {
+                   LineJoin = LineJoin.Round
+               })
+            graphics.DrawPath(rim, seed);
+
+        using var facet = new Pen(Color.FromArgb(180, Blend(Color.White, ice, 0.25f)),
+            Math.Max(0.52f, 0.58f * scale))
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+        graphics.DrawLine(facet, centerX, topY + height * 0.22f, centerX, baseY - height * 0.18f);
+        graphics.DrawLine(facet,
+            centerX - width * 0.19f, topY + height * 0.52f,
+            centerX + width * 0.19f, topY + height * 0.52f);
+    }
+
+    private void DrawPixelFrostSeed(Graphics graphics, float scale, float thaw)
+    {
+        var cell = Math.Max(2, (int)Math.Round(2.2f * scale));
+        var originX = (int)Math.Round(Width / 2f - cell / 2f);
+        var baseY = (int)Math.Round(Math.Min(Height - 7f * scale, 77f * scale));
+        var state = graphics.Save();
+        try
+        {
+            graphics.SmoothingMode = SmoothingMode.None;
+            graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+            graphics.PixelOffsetMode = PixelOffsetMode.Half;
+            using var edge = new SolidBrush(Blend(Color.FromArgb(102, 190, 255), UiPalette.Canvas, 0.1f));
+            using var body = new SolidBrush(Color.FromArgb(120, 214, 255));
+            using var shine = new SolidBrush(Color.FromArgb(225, 250, 255));
+
+            Span<Point> coreSnowflake = stackalloc Point[]
+            {
+                new(0, 0), new(0, 1), new(0, 2), new(0, 3), new(0, 4),
+                new(-1, 2), new(1, 2)
+            };
+            DrawPixelCells(graphics, edge, originX, baseY, cell, coreSnowflake);
+            if (thaw < 0.24f)
+            {
+                Span<Point> diagonals = stackalloc Point[]
+                {
+                    new(-1, 1), new(1, 1), new(-1, 3), new(1, 3)
+                };
+                DrawPixelCells(graphics, edge, originX, baseY, cell, diagonals);
+            }
+            if (thaw < 0.12f)
+            {
+                FillPixelCell(graphics, edge, originX, baseY, cell, -2, 2);
+                FillPixelCell(graphics, edge, originX, baseY, cell, 2, 2);
+            }
+            Span<Point> inner = stackalloc Point[]
+            {
+                new(0, 1), new(0, 2), new(0, 3), new(-1, 2), new(1, 2)
+            };
+            DrawPixelCells(graphics, body, originX, baseY, cell, inner);
+            FillPixelCell(graphics, shine, originX, baseY, cell, 0, 2);
         }
         finally
         {
@@ -761,14 +1011,51 @@ internal sealed class QuotaOrbControl : Control
         int y) =>
         graphics.FillRectangle(brush, originX + x * cell, baseY - (y + 1) * cell, cell, cell);
 
-    private static Color FlameColor(float intensity)
+    private static Color FlameColor(float intensity, FlameActivityLevel activity)
     {
-        var cool = Color.FromArgb(92, 190, 255);
-        var warm = Color.FromArgb(255, 183, 76);
-        var hot = Color.FromArgb(255, 91, 72);
-        return intensity < 0.58f
-            ? Blend(cool, warm, intensity / 0.58f)
-            : Blend(warm, hot, (intensity - 0.58f) / 0.42f);
+        var progress = SmoothStep(FlameActivity.Progress(intensity, activity));
+        var frost = Color.FromArgb(102, 196, 255);
+        var cool = Color.FromArgb(122, 216, 247);
+        // A direct cyan-to-orange RGB blend crosses a dull grey-brown in the
+        // middle.  Route the warm stage through a luminous champagne tone so
+        // the representative "warm flame" remains bright at tiny orb sizes.
+        var warmBridge = Color.FromArgb(255, 237, 158);
+        var warm = Color.FromArgb(255, 198, 76);
+        var hot = Color.FromArgb(255, 100, 66);
+        var inferno = Color.FromArgb(220, 49, 45);
+        return activity switch
+        {
+            FlameActivityLevel.Cool => Blend(frost, cool, progress),
+            FlameActivityLevel.Warm => BlendThrough(cool, warmBridge, warm, progress),
+            FlameActivityLevel.Hot => Blend(warm, hot, progress),
+            FlameActivityLevel.Inferno => Blend(hot, inferno, progress),
+            _ => frost
+        };
+    }
+
+    private static Color FlameCoreColor(float intensity, FlameActivityLevel activity)
+    {
+        var progress = SmoothStep(FlameActivity.Progress(intensity, activity));
+        var frost = Color.FromArgb(218, 247, 255);
+        var cool = Color.FromArgb(228, 250, 255);
+        var warmBridge = Color.FromArgb(255, 255, 232);
+        var warm = Color.FromArgb(255, 249, 202);
+        var hot = Color.FromArgb(255, 238, 145);
+        var inferno = Color.FromArgb(255, 224, 118);
+        return activity switch
+        {
+            FlameActivityLevel.Cool => Blend(frost, cool, progress),
+            FlameActivityLevel.Warm => BlendThrough(cool, warmBridge, warm, progress),
+            FlameActivityLevel.Hot => Blend(warm, hot, progress),
+            FlameActivityLevel.Inferno => Blend(hot, inferno, progress),
+            _ => frost
+        };
+    }
+
+    private static float SmoothStep(float value)
+    {
+        value = Math.Clamp(value, 0f, 1f);
+        return value * value * (3f - 2f * value);
     }
 
     private static GraphicsPath CreateFlamePath(float centerX, float baseY, float width, float height, float sway)
@@ -805,9 +1092,19 @@ internal sealed class QuotaOrbControl : Control
             (int)Math.Round(from.B + (to.B - from.B) * amount));
     }
 
+    private static Color BlendThrough(Color from, Color midpoint, Color to, float amount)
+    {
+        amount = Math.Clamp(amount, 0f, 1f);
+        const float midpointPosition = 0.48f;
+        return amount <= midpointPosition
+            ? Blend(from, midpoint, amount / midpointPosition)
+            : Blend(midpoint, to, (amount - midpointPosition) / (1f - midpointPosition));
+    }
+
     private void UpdateFlameTimer()
     {
-        var hasMotion = _targetFlameIntensity > FlameIdleEpsilon || _flameIntensity > FlameIdleEpsilon;
+        var hasMotion = _targetFlameIntensity > FlameActivity.FrozenMaximum ||
+                        _flameIntensity > FlameActivity.FrozenMaximum;
         if (_flameAnimationEnabled && !_animationPaused && hasMotion && Visible && IsHandleCreated && !DesignMode)
             _flameTimer.Start();
         else
@@ -825,7 +1122,7 @@ internal sealed class QuotaOrbControl : Control
     {
         const float start = -220;
         const float sweep = 260;
-        using var track = new Pen(Color.FromArgb(54, 60, 56), width)
+        using var track = new Pen(UiPalette.Track, width)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
@@ -1141,7 +1438,11 @@ internal sealed class ActionButton : Button
         var bounds = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         using var path = UiPalette.RoundedRect(bounds, 8);
         var background = Primary
-            ? (_pressed ? Color.FromArgb(196, 193, 181) : _hovered ? Color.FromArgb(222, 219, 205) : UiPalette.Text)
+            ? (_pressed
+                ? UiPalette.Mix(UiPalette.Text, UiPalette.Canvas, 0.24f)
+                : _hovered
+                    ? UiPalette.Mix(UiPalette.Text, UiPalette.Canvas, 0.1f)
+                    : UiPalette.Text)
             : (_pressed ? UiPalette.Track : _hovered ? UiPalette.SurfaceRaised : UiPalette.Surface);
         using var fill = new SolidBrush(background);
         e.Graphics.FillPath(fill, path);

@@ -14,11 +14,26 @@ internal sealed record RingDisplayConfiguration(
     Color OuterColor,
     Color InnerColor)
 {
-    public static RingDisplayConfiguration FromPreferences(PanelPreferences preferences) => new(
-        new RingWindowSelection(preferences.OuterWindowMinutes, (RingWindowRole)preferences.OuterWindowRole),
-        new RingWindowSelection(preferences.InnerWindowMinutes, (RingWindowRole)preferences.InnerWindowRole),
-        Color.FromArgb(preferences.OuterColorArgb),
-        Color.FromArgb(preferences.InnerColorArgb));
+    public static RingDisplayConfiguration FromPreferences(PanelPreferences preferences)
+    {
+        var colors = UiPalette.ResolveColors(preferences.ThemeMode);
+        var outer = Color.FromArgb(preferences.OuterColorArgb);
+        var inner = Color.FromArgb(preferences.InnerColorArgb);
+
+        // Legacy defaults were tuned only for the old dark canvas and become
+        // nearly invisible on a light orb.  Treat those two exact values as
+        // semantic defaults while preserving every genuinely custom colour.
+        if (preferences.OuterColorArgb == PanelPreferenceManager.DefaultOuterColorArgb)
+            outer = colors.Mint;
+        if (preferences.InnerColorArgb == PanelPreferenceManager.DefaultInnerColorArgb)
+            inner = colors.Sky;
+
+        return new RingDisplayConfiguration(
+            new RingWindowSelection(preferences.OuterWindowMinutes, (RingWindowRole)preferences.OuterWindowRole),
+            new RingWindowSelection(preferences.InnerWindowMinutes, (RingWindowRole)preferences.InnerWindowRole),
+            outer,
+            inner);
+    }
 }
 
 internal sealed record RingWindowOption(RingWindowSelection Selection, string Label, bool Available)

@@ -4,7 +4,9 @@
     [Parameter(Mandatory = $true)]
     [string]$EnglishTransformPath,
     [Parameter(Mandatory = $true)]
-    [string]$OutputPath
+    [string]$OutputPath,
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$Version = '0.3.0'
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +26,12 @@ $resolvedMsi = (Resolve-Path -LiteralPath $MsiPath).Path
 $resolvedTransform = (Resolve-Path -LiteralPath $EnglishTransformPath).Path
 $resolvedSource = (Resolve-Path -LiteralPath $sourcePath).Path
 $resolvedIcon = (Resolve-Path -LiteralPath $iconPath).Path
+$sourceText = Get-Content -LiteralPath $resolvedSource -Raw -Encoding UTF8
+$expectedAssemblyVersion = "$Version.0"
+if (-not $sourceText.Contains("[assembly: AssemblyVersion(`"$expectedAssemblyVersion`")]"))
+{
+    throw "Setup launcher source version does not match requested version $Version."
+}
 $fullOutput = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $fullOutput
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
@@ -49,10 +57,10 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fullOutput))
 }
 
 $assembly = [Reflection.AssemblyName]::GetAssemblyName($fullOutput)
-if ($assembly.Version.ToString() -ne '0.2.0.0')
+if ($assembly.Version.ToString() -ne $expectedAssemblyVersion)
 {
     throw "Unexpected setup launcher version: $($assembly.Version)"
 }
 
 $fileSize = (Get-Item -LiteralPath $fullOutput).Length
-Write-Output "PASS setup launcher | default=zh-CN + en-US option + embedded MSI/MST | bytes=$fileSize | $fullOutput"
+Write-Output "PASS setup launcher v$Version | default=zh-CN + en-US option + embedded MSI/MST | bytes=$fileSize | $fullOutput"

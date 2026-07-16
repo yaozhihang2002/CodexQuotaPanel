@@ -6,7 +6,7 @@ using System.Text.Json;
 
 TestProcessGuard.Install();
 
-if (args.Length == 1 && args[0] == "--v020-targeted-check")
+if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check")
 {
     var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
@@ -16,22 +16,19 @@ if (args.Length == 1 && args[0] == "--v020-targeted-check")
         primaryRow.Bottom >= secondaryRow.Top || primaryButton.Bottom >= panel.Bottom)
         throw new InvalidOperationException("The deterministic 175% DPI layout check failed.");
 
-    var frames = 0;
-    var lastFrame = 0L;
-    for (var now = 4L; now <= 1000L; now += 4L)
-    {
-        if (!QuotaForm.ShouldApplyOrbDragFrame(lastFrame, now)) continue;
-        lastFrame = now;
-        frames++;
-    }
-    if (frames is < 120 or > 128)
-        throw new InvalidOperationException($"250 Hz drag input produced {frames} window updates.");
+    var negativeArea = new Rectangle(-1920, 0, 1920, 1080);
+    var clamped = DisplayPlacement.ClampToArea(new Rectangle(-2100, 1000, 132, 132), negativeArea);
+    if (clamped != new Rectangle(-1920, 948, 132, 132) ||
+        DisplayPlacement.ScaleLogicalPixels(88, 144) != 132 ||
+        !QuotaForm.IsOrbDragGesture(new Size(5, 0), Size.Empty, new Size(8, 8)) ||
+        QuotaForm.IsOrbDragGesture(new Size(2, 2), Size.Empty, new Size(8, 8)))
+        throw new InvalidOperationException("The native-drag or DPI-aware monitor placement check failed.");
 
-    Console.WriteLine($"PASS v0.2.0 targeted check | 175% panel={panel.Width}x{panel.Height} | 250 Hz input -> {frames} moves/s");
+    Console.WriteLine($"PASS targeted check | 175% panel={panel.Width}x{panel.Height} | DPI-aware negative-screen placement");
     return;
 }
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -84,6 +81,12 @@ if (args.Length >= 2 && args[0] == "--settings-header-preview")
 if (args.Length >= 2 && args[0] == "--flame-style-preview")
 {
     FlameStylePreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--flame-state-preview")
+{
+    FlameStatePreview.Run(args[1]);
     return;
 }
 
@@ -295,6 +298,8 @@ finally
     Registry.CurrentUser.DeleteSubKeyTree(preferenceTestKey, throwOnMissingSubKey: false);
 }
 
+await RecoveryUpdateChecks.RunAsync();
+
 var customConfiguration = new RingDisplayConfiguration(
     new RingWindowSelection(60, RingWindowRole.Primary),
     new RingWindowSelection(43200, RingWindowRole.Secondary),
@@ -348,6 +353,12 @@ using (var chineseBodyFont = UiPalette.Body(9f))
 
 var flameNow = DateTimeOffset.UtcNow;
 var flameMinute = flameNow.ToUnixTimeSeconds() / 60;
+Assert(FlameActivity.Classify(0d) == FlameActivityLevel.Frozen &&
+       FlameActivity.Classify(0.12d) == FlameActivityLevel.Cool &&
+       FlameActivity.Classify(0.4d) == FlameActivityLevel.Warm &&
+       FlameActivity.Classify(0.7d) == FlameActivityLevel.Hot &&
+       FlameActivity.Classify(0.9d) == FlameActivityLevel.Inferno,
+    "Consumption intensity did not map to the five visual activity states.");
 Assert(QuotaForm.CalculateConsumptionIntensity([], flameNow) == 0d,
     "Empty history produced a non-idle consumption flame.");
 Assert(QuotaForm.CalculateConsumptionIntensity([
@@ -362,6 +373,14 @@ var fastConsumption = QuotaConsumptionRate.Evaluate([
 ], flameNow);
 Assert(fastConsumption.PercentPerHour >= 11.9d && fastConsumption.Intensity >= 0.8d,
     "Fast recent consumption did not produce a vigorous flame.");
+Assert(fastConsumption.Activity == FlameActivityLevel.Inferno,
+    "Fast recent consumption did not select the inferno visual state.");
+
+var lightDefaultRings = RingDisplayConfiguration.FromPreferences(new PanelPreferences { ThemeMode = 2 });
+var lightThemeColors = UiPalette.ResolveColors(2);
+Assert(lightDefaultRings.OuterColor.ToArgb() == lightThemeColors.Mint.ToArgb() &&
+       lightDefaultRings.InnerColor.ToArgb() == lightThemeColors.Sky.ToArgb(),
+    "Default ring colours did not adapt to the light theme.");
 
 var alertNow = DateTimeOffset.Now;
 var alertReset = alertNow.AddHours(3);
@@ -505,18 +524,17 @@ Assert(highDpiPrimaryRow.Bottom < highDpiSecondaryRow.Top,
     "175% DPI quota rows overlap after scaling.");
 Assert(highDpiPrimaryButton.Bottom < highDpiPanel.Bottom,
     "175% DPI primary action escaped the detail panel.");
-var appliedDragFrames = 0;
-var lastAppliedDragFrame = 0L;
-for (var now = 4L; now <= 1000L; now += 4L)
-{
-    if (!QuotaForm.ShouldApplyOrbDragFrame(lastAppliedDragFrame, now)) continue;
-    lastAppliedDragFrame = now;
-    appliedDragFrames++;
-}
-Assert(appliedDragFrames is >= 120 and <= 128,
-    $"250 Hz drag input produced {appliedDragFrames} window updates instead of about 120.");
+var negativeMonitorArea = new Rectangle(-1920, 0, 1920, 1080);
+Assert(DisplayPlacement.ClampToArea(new Rectangle(-2100, 1000, 132, 132), negativeMonitorArea) ==
+       new Rectangle(-1920, 948, 132, 132),
+    "Negative-coordinate monitor placement did not remain fully visible.");
+Assert(DisplayPlacement.ScaleLogicalPixels(88, 144) == 132,
+    "Target-monitor DPI scaling did not preserve the logical orb size.");
+Assert(QuotaForm.IsOrbDragGesture(new Size(5, 0), Size.Empty, new Size(8, 8)) &&
+       !QuotaForm.IsOrbDragGesture(new Size(2, 2), Size.Empty, new Size(8, 8)),
+    "Native orb drag gesture detection did not preserve the Windows drag threshold.");
 
-Console.WriteLine("PASS v0.2.0 pre-release logic | DPI layout, drag pacing, reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
+Console.WriteLine("PASS pre-release logic | DPI layout, native drag, reset credits, themes, transitions, preferences, typography, rings, flame, alerts, history, diagnostics, localization");
 
 if (args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {

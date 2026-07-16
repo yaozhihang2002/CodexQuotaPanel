@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace CodexQuotaPanel;
 
@@ -38,6 +39,7 @@ internal sealed record PanelPreferences
     public bool ConsumptionFlameEnabled { get; init; } = true;
     public int ConsumptionFlameStyle { get; init; } = 1;
     public bool GlobalHotKeyEnabled { get; init; } = true;
+    public bool CheckForUpdatesOnStartup { get; init; }
     public int ThemeMode { get; init; }
     public int Language { get; init; } = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh" ? 0 : 1;
 }
@@ -47,6 +49,18 @@ internal static class PanelPreferenceManager
     private const string PreferencesKey = @"Software\CodexQuotaPanel";
     private const string PreferencesFileName = "preferences.json";
     private const int CurrentPreferencesVersion = 3;
+    private const string PreferencesFileSchema = "codex-quota-panel.preferences";
+    private const int CurrentPreferencesFileSchemaVersion = 1;
+    private static readonly JsonSerializerOptions ReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip
+    };
+    private static readonly JsonSerializerOptions WriteOptions = new()
+    {
+        WriteIndented = true
+    };
     internal const int MinimumOpacity = 30;
     internal const int MaximumOpacity = 100;
     internal const int MinimumOrbSize = 56;
@@ -61,7 +75,7 @@ internal static class PanelPreferenceManager
     internal static readonly int[] OpacityLevels = [100, 85, 70, 55];
     internal static readonly int[] OrbSizePresets = [64, 88, 128, 192];
 
-    private static string PreferencesFilePath => Path.Combine(
+    internal static string PreferencesFilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "CodexQuotaPanel",
         PreferencesFileName);
@@ -73,11 +87,21 @@ internal static class PanelPreferenceManager
         // The per-user file is the authoritative store. Keep the registry as a
         // compatibility fallback for existing installations and installer-set
         // language preferences.
-        var filePreferences = LoadFromFile();
+        var filePreferences = LoadFromFile(PreferencesFilePath);
         if (filePreferences is not null) return Normalize(filePreferences);
 
+        // A failed or interrupted primary write can be recovered without
+        // discarding any old fields. Restore the validated backup in the new
+        // envelope format while deliberately preserving the backup itself.
+        var backupPreferences = LoadFromFile(PreferencesFilePath + ".bak");
+        if (backupPreferences is not null)
+        {
+            SaveToFile(backupPreferences, createBackup: false);
+            return Normalize(backupPreferences);
+        }
+
         var registryPreferences = Load(Registry.CurrentUser, PreferencesKey);
-        SaveToFile(registryPreferences);
+        SaveToFile(registryPreferences, createBackup: false);
         return registryPreferences;
     }
 
@@ -124,6 +148,7 @@ internal static class PanelPreferenceManager
                 ConsumptionFlameEnabled = ReadBool(key, "ConsumptionFlameEnabled", true),
                 ConsumptionFlameStyle = ReadInt(key, "ConsumptionFlameStyle", 1),
                 GlobalHotKeyEnabled = ReadBool(key, "GlobalHotKeyEnabled", true),
+                CheckForUpdatesOnStartup = ReadBool(key, "CheckForUpdatesOnStartup", false),
                 ThemeMode = ReadInt(key, "ThemeMode", 0),
                 Language = ReadInt(key, "Language",
                     CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh" ? 0 : 1)
@@ -138,14 +163,20 @@ internal static class PanelPreferenceManager
 
     public static void Save(PanelPreferences preferences)
     {
+        TrySave(preferences);
+    }
+
+    public static bool TrySave(PanelPreferences preferences)
+    {
         ArgumentNullException.ThrowIfNull(preferences);
         preferences = Normalize(preferences);
 
         // A local file remains writable even when a stale registry key has an
         // incompatible owner or ACL. Mirroring to the registry preserves
         // compatibility with older builds.
-        SaveToFile(preferences);
+        var savedToFile = SaveToFile(preferences);
         Save(Registry.CurrentUser, PreferencesKey, preferences);
+        return savedToFile;
     }
 
     internal static void Save(RegistryKey root, string preferencesKey, PanelPreferences preferences)
@@ -187,6 +218,7 @@ internal static class PanelPreferenceManager
             WriteBool(key, "ConsumptionFlameEnabled", preferences.ConsumptionFlameEnabled);
             WriteInt(key, "ConsumptionFlameStyle", preferences.ConsumptionFlameStyle);
             WriteBool(key, "GlobalHotKeyEnabled", preferences.GlobalHotKeyEnabled);
+            WriteBool(key, "CheckForUpdatesOnStartup", preferences.CheckForUpdatesOnStartup);
             WriteInt(key, "ThemeMode", preferences.ThemeMode);
             WriteInt(key, "Language", preferences.Language);
         }
@@ -216,6 +248,7 @@ internal static class PanelPreferenceManager
         try
         {
             File.Delete(PreferencesFilePath);
+            File.Delete(PreferencesFilePath + ".bak");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                    System.Security.SecurityException or ArgumentException)
@@ -223,13 +256,49 @@ internal static class PanelPreferenceManager
         }
     }
 
-    private static PanelPreferences? LoadFromFile()
+    internal static PanelPreferences? LoadFromFile(string path)
     {
         try
         {
-            if (!File.Exists(PreferencesFilePath)) return null;
-            var json = File.ReadAllText(PreferencesFilePath, Encoding.UTF8);
-            return JsonSerializer.Deserialize<PanelPreferences>(json);
+            if (!File.Exists(path)) return null;
+            var json = File.ReadAllText(path, Encoding.UTF8);
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return null;
+
+            // v0.2.x and earlier wrote a bare PanelPreferences object. Continue
+            // accepting that shape indefinitely so upgrades preserve every old
+            // personalization field and only add defaults for newly introduced
+            // properties.
+            if (!TryGetPropertyIgnoreCase(document.RootElement, "schema", out _))
+            {
+                if (!ContainsKnownPreferenceProperty(document.RootElement)) return null;
+                return JsonSerializer.Deserialize<PanelPreferences>(json, ReadOptions);
+            }
+
+            if (!TryGetPropertyIgnoreCase(document.RootElement, "schema", out var schemaElement) ||
+                schemaElement.ValueKind != JsonValueKind.String ||
+                !string.Equals(schemaElement.GetString(), PreferencesFileSchema, StringComparison.Ordinal) ||
+                !TryGetPropertyIgnoreCase(document.RootElement, "schemaVersion", out var versionElement) ||
+                versionElement.ValueKind != JsonValueKind.Number ||
+                !versionElement.TryGetInt32(out var schemaVersion) ||
+                schemaVersion is < 1 or > CurrentPreferencesFileSchemaVersion)
+                return null;
+
+            // A short-lived development build used a nested envelope. Continue
+            // accepting it so no preview user can lose their choices. Published
+            // builds write the compatible root shape below, which older 0.2.x
+            // versions can also deserialize without resetting the orb.
+            if (TryGetPropertyIgnoreCase(document.RootElement, "preferences", out var nestedPreferences))
+            {
+                if (nestedPreferences.ValueKind != JsonValueKind.Object) return null;
+                return JsonSerializer.Deserialize<PanelPreferences>(nestedPreferences.GetRawText(), ReadOptions);
+            }
+
+            return JsonSerializer.Deserialize<PanelPreferences>(json, ReadOptions);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                    System.Security.SecurityException or JsonException or
@@ -239,34 +308,52 @@ internal static class PanelPreferenceManager
         }
     }
 
-    private static void SaveToFile(PanelPreferences preferences)
+    internal static bool SaveToFile(PanelPreferences preferences, bool createBackup = true)
+        => SaveToFile(PreferencesFilePath, preferences, createBackup);
+
+    internal static bool SaveToFile(string path, PanelPreferences preferences, bool createBackup = true)
     {
-        var temporaryPath = PreferencesFilePath + ".tmp";
         try
         {
-            var directory = Path.GetDirectoryName(PreferencesFilePath);
-            if (string.IsNullOrWhiteSpace(directory)) return;
-
-            Directory.CreateDirectory(directory);
-            var json = JsonSerializer.Serialize(preferences, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-            File.WriteAllText(temporaryPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            File.Move(temporaryPath, PreferencesFilePath, overwrite: true);
+            preferences = Normalize(preferences);
+            // Keep preference properties at the root. System.Text.Json in 0.2.x
+            // ignores the two unknown schema fields, so a user can upgrade and
+            // still roll back without losing position, size, theme, or colors.
+            var root = JsonSerializer.SerializeToNode(preferences, WriteOptions) as JsonObject;
+            if (root is null) return false;
+            root["Schema"] = PreferencesFileSchema;
+            root["SchemaVersion"] = CurrentPreferencesFileSchemaVersion;
+            return AtomicJsonFile.TryWrite(
+                path,
+                root.ToJsonString(WriteOptions),
+                createBackup);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                    System.Security.SecurityException or NotSupportedException or
                                    ArgumentException)
         {
-            try { File.Delete(temporaryPath); }
-            catch (Exception cleanupException) when (cleanupException is IOException or
-                                                     UnauthorizedAccessException or
-                                                     System.Security.SecurityException)
-            {
-            }
+            return false;
         }
     }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = property.Value;
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
+    private static bool ContainsKnownPreferenceProperty(JsonElement element) =>
+        TryGetPropertyIgnoreCase(element, nameof(PanelPreferences.OrbOpacityPercent), out _) ||
+        TryGetPropertyIgnoreCase(element, nameof(PanelPreferences.OrbX), out _) ||
+        TryGetPropertyIgnoreCase(element, nameof(PanelPreferences.OrbSize), out _) ||
+        TryGetPropertyIgnoreCase(element, nameof(PanelPreferences.ThemeMode), out _) ||
+        TryGetPropertyIgnoreCase(element, nameof(PanelPreferences.Language), out _);
 
     internal static PanelPreferences Normalize(PanelPreferences preferences)
     {
