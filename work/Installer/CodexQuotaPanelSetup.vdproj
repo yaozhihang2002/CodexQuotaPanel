@@ -184,7 +184,7 @@
             "Name" = "8:Microsoft Visual Studio"
             "ProductName" = "8:CodexQuotaPanel"
             "ProductCode" = "8:{F0BB60AE-0492-4225-A60B-D5BCC0705D43}"
-            "PackageCode" = "8:{AEB48E36-097F-471F-AC42-7117F7A86227}"
+            "PackageCode" = "8:{5552DCBC-F5DC-4640-84BA-812FC9500E51}"
             "UpgradeCode" = "8:{B257AB07-2D68-4B61-B7D8-B89A8E201CCB}"
             "AspNetVersion" = "8:"
             "RestartWWWService" = "11:FALSE"

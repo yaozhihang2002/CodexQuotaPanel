@@ -250,10 +250,11 @@ try
     Set-MsiProperty 'ConfirmInstallForm_PrevArgs' 'FolderForm'
 
     # These actions run only after the user presses Install on the final
-    # confirmation page. The first action records whether the panel was open,
-    # then closes it before files are changed. A rollback action restores the
-    # prior running state after a failed install; the final action does the same
-    # after a successful install.
+    # confirmation page. The close action must precede InstallValidate (1400),
+    # because that standard action performs the FilesInUse check. The rollback
+    # action remains after InstallInitialize so Windows Installer can schedule
+    # it in the rollback script; the final action restores the prior running
+    # state after a successful install.
     $upgradeBinaryName = 'CodexQuotaUpgradeCoordinator'
     $closeAction = 'CloseCodexQuotaPanelForInstall'
     $rollbackAction = 'RestartCodexQuotaPanelOnRollback'
@@ -272,7 +273,7 @@ try
     # the installing user so the per-user marker and process are accessible.
     Invoke-MsiNonQuery "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('$rollbackAction', 1282, '$upgradeBinaryName', '--restart-after-install')"
     Invoke-MsiNonQuery "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('$restartAction', 2, '$upgradeBinaryName', '--restart-after-install `"[TARGETDIR]CodexQuotaPanel.exe`"')"
-    Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$closeAction', 'NOT (REMOVE~=`"ALL`")', 1510)"
+    Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$closeAction', 'NOT (REMOVE~=`"ALL`")', 1390)"
     Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$rollbackAction', 'NOT (REMOVE~=`"ALL`")', 1511)"
     Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$restartAction', 'NOT (REMOVE~=`"ALL`")', 6700)"
 
@@ -335,7 +336,7 @@ try
         $closeActionType -ne '2' -or
         $rollbackActionType -ne '1282' -or
         $restartActionType -ne '2' -or
-        $closeActionSequence -ne '1510' -or
+        $closeActionSequence -ne '1390' -or
         $rollbackActionSequence -ne '1511' -or
         $restartActionSequence -ne '6700')
     {
