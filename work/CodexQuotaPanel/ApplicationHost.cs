@@ -107,7 +107,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _menu.Items.Add(_settingsItem);
         _menu.Items.Add(new ToolStripSeparator());
         _helpItem = new ToolStripMenuItem(L10n.OfficialHelp, null, (_, _) => QuotaForm.OpenOfficialHelp());
-        _restartItem = new ToolStripMenuItem(string.Empty, null, (_, _) => RestartApplication());
+        _restartItem = new ToolStripMenuItem(L10n.RestartApp, null, (_, _) => RestartApplication());
         _exitItem = new ToolStripMenuItem(L10n.Exit, null, (_, _) => ExitApplication());
         _menu.Items.Add(_helpItem);
         _menu.Items.Add(new ToolStripSeparator());
@@ -447,6 +447,9 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     {
         if (_form.IsDisposed) return;
         _expandItem.Enabled = !_form.IsDetails;
+        // Keep the label populated even on the first menu opening, before any
+        // settings or language change has triggered ApplyMenuLanguage().
+        _restartItem.Text = L10n.RestartApp;
         _toggleOrbItem.Text = _form.IsHidden
             ? L10n.Pick("显示悬浮球", "Show quota orb")
             : L10n.Pick("隐藏悬浮球（仅托盘）", "Hide orb (tray only)");
@@ -461,7 +464,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _clickThroughItem.ToolTipText = L10n.ClickThroughHint;
         _settingsItem.Text = L10n.Pick("设置…", "Settings…");
         _helpItem.Text = L10n.OfficialHelp;
-        _restartItem.Text = L10n.Pick("重启应用", "Restart app");
+        _restartItem.Text = L10n.RestartApp;
         _exitItem.Text = L10n.Exit;
         UpdateMenuState();
         _tray.Text = _latestSnapshot is null

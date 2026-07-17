@@ -8,6 +8,14 @@ TestProcessGuard.Install();
 
 if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check")
 {
+    L10n.SetLanguage(AppLanguage.SimplifiedChinese);
+    if (L10n.RestartApp != "重启应用")
+        throw new InvalidOperationException("The Chinese restart menu label is missing.");
+    L10n.SetLanguage(AppLanguage.English);
+    if (L10n.RestartApp != "Restart app")
+        throw new InvalidOperationException("The English restart menu label is missing.");
+    L10n.SetLanguage(AppLanguage.SimplifiedChinese);
+
     var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
     var secondaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 302, 332, 70), 168);
@@ -24,7 +32,7 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         QuotaForm.IsOrbDragGesture(new Size(2, 2), Size.Empty, new Size(8, 8)))
         throw new InvalidOperationException("The native-drag or DPI-aware monitor placement check failed.");
 
-    Console.WriteLine($"PASS targeted check | 175% panel={panel.Width}x{panel.Height} | DPI-aware negative-screen placement");
+    Console.WriteLine($"PASS targeted check | restart labels zh/en | 175% panel={panel.Width}x{panel.Height} | DPI-aware negative-screen placement");
     return;
 }
 

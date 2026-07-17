@@ -22,6 +22,8 @@ internal static class MenuContrastPreview
         menu.Items.Add("设置…");
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("官方额度说明");
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("重启应用");
         menu.Items.Add("退出");
         menu.CreateControl();
         menu.PerformLayout();

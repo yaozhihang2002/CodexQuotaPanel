@@ -37,6 +37,7 @@ internal static class L10n
     public static string Refresh => Pick("刷新", "Refresh");
     public static string RefreshNow => Pick("立即刷新", "Refresh now");
     public static string OfficialHelp => Pick("官方额度说明", "Official quota guide");
+    public static string RestartApp => Pick("重启应用", "Restart app");
     public static string Exit => Pick("退出", "Exit");
     public static string AlwaysOnTop => Pick("悬浮窗始终置顶", "Always on top");
     public static string Startup => Pick("开机自动启动", "Start with Windows");
