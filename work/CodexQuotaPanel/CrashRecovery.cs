@@ -15,9 +15,9 @@ internal sealed record CrashSessionState(
     int? HResult);
 
 /// <summary>
-/// Tracks only the minimum information required to detect an unclean shutdown.
+/// Tracks only the minimum information required to diagnose an unclean shutdown.
 /// Exception messages, paths, environment variables, and account information are
-/// intentionally never persisted.
+/// intentionally never persisted. A previous crash never changes startup behavior.
 /// </summary>
 internal sealed class CrashRecoverySession
 {
@@ -35,16 +35,13 @@ internal sealed class CrashRecoverySession
     private bool _crashed;
     private bool _completed;
 
-    private CrashRecoverySession(string path, bool previousSessionUnclean)
+    private CrashRecoverySession(string path)
     {
         _path = path;
-        PreviousSessionUnclean = previousSessionUnclean;
         _startedUtc = DateTimeOffset.UtcNow;
         _appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
         WriteState("running", null, null);
     }
-
-    internal bool PreviousSessionUnclean { get; }
 
     internal static CrashRecoverySession Begin(string? path = null)
     {
@@ -52,10 +49,7 @@ internal sealed class CrashRecoverySession
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "CodexQuotaPanel",
             "session-state.json");
-        var previous = TryLoad(path);
-        var unclean = previous is not null &&
-                      !string.Equals(previous.State, "clean", StringComparison.OrdinalIgnoreCase);
-        return new CrashRecoverySession(path, unclean);
+        return new CrashRecoverySession(path);
     }
 
     internal void RecordCrash(Exception exception)
@@ -97,25 +91,4 @@ internal sealed class CrashRecoverySession
         AtomicJsonFile.TryWrite(_path, JsonSerializer.Serialize(model, JsonOptions), createBackup: false);
     }
 
-    private static CrashSessionState? TryLoad(string path)
-    {
-        try
-        {
-            if (!File.Exists(path)) return null;
-            var info = new FileInfo(path);
-            if (info.Length is <= 0 or > 32 * 1024) return null;
-            var state = JsonSerializer.Deserialize<CrashSessionState>(File.ReadAllText(path), JsonOptions);
-            if (state is null ||
-                !string.Equals(state.Schema, Schema, StringComparison.Ordinal) ||
-                state.SchemaVersion != CurrentSchemaVersion)
-                return null;
-            return state;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-                                   System.Security.SecurityException or JsonException or
-                                   NotSupportedException or ArgumentException)
-        {
-            return null;
-        }
-    }
 }

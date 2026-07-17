@@ -14,7 +14,7 @@ internal static class RecoveryUpdateChecks
             CheckLegacyPreferences(directory);
             CheckPortableTransfer(directory);
             CheckCrashRecovery(directory);
-            CheckSafeModeOverlay();
+            CheckRestartArguments();
             await CheckUpdatesAsync(directory);
             Console.WriteLine("PASS settings migration + portable transfer + recovery + update checks");
         }
@@ -98,7 +98,8 @@ internal static class RecoveryUpdateChecks
             OuterWindowMinutes = 60,
             ThemeMode = 2,
             Language = 1,
-            CheckForUpdatesOnStartup = true
+            CheckForUpdatesOnStartup = true,
+            ShowClickThroughReminder = false
         };
         Require(SettingsTransferService.TryExport(path, source, out var exportFailure) &&
                 exportFailure == SettingsTransferFailure.None,
@@ -117,7 +118,8 @@ internal static class RecoveryUpdateChecks
         Require(imported.OrbX == 111 && imported.OrbY == 222 && imported.LastViewMode == 1 &&
                 imported.OrbOpacityPercent == 68 && imported.OrbSize == 136 &&
                 imported.OuterWindowMinutes == 60 && imported.ThemeMode == 2 &&
-                imported.Language == 1 && imported.CheckForUpdatesOnStartup,
+                imported.Language == 1 && imported.CheckForUpdatesOnStartup &&
+                !imported.ShowClickThroughReminder,
             "Import did not preserve device state or portable personalization.");
 
         var futurePath = Path.Combine(directory, "future.json");
@@ -131,7 +133,6 @@ internal static class RecoveryUpdateChecks
     {
         var path = Path.Combine(directory, "session-state.json");
         var first = CrashRecoverySession.Begin(path);
-        Require(!first.PreviousSessionUnclean, "A new recovery store was incorrectly marked unclean.");
         var secret = $"sensitive-{Environment.UserName}-{directory}";
         first.RecordCrash(new InvalidOperationException(secret));
         var state = File.ReadAllText(path);
@@ -141,36 +142,27 @@ internal static class RecoveryUpdateChecks
             "Crash state leaked exception text/path or omitted the safe exception type.");
 
         var second = CrashRecoverySession.Begin(path);
-        Require(second.PreviousSessionUnclean, "A crashed session was not detected.");
+        var restartedState = File.ReadAllText(path);
+        Require(restartedState.Contains("\"State\": \"running\"", StringComparison.Ordinal) &&
+                !restartedState.Contains(nameof(InvalidOperationException), StringComparison.Ordinal),
+            "A previous crash was not replaced by a normal startup session.");
         second.CompleteClean();
         var third = CrashRecoverySession.Begin(path);
-        Require(!third.PreviousSessionUnclean, "A clean session remained stuck in recovery mode.");
         third.CompleteClean();
     }
 
-    private static void CheckSafeModeOverlay()
+    private static void CheckRestartArguments()
     {
-        var saved = PanelPreferenceManager.Default with
-        {
-            OrbX = -1200,
-            OrbY = 345,
-            OrbOpacityPercent = 55,
-            OrbClickThrough = true,
-            PositionLocked = true,
-            ThemeMode = 2
-        };
-        var safe = QuotaApplicationContext.CreateSafeModePreferences(saved);
-        Require(safe.OrbX == saved.OrbX && safe.OrbY == saved.OrbY &&
-                safe.OrbOpacityPercent == 100 && !safe.OrbClickThrough &&
-                !safe.PositionLocked && !safe.ConsumptionFlameEnabled && safe.ThemeMode == 0,
-            "Safe mode did not remain visible while preserving the saved device position.");
-        Require(saved.OrbOpacityPercent == 55 && saved.OrbClickThrough && saved.PositionLocked,
-            "Creating a safe-mode overlay mutated the saved preferences.");
+        Require(ApplicationRestart.TryGetPreviousProcessId(["--restart-wait", "1234"], out var processId) &&
+                processId == 1234,
+            "The restart handoff argument was not parsed.");
+        Require(!ApplicationRestart.TryGetPreviousProcessId(["--restart-wait", "invalid"], out _),
+            "An invalid restart process id was accepted.");
     }
 
     private static async Task CheckUpdatesAsync(string directory)
     {
-        Require(GitHubReleaseUpdateService.CurrentVersionText == "0.3.0",
+        Require(GitHubReleaseUpdateService.CurrentVersionText == "0.3.1",
             "Release version metadata is not synchronized with the update checker.");
         Require(SemanticVersion.TryParse("v0.3.0-preview.2", out var preview2) &&
                 SemanticVersion.TryParse("0.3.0-preview.10", out var preview10) &&

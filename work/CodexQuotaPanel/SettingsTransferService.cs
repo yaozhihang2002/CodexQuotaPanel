@@ -23,6 +23,7 @@ internal sealed record PortablePanelPreferences
 {
     public int OrbOpacityPercent { get; init; } = 100;
     public bool OrbClickThrough { get; init; }
+    public bool ShowClickThroughReminder { get; init; } = true;
     public bool AlwaysOnTop { get; init; } = true;
     public int StartupViewMode { get; init; }
     public int OrbSize { get; init; } = PanelPreferenceManager.DefaultOrbSize;
@@ -158,6 +159,7 @@ internal static class SettingsTransferService
             {
                 OrbOpacityPercent = portable.OrbOpacityPercent,
                 OrbClickThrough = portable.OrbClickThrough,
+                ShowClickThroughReminder = portable.ShowClickThroughReminder,
                 OrbX = currentDevicePreferences.OrbX,
                 OrbY = currentDevicePreferences.OrbY,
                 AlwaysOnTop = portable.AlwaysOnTop,
@@ -212,6 +214,7 @@ internal static class SettingsTransferService
         {
             OrbOpacityPercent = preferences.OrbOpacityPercent,
             OrbClickThrough = preferences.OrbClickThrough,
+            ShowClickThroughReminder = preferences.ShowClickThroughReminder,
             AlwaysOnTop = preferences.AlwaysOnTop,
             StartupViewMode = preferences.StartupViewMode,
             OrbSize = preferences.OrbSize,

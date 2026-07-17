@@ -18,6 +18,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _refreshItem;
     private readonly ToolStripMenuItem _settingsItem;
     private readonly ToolStripMenuItem _helpItem;
+    private readonly ToolStripMenuItem _restartItem;
     private readonly ToolStripMenuItem _exitItem;
     private readonly EventWaitHandle _showSignal;
     private readonly CancellationTokenSource _lifetime = new();
@@ -33,24 +34,18 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private bool _hotKeyRegistered;
     private bool _systemEventsAttached;
     private bool _exiting;
-    private bool _safeMode;
     private int? _trayIconRemainingPercent;
     private bool _trayIconLive;
     private PanelPreferences _preferences;
-    private PanelPreferences _persistedPreferences;
     private QuotaSnapshot? _latestSnapshot;
+    private ReminderPromptForm? _quotaAlertPrompt;
 
     public QuotaApplicationContext(
         EventWaitHandle showSignal,
-        PanelPreferences initialPreferences,
-        bool safeMode = false)
+        PanelPreferences initialPreferences)
     {
         ArgumentNullException.ThrowIfNull(initialPreferences);
-        _safeMode = safeMode;
-        _persistedPreferences = PanelPreferenceManager.Normalize(initialPreferences);
-        _preferences = safeMode
-            ? CreateSafeModePreferences(_persistedPreferences)
-            : _persistedPreferences;
+        _preferences = PanelPreferenceManager.Normalize(initialPreferences);
         L10n.SetLanguage((AppLanguage)_preferences.Language);
         UiPalette.SetTheme(_preferences.ThemeMode);
         _history = new QuotaHistoryStore(enabled: _preferences.TrendRecordingEnabled);
@@ -109,8 +104,11 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _menu.Items.Add(_settingsItem);
         _menu.Items.Add(new ToolStripSeparator());
         _helpItem = new ToolStripMenuItem(L10n.OfficialHelp, null, (_, _) => QuotaForm.OpenOfficialHelp());
+        _restartItem = new ToolStripMenuItem(string.Empty, null, (_, _) => RestartApplication());
         _exitItem = new ToolStripMenuItem(L10n.Exit, null, (_, _) => ExitApplication());
         _menu.Items.Add(_helpItem);
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(_restartItem);
         _menu.Items.Add(_exitItem);
         _menu.Opening += (_, _) => UpdateMenuState();
 
@@ -150,35 +148,8 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         UpdateMenuState();
         _coordinatorStartTask = _coordinator.StartAsync();
         _showTask = Task.Run(WaitForShowSignal);
-        if (_safeMode)
-            ShowInformation(
-                L10n.Pick(
-                    "安全模式仅对本次运行生效，原有设置未被覆盖。",
-                    "Safe mode applies only to this run; saved settings were not overwritten."),
-                ToolTipIcon.Info);
-        else if (_preferences.CheckForUpdatesOnStartup)
+        if (_preferences.CheckForUpdatesOnStartup)
             _ = CheckForUpdatesOnStartupAsync();
-    }
-
-    internal static PanelPreferences CreateSafeModePreferences(PanelPreferences preferences)
-    {
-        preferences = PanelPreferenceManager.Normalize(preferences);
-        return preferences with
-        {
-            OrbOpacityPercent = 100,
-            OrbClickThrough = false,
-            AlwaysOnTop = true,
-            StartupViewMode = 1,
-            LastViewMode = QuotaForm.OrbViewState,
-            OrbSize = PanelPreferenceManager.DefaultOrbSize,
-            PositionLocked = false,
-            SnapToEdge = false,
-            HoverPreviewEnabled = false,
-            TrendRecordingEnabled = false,
-            ConsumptionFlameEnabled = false,
-            CheckForUpdatesOnStartup = false,
-            ThemeMode = 0
-        };
     }
 
     private void ApplyPreferencesToForm(PanelPreferences preferences)
@@ -296,10 +267,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private void ShowSettingsCenter()
     {
         _menu.Close();
-        // Safe mode is only a runtime presentation overlay. Keep the settings
-        // editor anchored to the user's last persisted choices so pressing Save
-        // cannot silently replace them with safety defaults.
-        var original = _safeMode ? _persistedPreferences : _preferences;
+        var original = _preferences;
         var originalStartup = StartupManager.IsEnabled();
         var resetRequested = false;
         var lastPreview = _preferences;
@@ -312,9 +280,8 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         settings.PreviewPreferencesChanged += preview =>
         {
             preview = PanelPreferenceManager.Normalize(preview);
-            var runtimePreview = _safeMode ? CreateSafeModePreferences(preview) : preview;
-            ApplyPreferencePreview(lastPreview, runtimePreview);
-            lastPreview = runtimePreview;
+            ApplyPreferencePreview(lastPreview, preview);
+            lastPreview = preview;
         };
         settings.MoveToCurrentDisplayRequested += () =>
         {
@@ -335,9 +302,10 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         settings.SaveRequested += () =>
         {
             var selected = PanelPreferenceManager.Normalize(settings.SelectedPreferences);
+            var clickThroughNewlyEnabled = !_preferences.OrbClickThrough && selected.OrbClickThrough;
             if (!resetRequested)
             {
-                var deviceState = _safeMode ? _persistedPreferences : _preferences;
+                var deviceState = _preferences;
                 selected = selected with
                 {
                     OrbX = deviceState.OrbX,
@@ -371,6 +339,13 @@ internal sealed class QuotaApplicationContext : ApplicationContext
                     LastViewMode = QuotaForm.OrbViewState
                 };
             }
+
+            if (clickThroughNewlyEnabled && selected.ShowClickThroughReminder &&
+                ShowClickThroughReminder(settings, selected))
+            {
+                selected = selected with { ShowClickThroughReminder = false };
+                settings.SetClickThroughReminderEnabled(false);
+            }
             if (!PanelPreferenceManager.TrySave(selected))
             {
                 MessageBox.Show(
@@ -385,9 +360,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
             }
 
             var languageChanged = selected.Language != _preferences.Language;
-            _persistedPreferences = selected;
             _preferences = selected;
-            _safeMode = false;
             ApplyPreferencePreview(lastPreview, _preferences);
             lastPreview = _preferences;
             UpdateGlobalHotKeyRegistration(showFailure: true);
@@ -411,7 +384,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
 
     private void SaveCurrentOrbLocation()
     {
-        if (_form.IsDisposed || _safeMode) return;
+        if (_form.IsDisposed) return;
         var location = _form.GetRestorableOrbLocation();
         _preferences = _preferences with { OrbX = location.X, OrbY = location.Y };
         PersistRuntimePreferences();
@@ -419,9 +392,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
 
     private void PersistRuntimePreferences()
     {
-        if (_safeMode) return;
-        if (PanelPreferenceManager.TrySave(_preferences))
-            _persistedPreferences = _preferences;
+        PanelPreferenceManager.TrySave(_preferences);
     }
 
     private async Task CheckForUpdatesOnStartupAsync()
@@ -487,6 +458,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _clickThroughItem.ToolTipText = L10n.ClickThroughHint;
         _settingsItem.Text = L10n.Pick("设置…", "Settings…");
         _helpItem.Text = L10n.OfficialHelp;
+        _restartItem.Text = L10n.Pick("重启应用", "Restart app");
         _exitItem.Text = L10n.Exit;
         UpdateMenuState();
         _tray.Text = _latestSnapshot is null
@@ -504,12 +476,27 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         PersistRuntimePreferences();
         if (!_preferences.OrbClickThrough) return;
 
-        _tray.BalloonTipTitle = L10n.Pick("悬浮球已开启鼠标穿透", "Orb click-through enabled");
-        _tray.BalloonTipText = L10n.Pick(
-            "悬浮球将不再响应点击和拖动；可从托盘展开详情或关闭穿透。",
-            "The orb no longer responds to clicks or dragging. Use the tray to open details or disable click-through.");
-        _tray.BalloonTipIcon = ToolTipIcon.Info;
-        _tray.ShowBalloonTip(5000);
+        if (_preferences.ShowClickThroughReminder && ShowClickThroughReminder(_form, _preferences))
+        {
+            _preferences = _preferences with { ShowClickThroughReminder = false };
+            PersistRuntimePreferences();
+        }
+    }
+
+    private static bool ShowClickThroughReminder(IWin32Window owner, PanelPreferences preferences)
+    {
+        using var prompt = new ReminderPromptForm(
+            L10n.Pick("鼠标穿透已开启", "Mouse click-through enabled"),
+            L10n.Pick(
+                "悬浮球现在不会响应点击或拖动。可从托盘菜单关闭穿透，也可按 Ctrl+Alt+Q 快速找回。",
+                "The orb now ignores clicks and dragging. Disable click-through from the tray menu, or press Ctrl+Alt+Q to recover it."),
+            L10n.Pick("不再提醒", "Don't show again"),
+            L10n.Pick("知道了", "Got it"),
+            preferences.SettingsFontScalePercent,
+            preferences.AlwaysOnTop);
+        prompt.StartPosition = FormStartPosition.CenterParent;
+        prompt.ShowDialog(owner);
+        return prompt.SuppressChecked;
     }
 
     private void ShowInformation(string text, ToolTipIcon icon)
@@ -566,18 +553,41 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         if (decision is null) return;
 
         var window = LimitRowControl.FormatWindow(decision.WindowMinutes);
-        _tray.BalloonTipTitle = decision.Level == QuotaAlertLevel.Critical
+        var title = decision.Level == QuotaAlertLevel.Critical
             ? L10n.Pick("Codex 额度严重不足", "Codex quota critically low")
             : L10n.Pick("Codex 额度提醒", "Codex quota alert");
-        _tray.BalloonTipText = L10n.Pick(
-            $"{window}还剩 {Math.Round(decision.RemainingPercent):0}%。点击托盘图标查看重置时间。",
-            $"{window} has {Math.Round(decision.RemainingPercent):0}% left. Click the tray icon for reset details.");
-        _tray.BalloonTipIcon = decision.Level == QuotaAlertLevel.Critical ? ToolTipIcon.Warning : ToolTipIcon.Info;
+        var resetText = decision.ResetsAt is { } reset
+            ? L10n.FormatLocalDate(reset)
+            : L10n.Pick("重置时间暂不可用", "reset time unavailable");
+        var message = L10n.Pick(
+            $"{window}还剩 {Math.Round(decision.RemainingPercent):0}%，预计 {resetText} 重置。",
+            $"{window} has {Math.Round(decision.RemainingPercent):0}% left and is expected to reset {resetText}.");
         if (_preferences.AlertSoundEnabled)
         {
             try { SystemSounds.Exclamation.Play(); } catch { }
         }
-        _tray.ShowBalloonTip(6000);
+
+        _quotaAlertPrompt?.Close();
+        var prompt = new ReminderPromptForm(
+            title,
+            message,
+            L10n.Pick("本额度周期不再提醒", "Don't remind me again this quota cycle"),
+            L10n.Pick("知道了", "Got it"),
+            _preferences.SettingsFontScalePercent,
+            topMost: true);
+        _quotaAlertPrompt = prompt;
+        prompt.SuppressionChanged += suppress =>
+        {
+            if (!suppress) return;
+            _alertState.SuppressCycle(decision.BucketKey, decision.CycleKey);
+            AlertStateStore.Save(_alertState);
+        };
+        prompt.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_quotaAlertPrompt, prompt)) _quotaAlertPrompt = null;
+        };
+        prompt.PlaceNearNotificationArea();
+        prompt.Show();
     }
 
     private void OnGlobalHotKeyPressed()
@@ -696,12 +706,31 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         }
     }
 
+    private void RestartApplication()
+    {
+        if (_exiting) return;
+        SaveCurrentOrbLocation();
+        if (!ApplicationRestart.TryLaunch(out _))
+        {
+            MessageBox.Show(
+                L10n.Pick(
+                    "无法启动新的应用实例，请退出后手动重新打开。",
+                    "Could not start a new app instance. Exit and open the app again manually."),
+                L10n.AppTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+        ExitApplication();
+    }
+
     private void ExitApplication()
     {
         if (_exiting) return;
         _exiting = true;
         SaveCurrentOrbLocation();
         _lifetime.Cancel();
+        _quotaAlertPrompt?.Close();
         _tray.Visible = false;
         _form.CloseForExit();
         ExitThread();

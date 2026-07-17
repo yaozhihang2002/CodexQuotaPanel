@@ -28,7 +28,7 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
     return;
 }
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -51,6 +51,12 @@ if (args.Length >= 2 && args[0] == "--alert-layout-preview")
 if (args.Length >= 2 && args[0] == "--alert-editor-preview")
 {
     AlertEditorPreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--reminder-preview")
+{
+    ReminderPromptPreview.Run(args[1]);
     return;
 }
 
@@ -394,6 +400,17 @@ var alertState = new AlertDedupState();
 var warningDecision = QuotaAlertEvaluator.Evaluate(
     Snapshot(20, 80, alertNow, alertReset, alertNow.AddDays(6)), alertPreferences, alertNow, alertState);
 Assert(warningDecision?.Level == QuotaAlertLevel.Warning, "Warning threshold boundary did not notify.");
+var cycleMuteState = new AlertDedupState();
+var cycleMuteDecision = QuotaAlertEvaluator.Evaluate(
+    Snapshot(20, 80, alertNow, alertReset, alertNow.AddDays(6)), alertPreferences, alertNow, cycleMuteState);
+Assert(cycleMuteDecision is not null, "Cycle-mute setup did not produce a warning.");
+cycleMuteState.SuppressCycle(cycleMuteDecision!.BucketKey, cycleMuteDecision.CycleKey);
+Assert(QuotaAlertEvaluator.Evaluate(
+    Snapshot(5, 80, alertNow, alertReset, alertNow.AddDays(6)), alertPreferences, alertNow, cycleMuteState) is null,
+    "A muted quota cycle still escalated to another alert.");
+Assert(QuotaAlertEvaluator.Evaluate(
+    Snapshot(5, 80, alertNow, alertReset.AddHours(1), alertNow.AddDays(6)), alertPreferences, alertNow, cycleMuteState)?.Level == QuotaAlertLevel.Critical,
+    "Cycle mute did not expire when the reset cycle changed.");
 Assert(QuotaAlertEvaluator.Evaluate(
     Snapshot(20, 80, alertNow, alertReset, alertNow.AddDays(6)), alertPreferences, alertNow, alertState) is null,
     "Duplicate warning was not suppressed.");

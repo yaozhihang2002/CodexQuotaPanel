@@ -12,6 +12,7 @@ internal sealed record PanelPreferences
 
     public int OrbOpacityPercent { get; init; } = 100;
     public bool OrbClickThrough { get; init; }
+    public bool ShowClickThroughReminder { get; init; } = true;
     public int? OrbX { get; init; }
     public int? OrbY { get; init; }
     public bool AlwaysOnTop { get; init; } = true;
@@ -117,6 +118,7 @@ internal static class PanelPreferenceManager
             {
                 OrbOpacityPercent = ReadInt(key, "OrbOpacityPercent", 100),
                 OrbClickThrough = ReadBool(key, "OrbClickThrough", false),
+                ShowClickThroughReminder = ReadBool(key, "ShowClickThroughReminder", true),
                 OrbX = ReadNullableInt(key, "OrbX"),
                 OrbY = ReadNullableInt(key, "OrbY"),
                 AlwaysOnTop = ReadBool(key, "AlwaysOnTop", true),
@@ -191,6 +193,7 @@ internal static class PanelPreferenceManager
             WriteInt(key, "PreferencesVersion", CurrentPreferencesVersion);
             WriteInt(key, "OrbOpacityPercent", preferences.OrbOpacityPercent);
             WriteBool(key, "OrbClickThrough", preferences.OrbClickThrough);
+            WriteBool(key, "ShowClickThroughReminder", preferences.ShowClickThroughReminder);
             WriteNullableInt(key, "OrbX", preferences.OrbX);
             WriteNullableInt(key, "OrbY", preferences.OrbY);
             WriteBool(key, "AlwaysOnTop", preferences.AlwaysOnTop);

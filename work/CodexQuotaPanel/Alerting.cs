@@ -15,7 +15,9 @@ internal sealed record QuotaAlertDecision(
     double RemainingPercent,
     int? WindowMinutes,
     DateTimeOffset? ResetsAt,
-    bool IsBlocked);
+    bool IsBlocked,
+    string BucketKey,
+    string CycleKey);
 
 internal sealed record AlertStateEntry(string BucketKey, string CycleKey, int Level);
 
@@ -57,6 +59,23 @@ internal sealed class AlertDedupState
         Dirty = true;
     }
 
+    public void SuppressCycle(string bucketKey, string cycleKey)
+    {
+        var index = _entries.FindIndex(entry => entry.BucketKey == bucketKey);
+        var suppressed = new AlertStateEntry(bucketKey, cycleKey, (int)QuotaAlertLevel.Critical);
+        if (index >= 0)
+        {
+            if (_entries[index] == suppressed) return;
+            _entries[index] = suppressed;
+        }
+        else
+        {
+            _entries.Add(suppressed);
+            while (_entries.Count > 8) _entries.RemoveAt(0);
+        }
+        Dirty = true;
+    }
+
     public IReadOnlyList<AlertStateEntry> Snapshot() => _entries.ToArray();
 
     public void MarkClean() => Dirty = false;
@@ -95,7 +114,14 @@ internal static class QuotaAlertEvaluator
         var cycleKey = tightest.ResetsAt?.ToUnixTimeSeconds().ToString() ??
             $"unknown:{now.ToUniversalTime().ToUnixTimeSeconds() / 21600}";
         if (!state.TryMarkNotified(bucketKey, cycleKey, level)) return null;
-        return new QuotaAlertDecision(level, remaining, tightest.WindowMinutes, tightest.ResetsAt, snapshot.IsBlocked);
+        return new QuotaAlertDecision(
+            level,
+            remaining,
+            tightest.WindowMinutes,
+            tightest.ResetsAt,
+            snapshot.IsBlocked,
+            bucketKey,
+            cycleKey);
     }
 
     internal static bool IsQuietTime(DateTimeOffset now, PanelPreferences preferences)

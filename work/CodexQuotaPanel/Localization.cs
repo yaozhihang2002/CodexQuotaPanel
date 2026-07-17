@@ -42,6 +42,8 @@ internal static class L10n
     public static string Startup => Pick("开机自动启动", "Start with Windows");
     public static string ClickThrough => Pick("悬浮球鼠标穿透", "Orb mouse click-through");
     public static string ClickThroughHint => Pick("开启后悬浮球不响应鼠标；可从托盘菜单关闭", "The orb ignores the mouse; disable this from the tray menu");
+    public static string ClickThroughReminder => Pick("开启穿透时显示提醒", "Show reminder when enabling click-through");
+    public static string ClickThroughReminderHint => Pick("关闭后不再弹出操作提示；仍可在托盘或按 Ctrl+Alt+Q 关闭穿透", "When off, the usage hint is no longer shown; use the tray or Ctrl+Alt+Q to disable click-through");
     public static string HoverPreview => Pick("悬停速览", "Hover preview");
     public static string HoverPreviewHint => Pick("鼠标停留在悬浮球上时显示重置倒计时", "Hover over the orb to see reset countdowns");
     public static string Language => Pick("语言 / Language", "Language / 语言");
@@ -148,8 +150,8 @@ internal static class L10n
     public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
     public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
     public static string ReleaseNotesSummary => Pick(
-        "新增崩溃恢复、安全模式与设置导入导出，并优化多显示器、主题和五档火焰反馈。",
-        "Crash recovery, safe mode, portable settings, multi-monitor fixes, refined themes, and five-stage flame feedback.");
+        "启动始终恢复已保存状态；新增应用重启、穿透提醒偏好和单周期额度提醒静音。",
+        "Startup always restores saved state; adds app restart, click-through reminder preferences, and per-cycle quota alert muting.");
     public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
     public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");

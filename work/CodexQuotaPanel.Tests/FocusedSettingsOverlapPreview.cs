@@ -61,15 +61,15 @@ internal static class FocusedSettingsOverlapPreview
             settings.SelectedPreferences.ConsumptionFlameStyle != 2)
             throw new InvalidOperationException("Expanded orb range or flame style was not retained in staged preferences.");
 
-        // Finish on Appearance and scroll the new exact font-size editor into
-        // view so this single screenshot verifies the requested control itself.
-        settings.SelectPageForTest(1);
-        var fontInput = Field<NumericUpDown>(settings, "_fontScaleInput");
-        for (Control? parent = fontInput.Parent; parent is not null; parent = parent.Parent)
+        // Finish on Interaction and scroll the persisted reminder switch into
+        // view. The screenshot verifies it at the maximum typography scale.
+        settings.SelectPageForTest(2);
+        var reminderToggle = Field<SettingsToggle>(settings, "_clickThroughReminderToggle");
+        for (Control? parent = reminderToggle.Parent; parent is not null; parent = parent.Parent)
         {
             if (parent is ScrollableControl { AutoScroll: true } scrollHost)
             {
-                scrollHost.ScrollControlIntoView(fontInput);
+                scrollHost.ScrollControlIntoView(reminderToggle);
                 break;
             }
         }

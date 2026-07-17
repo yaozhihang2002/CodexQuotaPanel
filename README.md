@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.3.0--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.3.1--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-f0c674"></a>
@@ -16,7 +16,7 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.3.0 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.3.1 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
 ## 一眼了解
 
@@ -24,7 +24,7 @@
 - **三种风格、五档状态**：简约余烬、流体火焰和像素火焰都会随近期消耗从霜晶、冷焰逐步变化到浓烈大火。
 - **适配日常桌面**：深色、浅色或跟随系统，简体中文 / English，支持多显示器、不同 DPI 与负坐标屏幕。
 - **自由但克制**：尺寸、字体、透明度、置顶、鼠标穿透、位置锁定、边缘吸附和提醒方式均可设置。
-- **本地与可恢复**：额度趋势和设置留在本机；提供崩溃恢复、安全模式、设置备份及旧版本设置迁移。
+- **本地与可恢复**：额度趋势和设置留在本机；异常记录仅用于脱敏诊断，下次启动照常恢复上次保存的界面、位置和设置。
 
 ## 界面预览
 
@@ -58,7 +58,7 @@
   <img src="docs/images/tray-status.png" width="640" alt="CodexQuotaPanel 动态托盘额度图标">
 </p>
 
-## v0.3.0 Pre-release 功能
+## v0.3.1 Pre-release 功能
 
 ### 额度与显示
 
@@ -76,14 +76,17 @@
 
 ### 恢复、设置与更新
 
-- 非正常退出后可进入安全模式，以保守的显示与交互参数启动；安全模式不会静默覆盖原设置。
+- 非正常退出或电脑重启后不再进入安全模式，始终按上次保存的显示状态、位置和设置启动。
+- 托盘右键菜单提供“重启应用”，在界面仍可响应时快速重新加载程序。
+- 穿透提示支持“不再提醒”，也可在“交互”设置中随时恢复；该偏好支持设置导入与导出。
+- 额度警告支持“本额度周期不再提醒”，当前窗口重置后自动恢复提醒。
 - 设置采用原子写入并保留备份；升级会读取旧版设置，继续保留悬浮球位置和已有个性化参数。
 - 支持导入、导出可移植设置。导出文件不包含悬浮球位置、历史、账户、路径或额度数据。
 - 可手动检查 GitHub Release，也可选择启动后检查；最多每 24 小时访问一次，不会自动下载或运行安装包。
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.3.0` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.3.1` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
 
 Release 发布后可按需要选择安装包或便携包，并使用同时提供的 SHA-256 信息校验文件。预发布版仍可能存在特定显卡、DPI 组合或系统环境下的兼容性问题。
 

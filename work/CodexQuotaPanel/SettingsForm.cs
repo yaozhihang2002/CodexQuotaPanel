@@ -47,6 +47,7 @@ internal sealed class SettingsForm : Form
     private readonly SettingsToggle _positionLockedToggle;
     private readonly SettingsToggle _snapToEdgeToggle;
     private readonly SettingsToggle _clickThroughToggle;
+    private readonly SettingsToggle _clickThroughReminderToggle;
     private readonly SettingsToggle _hoverPreviewToggle;
     private readonly SettingsToggle _globalHotKeyToggle;
     private readonly Label _alertSummary;
@@ -67,6 +68,15 @@ internal sealed class SettingsForm : Form
     internal bool SaveButtonVisible => _saveButton.Parent is { } parent &&
         !_saveButton.IsDisposed && _saveButton.Width > 0 && _saveButton.Height > 0 &&
         parent.ClientRectangle.IntersectsWith(_saveButton.Bounds);
+
+    internal void SetClickThroughReminderEnabled(bool enabled)
+    {
+        _workingPreferences = _workingPreferences with { ShowClickThroughReminder = enabled };
+        _initializing = true;
+        _clickThroughReminderToggle.Checked = enabled;
+        _initializing = false;
+        UpdateDirtyState();
+    }
 
     public event Action<PanelPreferences>? PreviewPreferencesChanged;
     public event Action? MoveToCurrentDisplayRequested;
@@ -208,6 +218,7 @@ internal sealed class SettingsForm : Form
         _positionLockedToggle = MakeToggle(L10n.PositionLock);
         _snapToEdgeToggle = MakeToggle(L10n.SnapToEdge);
         _clickThroughToggle = MakeToggle(L10n.ClickThrough);
+        _clickThroughReminderToggle = MakeToggle(L10n.ClickThroughReminder);
         _hoverPreviewToggle = MakeToggle(L10n.HoverPreview);
         _globalHotKeyToggle = MakeToggle(L10n.GlobalHotKey);
 
@@ -499,6 +510,7 @@ internal sealed class SettingsForm : Form
         page.AddItem(MakeToggleRow(L10n.PositionLock, L10n.PositionLockHint, _positionLockedToggle));
         page.AddItem(MakeToggleRow(L10n.SnapToEdge, L10n.SnapToEdgeHint, _snapToEdgeToggle));
         page.AddItem(MakeToggleRow(L10n.ClickThrough, L10n.ClickThroughHint, _clickThroughToggle));
+        page.AddItem(MakeToggleRow(L10n.ClickThroughReminder, L10n.ClickThroughReminderHint, _clickThroughReminderToggle));
         page.AddItem(MakeToggleRow(L10n.HoverPreview, L10n.HoverPreviewHint, _hoverPreviewToggle));
         page.AddItem(MakeToggleRow(L10n.GlobalHotKey, L10n.GlobalHotKeyHint, _globalHotKeyToggle));
 
@@ -1126,6 +1138,7 @@ internal sealed class SettingsForm : Form
         _positionLockedToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _snapToEdgeToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _clickThroughToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
+        _clickThroughReminderToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _hoverPreviewToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _globalHotKeyToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _alertSoundToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
@@ -1188,6 +1201,7 @@ internal sealed class SettingsForm : Form
             PositionLocked = _positionLockedToggle.Checked,
             SnapToEdge = _snapToEdgeToggle.Checked,
             OrbClickThrough = _clickThroughToggle.Checked,
+            ShowClickThroughReminder = _clickThroughReminderToggle.Checked,
             HoverPreviewEnabled = _hoverPreviewToggle.Checked,
             GlobalHotKeyEnabled = _globalHotKeyToggle.Checked,
             AlertSoundEnabled = _alertSoundToggle.Checked,
@@ -1322,6 +1336,7 @@ internal sealed class SettingsForm : Form
         _positionLockedToggle.Checked = preferences.PositionLocked;
         _snapToEdgeToggle.Checked = preferences.SnapToEdge;
         _clickThroughToggle.Checked = preferences.OrbClickThrough;
+        _clickThroughReminderToggle.Checked = preferences.ShowClickThroughReminder;
         _hoverPreviewToggle.Checked = preferences.HoverPreviewEnabled;
         _globalHotKeyToggle.Checked = preferences.GlobalHotKeyEnabled;
         _alertSoundToggle.Checked = preferences.AlertSoundEnabled;

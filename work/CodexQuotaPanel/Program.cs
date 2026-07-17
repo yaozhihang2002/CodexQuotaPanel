@@ -16,6 +16,8 @@ internal static class Program
             return;
         }
 
+        ApplicationRestart.WaitForPreviousInstance(args);
+
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (!createdNew)
         {
@@ -33,11 +35,7 @@ internal static class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         var preferences = PanelPreferenceManager.Load();
         L10n.SetLanguage((AppLanguage)preferences.Language);
-        var safeModeRequested = args.Any(argument =>
-            string.Equals(argument, "--safe-mode", StringComparison.OrdinalIgnoreCase));
         var recovery = CrashRecoverySession.Begin();
-        if (!safeModeRequested && recovery.PreviousSessionUnclean)
-            safeModeRequested = AskToUseSafeMode();
 
         Exception? fatalUiException = null;
         ThreadExceptionEventHandler threadExceptionHandler = (_, eventArgs) =>
@@ -58,7 +56,7 @@ internal static class Program
         try
         {
             using var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
-            using (var context = new QuotaApplicationContext(showSignal, preferences, safeModeRequested))
+            using (var context = new QuotaApplicationContext(showSignal, preferences))
                 Application.Run(context);
             if (fatalUiException is null) recovery.CompleteClean();
         }
@@ -75,27 +73,14 @@ internal static class Program
         GC.KeepAlive(mutex);
     }
 
-    private static bool AskToUseSafeMode()
-    {
-        var result = MessageBox.Show(
-            L10n.Pick(
-                "检测到上一次运行未正常结束。是否使用安全模式启动？\n\n安全模式只在本次运行中暂时关闭透明、穿透、动画火焰和位置锁定，不会覆盖原有设置。",
-                "The previous session did not close normally. Start in safe mode?\n\nSafe mode temporarily disables transparency, click-through, animated flame, and position locking for this run only. Your saved settings will not be overwritten."),
-            L10n.AppTitle,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button1);
-        return result == DialogResult.Yes;
-    }
-
     private static void ShowFatalError()
     {
         try
         {
             MessageBox.Show(
                 L10n.Pick(
-                    "程序遇到异常并将关闭。下次启动时可以选择安全模式；诊断记录不会包含账号、路径或会话内容。",
-                    "The application encountered an error and will close. You can choose safe mode next time; the recovery record contains no account, path, or session content."),
+                    "程序遇到异常并将关闭。诊断记录不会包含账号、路径或会话内容；下次启动将照常恢复已保存的设置。",
+                    "The application encountered an error and will close. The diagnostic record contains no account, path, or session content; the next launch will restore your saved settings normally."),
                 L10n.AppTitle,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
