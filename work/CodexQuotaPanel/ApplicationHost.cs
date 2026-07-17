@@ -21,6 +21,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _restartItem;
     private readonly ToolStripMenuItem _exitItem;
     private readonly EventWaitHandle _showSignal;
+    private readonly EventWaitHandle _exitSignal;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly AlertDedupState _alertState = AlertStateStore.Load();
     private readonly GitHubReleaseUpdateService _updateService = new();
@@ -42,6 +43,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
 
     public QuotaApplicationContext(
         EventWaitHandle showSignal,
+        EventWaitHandle exitSignal,
         PanelPreferences initialPreferences)
     {
         ArgumentNullException.ThrowIfNull(initialPreferences);
@@ -51,6 +53,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _history = new QuotaHistoryStore(enabled: _preferences.TrendRecordingEnabled);
         _form = new QuotaForm();
         _showSignal = showSignal;
+        _exitSignal = exitSignal;
         _form.RefreshRequested += () => _ = RefreshAsync();
         _form.OrbPositionChanged += point =>
         {
@@ -147,7 +150,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         UpdateGlobalHotKeyRegistration(showFailure: false);
         UpdateMenuState();
         _coordinatorStartTask = _coordinator.StartAsync();
-        _showTask = Task.Run(WaitForShowSignal);
+        _showTask = Task.Run(WaitForControlSignal);
         if (_preferences.CheckForUpdatesOnStartup)
             _ = CheckForUpdatesOnStartupAsync();
     }
@@ -683,13 +686,18 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         _ = RefreshAsync();
     }
 
-    private void WaitForShowSignal()
+    private void WaitForControlSignal()
     {
-        var handles = new[] { _showSignal, _lifetime.Token.WaitHandle };
+        var handles = new[] { _showSignal, _exitSignal, _lifetime.Token.WaitHandle };
         while (true)
         {
             var signaled = WaitHandle.WaitAny(handles);
-            if (signaled == 1 || _lifetime.IsCancellationRequested) return;
+            if (signaled == 2 || _lifetime.IsCancellationRequested) return;
+            if (signaled == 1)
+            {
+                SafeUi(ExitApplication);
+                return;
+            }
             SafeUi(() => _form.ShowDetails());
         }
     }

@@ -59,6 +59,7 @@ namespace CodexQuotaPanelSetup
     internal sealed class LanguageForm : Form
     {
         private const string ProductCode = "{F0BB60AE-0492-4225-A60B-D5BCC0705D43}";
+        private const string ExitEventName = @"Local\CodexQuotaPanel.Exit.v1";
         private const string ChineseMsiResource = "CodexQuotaPanel.Installer.zh-cn.msi";
         private const string EnglishTransformResource = "CodexQuotaPanel.Installer.en-us.mst";
         private static readonly Color Background = Color.FromArgb(18, 23, 21);
@@ -229,6 +230,22 @@ namespace CodexQuotaPanelSetup
 
             try
             {
+                _status.Text = english
+                    ? "Closing the running app safely…"
+                    : "正在安全关闭运行中的程序…";
+                string closeError;
+                if (!TryCloseRunningApplication(out closeError))
+                {
+                    throw new InvalidOperationException(
+                        (english
+                            ? "The running app could not be closed. End CodexQuotaPanel in Task Manager and try again."
+                            : "无法关闭正在运行的程序。请在任务管理器中结束 CodexQuotaPanel 后重试。") +
+                        (string.IsNullOrEmpty(closeError) ? string.Empty : "\n\n" + closeError));
+                }
+
+                _status.Text = reinstall
+                    ? (english ? "Updating the installed version…" : "正在覆盖已安装版本…")
+                    : (english ? "Starting Setup…" : "正在启动安装程序…");
                 Directory.CreateDirectory(temporaryDirectory);
                 string msiPath = Path.Combine(temporaryDirectory, "CodexQuotaPanel.msi");
                 string transformPath = Path.Combine(temporaryDirectory, "en-us.mst");
@@ -276,7 +293,7 @@ namespace CodexQuotaPanelSetup
                 Activate();
                 MessageBox.Show(
                     this,
-                    (_english.Checked ? "Setup could not start.\n\n" : "无法启动安装程序。\n\n") + ex.Message,
+                    (_english.Checked ? "Setup could not continue.\n\n" : "安装无法继续。\n\n") + ex.Message,
                     Text,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -312,6 +329,121 @@ namespace CodexQuotaPanelSetup
                     key.SetValue("Language", language, RegistryValueKind.DWord);
                 }
             }
+        }
+
+        private static bool TryCloseRunningApplication(out string error)
+        {
+            error = string.Empty;
+            Process[] candidates = Process.GetProcessesByName("CodexQuotaPanel");
+            System.Collections.Generic.List<Process> applications =
+                new System.Collections.Generic.List<Process>();
+            try
+            {
+                int currentProcessId;
+                using (Process currentProcess = Process.GetCurrentProcess())
+                {
+                    currentProcessId = currentProcess.Id;
+                }
+                foreach (Process candidate in candidates)
+                {
+                    if (candidate.Id != currentProcessId && IsCodexQuotaPanelProcess(candidate))
+                        applications.Add(candidate);
+                    else
+                        candidate.Dispose();
+                }
+                if (applications.Count == 0) return true;
+
+                SignalGracefulExit();
+                if (WaitForExit(applications, 6000)) return true;
+
+                foreach (Process application in applications)
+                {
+                    if (HasExited(application)) continue;
+                    try { application.CloseMainWindow(); }
+                    catch (InvalidOperationException) { }
+                }
+                if (WaitForExit(applications, 1500)) return true;
+
+                // v0.3.0 and earlier do not listen for ExitEventName while
+                // hidden in the tray. The process identity was verified from
+                // its executable metadata before this fallback is allowed.
+                foreach (Process application in applications)
+                {
+                    if (HasExited(application)) continue;
+                    try { application.Kill(); }
+                    catch (InvalidOperationException) { }
+                    catch (System.ComponentModel.Win32Exception ex) { error = ex.Message; }
+                }
+                return WaitForExit(applications, 4000);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            finally
+            {
+                foreach (Process application in applications) application.Dispose();
+            }
+        }
+
+        private static bool IsCodexQuotaPanelProcess(Process process)
+        {
+            try
+            {
+                string executable = process.MainModule.FileName;
+                if (!string.Equals(Path.GetFileName(executable), "CodexQuotaPanel.exe", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                FileVersionInfo version = FileVersionInfo.GetVersionInfo(executable);
+                return string.Equals(version.ProductName, "Codex Quota Panel", StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(version.CompanyName, "CodexQuotaPanel", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (InvalidOperationException) { return false; }
+            catch (System.ComponentModel.Win32Exception) { return false; }
+            catch (NotSupportedException) { return false; }
+        }
+
+        private static void SignalGracefulExit()
+        {
+            EventWaitHandle signal = null;
+            try
+            {
+                signal = EventWaitHandle.OpenExisting(ExitEventName);
+                signal.Set();
+            }
+            catch (WaitHandleCannotBeOpenedException) { }
+            catch (UnauthorizedAccessException) { }
+            finally
+            {
+                if (signal != null) signal.Dispose();
+            }
+        }
+
+        private static bool WaitForExit(System.Collections.Generic.IEnumerable<Process> applications, int timeoutMilliseconds)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            foreach (Process application in applications)
+            {
+                if (HasExited(application)) continue;
+                int remaining = Math.Max(0, timeoutMilliseconds - (int)stopwatch.ElapsedMilliseconds);
+                if (remaining == 0) return false;
+                try
+                {
+                    if (!application.WaitForExit(remaining)) return false;
+                }
+                catch (InvalidOperationException) { }
+            }
+            foreach (Process application in applications)
+            {
+                if (!HasExited(application)) return false;
+            }
+            return true;
+        }
+
+        private static bool HasExited(Process process)
+        {
+            try { return process.HasExited; }
+            catch (InvalidOperationException) { return true; }
         }
 
         private static string Quote(string value)

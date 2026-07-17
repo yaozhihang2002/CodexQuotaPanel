@@ -4,6 +4,7 @@ internal static class Program
 {
     private const string MutexName = @"Local\CodexQuotaPanel.Singleton.v1";
     private const string ShowEventName = @"Local\CodexQuotaPanel.Show.v1";
+    private const string ExitEventName = @"Local\CodexQuotaPanel.Exit.v1";
 
     [STAThread]
     private static void Main(string[] args)
@@ -56,7 +57,8 @@ internal static class Program
         try
         {
             using var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
-            using (var context = new QuotaApplicationContext(showSignal, preferences))
+            using var exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName);
+            using (var context = new QuotaApplicationContext(showSignal, exitSignal, preferences))
                 Application.Run(context);
             if (fatalUiException is null) recovery.CompleteClean();
         }
