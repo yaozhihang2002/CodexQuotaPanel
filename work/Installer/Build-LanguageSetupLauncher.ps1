@@ -32,11 +32,6 @@ if (-not $sourceText.Contains("[assembly: AssemblyVersion(`"$expectedAssemblyVer
 {
     throw "Setup launcher source version does not match requested version $Version."
 }
-if (-not $sourceText.Contains('Local\CodexQuotaPanel.Exit.v1') -or
-    -not $sourceText.Contains('TryCloseRunningApplication'))
-{
-    throw 'Setup launcher is missing the verified running-app shutdown handshake.'
-}
 $fullOutput = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $fullOutput
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
@@ -68,4 +63,4 @@ if ($assembly.Version.ToString() -ne $expectedAssemblyVersion)
 }
 
 $fileSize = (Get-Item -LiteralPath $fullOutput).Length
-Write-Output "PASS setup launcher v$Version | default=zh-CN + en-US option + closes verified running app + embedded MSI/MST | bytes=$fileSize | $fullOutput"
+Write-Output "PASS setup launcher v$Version | default=zh-CN + en-US option + embedded MSI/MST | bytes=$fileSize | $fullOutput"

@@ -16,6 +16,9 @@ $generatedProject = Join-Path $installerDir 'CodexQuotaPanelSetup.en-us.generate
 $generatedSolution = Join-Path $installerDir 'CodexQuotaPanelInstaller.en-us.generated.sln'
 $iconPath = Join-Path $installerDir '..\CodexQuotaPanel\Assets\CodexQuotaPanel.ico'
 $postProcessor = Join-Path $installerDir 'Set-OptionalDesktopShortcut.ps1'
+$upgradeCoordinatorSource = Join-Path $installerDir 'UpgradeCoordinator.cs'
+$upgradeCoordinatorBinary = Join-Path $installerDir '..\installer-stage\UpgradeCoordinator.exe'
+$applicationBinary = Join-Path $installerDir '..\installer-stage\win-x64\CodexQuotaPanel.exe'
 $baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-x64.msi"
 $englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-$Version-en-us-x64.msi"
 $transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-en-us.mst"
@@ -38,6 +41,39 @@ function Invoke-InstallerBuild {
     if ($process.ExitCode -ne 0)
     {
         throw "Visual Studio installer build failed with exit code $($process.ExitCode): $Solution"
+    }
+}
+
+function Build-UpgradeCoordinator {
+    $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+    if (-not (Test-Path -LiteralPath $compiler))
+    {
+        $compiler = 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe'
+    }
+    $outputDirectory = Split-Path -Parent $upgradeCoordinatorBinary
+    New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+    & $compiler `
+        /nologo `
+        /target:winexe `
+        /optimize+ `
+        /platform:anycpu `
+        "/out:$upgradeCoordinatorBinary" `
+        /reference:System.dll `
+        /reference:System.Core.dll `
+        $upgradeCoordinatorSource
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $upgradeCoordinatorBinary))
+    {
+        throw "Upgrade coordinator compilation failed with exit code $LASTEXITCODE"
+    }
+    $selfTest = Start-Process `
+        -FilePath $upgradeCoordinatorBinary `
+        -ArgumentList @('--self-test', "`"$applicationBinary`"") `
+        -Wait `
+        -PassThru `
+        -WindowStyle Hidden
+    if ($selfTest.ExitCode -ne 0)
+    {
+        throw "Upgrade coordinator identity self-test failed with exit code $($selfTest.ExitCode)"
     }
 }
 
@@ -198,12 +234,13 @@ function Test-EnglishTransform {
 }
 
 $resolvedDevenv = (Resolve-Path -LiteralPath $DevenvPath).Path
+Build-UpgradeCoordinator
 New-EnglishProject
 Invoke-InstallerBuild $solutionPath
-& $postProcessor -MsiPath $baseMsi -IconPath $iconPath
+& $postProcessor -MsiPath $baseMsi -IconPath $iconPath -UpgradeCoordinatorPath $upgradeCoordinatorBinary
 
 Invoke-InstallerBuild $generatedSolution
-& $postProcessor -MsiPath $englishMsi -IconPath $iconPath
+& $postProcessor -MsiPath $englishMsi -IconPath $iconPath -UpgradeCoordinatorPath $upgradeCoordinatorBinary
 
 New-EnglishTransform
 Test-EnglishTransform

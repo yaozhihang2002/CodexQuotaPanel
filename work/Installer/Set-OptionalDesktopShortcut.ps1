@@ -2,7 +2,9 @@
     [Parameter(Mandatory = $true)]
     [string]$MsiPath,
     [Parameter(Mandatory = $true)]
-    [string]$IconPath
+    [string]$IconPath,
+    [Parameter(Mandatory = $true)]
+    [string]$UpgradeCoordinatorPath
 )
 
 Set-StrictMode -Version Latest
@@ -10,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 
 $resolvedMsi = (Resolve-Path -LiteralPath $MsiPath).Path
 $resolvedIcon = (Resolve-Path -LiteralPath $IconPath).Path
+$resolvedUpgradeCoordinator = (Resolve-Path -LiteralPath $UpgradeCoordinatorPath).Path
 $installer = $null
 $database = $null
 
@@ -99,6 +102,38 @@ function Add-MsiIcon {
     }
 
     $view = Invoke-ComMethod $database 'OpenView' @('INSERT INTO `Icon` (`Name`, `Data`) VALUES (?, ?)')
+    $record = Invoke-ComMethod $installer 'CreateRecord' @(2)
+    try
+    {
+        $record.GetType().InvokeMember(
+            'StringData',
+            [System.Reflection.BindingFlags]::SetProperty,
+            $null,
+            $record,
+            @(1, $Name)) | Out-Null
+        [void](Invoke-ComMethod $record 'SetStream' @(2, $Path))
+        [void](Invoke-ComMethod $view 'Execute' @($record))
+    }
+    finally
+    {
+        [void](Invoke-ComMethod $view 'Close')
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
+    }
+}
+
+function Add-MsiBinary {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if ($null -ne (Get-MsiScalar "SELECT ``Name`` FROM ``Binary`` WHERE ``Name``='$Name'"))
+    {
+        Invoke-MsiNonQuery "DELETE FROM ``Binary`` WHERE ``Name``='$Name'"
+    }
+
+    $view = Invoke-ComMethod $database 'OpenView' @('INSERT INTO `Binary` (`Name`, `Data`) VALUES (?, ?)')
     $record = Invoke-ComMethod $installer 'CreateRecord' @(2)
     try
     {
@@ -214,6 +249,33 @@ try
     Set-MsiProperty 'FolderForm_NextArgs' 'ConfirmInstallForm'
     Set-MsiProperty 'ConfirmInstallForm_PrevArgs' 'FolderForm'
 
+    # These actions run only after the user presses Install on the final
+    # confirmation page. The first action records whether the panel was open,
+    # then closes it before files are changed. A rollback action restores the
+    # prior running state after a failed install; the final action does the same
+    # after a successful install.
+    $upgradeBinaryName = 'CodexQuotaUpgradeCoordinator'
+    $closeAction = 'CloseCodexQuotaPanelForInstall'
+    $rollbackAction = 'RestartCodexQuotaPanelOnRollback'
+    $restartAction = 'RestartCodexQuotaPanelAfterInstall'
+    Add-MsiBinary $upgradeBinaryName $resolvedUpgradeCoordinator
+    foreach ($action in @($closeAction, $rollbackAction, $restartAction))
+    {
+        if ($null -ne (Get-MsiScalar "SELECT ``Action`` FROM ``CustomAction`` WHERE ``Action``='$action'"))
+        {
+            Invoke-MsiNonQuery "DELETE FROM ``InstallExecuteSequence`` WHERE ``Action``='$action'"
+            Invoke-MsiNonQuery "DELETE FROM ``CustomAction`` WHERE ``Action``='$action'"
+        }
+    }
+    Invoke-MsiNonQuery "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('$closeAction', 2, '$upgradeBinaryName', '--close-before-install')"
+    # 1282 = EXE from Binary + rollback + deferred execution, impersonating
+    # the installing user so the per-user marker and process are accessible.
+    Invoke-MsiNonQuery "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('$rollbackAction', 1282, '$upgradeBinaryName', '--restart-after-install')"
+    Invoke-MsiNonQuery "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('$restartAction', 2, '$upgradeBinaryName', '--restart-after-install `"[TARGETDIR]CodexQuotaPanel.exe`"')"
+    Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$closeAction', 'NOT (REMOVE~=`"ALL`")', 1510)"
+    Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$rollbackAction', 'NOT (REMOVE~=`"ALL`")', 1511)"
+    Invoke-MsiNonQuery "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('$restartAction', 'NOT (REMOVE~=`"ALL`")', 6700)"
+
     # The stock welcome dialog uses an aggressive copyright-prosecution
     # warning. This project is MIT licensed, so use a short, accurate open
     # source notice instead.
@@ -242,6 +304,13 @@ try
     $beforeConfirmationDialog = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ConfirmInstallForm_PrevArgs'"
     $confirmationTitle = Get-MsiScalar "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='ConfirmInstallForm' AND ``Control``='BannerText'"
     $welcomeNotice = Get-MsiScalar "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='WelcomeForm' AND ``Control``='CopyrightWarningText'"
+    $closeActionType = Get-MsiScalar "SELECT ``Type`` FROM ``CustomAction`` WHERE ``Action``='$closeAction'"
+    $rollbackActionType = Get-MsiScalar "SELECT ``Type`` FROM ``CustomAction`` WHERE ``Action``='$rollbackAction'"
+    $restartActionType = Get-MsiScalar "SELECT ``Type`` FROM ``CustomAction`` WHERE ``Action``='$restartAction'"
+    $closeActionSequence = Get-MsiScalar "SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action``='$closeAction'"
+    $rollbackActionSequence = Get-MsiScalar "SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action``='$rollbackAction'"
+    $restartActionSequence = Get-MsiScalar "SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action``='$restartAction'"
+    $upgradeBinaryRow = Get-MsiScalar "SELECT ``Name`` FROM ``Binary`` WHERE ``Name``='$upgradeBinaryName'"
     $confirmationTitleValid = if ($productLanguage -eq '2052')
     {
         $confirmationTitle -like '*确认安装*'
@@ -261,12 +330,19 @@ try
         $afterFolderDialog -ne 'ConfirmInstallForm' -or
         $beforeConfirmationDialog -ne 'FolderForm' -or
         -not $confirmationTitleValid -or
-        $welcomeNotice -notlike '*MIT*')
+        $welcomeNotice -notlike '*MIT*' -or
+        $upgradeBinaryRow -ne $upgradeBinaryName -or
+        $closeActionType -ne '2' -or
+        $rollbackActionType -ne '1282' -or
+        $restartActionType -ne '2' -or
+        $closeActionSequence -ne '1510' -or
+        $rollbackActionSequence -ne '1511' -or
+        $restartActionSequence -ne '6700')
     {
         throw "The installer MSI tables did not validate after commit: language=$productLanguage; condition=$condition; component=$boundComponent; target=$shortcutTarget; shortcutIcon=$shortcutIcon; arpIcon=$arpIcon; optionsNext=$afterOptionsDialog; folderBack=$beforeFolderDialog; folderNext=$afterFolderDialog; confirmBack=$beforeConfirmationDialog; confirmation=$confirmationTitle; notice=$welcomeNotice"
     }
 
-    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + bidirectional navigation + MIT notice + EXE logo + branded ARP icon + final confirmation | $resolvedMsi"
+    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + bidirectional navigation + MIT notice + EXE logo + branded ARP icon + final-click shutdown + conditional restart | $resolvedMsi"
 }
 finally
 {
