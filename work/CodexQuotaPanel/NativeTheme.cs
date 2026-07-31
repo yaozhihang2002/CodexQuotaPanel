@@ -148,8 +148,7 @@ internal sealed class BufferedTableLayoutPanel : TableLayoutPanel
     {
         SetStyle(ControlStyles.UserPaint |
                  ControlStyles.AllPaintingInWmPaint |
-                 ControlStyles.OptimizedDoubleBuffer |
-                 ControlStyles.ResizeRedraw, true);
+                 ControlStyles.OptimizedDoubleBuffer, true);
         UpdateStyles();
     }
 }

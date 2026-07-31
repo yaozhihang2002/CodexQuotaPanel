@@ -12,6 +12,7 @@ namespace CodexQuotaPanel;
 /// </summary>
 internal sealed class SettingsForm : Form
 {
+    private const int WsExComposited = 0x02000000;
     private static readonly Size CompactClientSize = new(800, 520);
     private static readonly Size CompactMinimumSize = new(780, 480);
 
@@ -131,6 +132,9 @@ internal sealed class SettingsForm : Form
         Text = L10n.SettingsTitle;
         AccessibleName = L10n.SettingsTitle;
         DoubleBuffered = true;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(ControlStyles.ResizeRedraw, false);
 
         _rootLayout = new BufferedTableLayoutPanel
         {
@@ -163,7 +167,8 @@ internal sealed class SettingsForm : Form
         };
         contentHost.Resize += (_, _) =>
         {
-            if (!_interactiveResize) ResizeSettingsPagesToViewport();
+            if (_interactiveResize) ResizeSelectedPageToViewport();
+            else ResizeSettingsPagesToViewport();
         };
         _rootLayout.Controls.Add(contentHost, 1, 1);
 
@@ -340,7 +345,30 @@ internal sealed class SettingsForm : Form
         base.OnResizeEnd(e);
         _interactiveResize = false;
         ResizeSettingsPagesToViewport();
+        if (_selectedPageIndex >= 0 && _pages[_selectedPageIndex] is { } selectedPage)
+            HideInactivePages(selectedPage);
         if (_selectedPageIndex == 1) _orbPreview?.SetAnimationPaused(false);
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        ResizeSettingsPagesToViewport();
+        UpdateOrbPreview();
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            // WinForms double buffering covers the form itself but not native
+            // child HWNDs such as combo boxes, steppers and scroll bars.
+            // Compositing the settings subtree prevents those children from
+            // briefly exposing the erase colour while the user drags a border.
+            parameters.ExStyle |= WsExComposited;
+            return parameters;
+        }
     }
 
     private void RestoreSelectedPageZOrder()
@@ -651,16 +679,16 @@ internal sealed class SettingsForm : Form
         previewHost.Resize += (_, _) => CenterOrbPreview(previewHost);
         layout.Controls.Add(previewHost, 1, 0);
         card.Controls.Add(layout);
-        UpdateOrbPreview();
         return card;
     }
 
     private void CenterOrbPreview(Control host)
     {
         if (_orbPreview is null) return;
+        var viewport = host.DisplayRectangle;
         _orbPreview.Location = new Point(
-            Math.Max(0, (host.ClientSize.Width - _orbPreview.Width) / 2),
-            Math.Max(0, (host.ClientSize.Height - _orbPreview.Height) / 2));
+            viewport.Left + Math.Max(0, (viewport.Width - _orbPreview.Width) / 2),
+            viewport.Top + Math.Max(0, (viewport.Height - _orbPreview.Height) / 2));
     }
 
     private Control BuildInteractionPage()
@@ -1306,7 +1334,16 @@ internal sealed class SettingsForm : Form
         if (page is ResponsiveSettingsPage responsivePage)
             responsivePage.CompleteBuild();
         page.Bounds = _pageHost.DisplayRectangle;
+        if (index == 1) UpdateOrbPreview();
         return page;
+    }
+
+    private void ResizeSelectedPageToViewport()
+    {
+        if (_pageHost is null || _selectedPageIndex < 0 ||
+            _pages[_selectedPageIndex] is not { } selectedPage) return;
+        var viewport = _pageHost.DisplayRectangle;
+        if (selectedPage.Bounds != viewport) selectedPage.Bounds = viewport;
     }
 
     private void ResizeSettingsPagesToViewport()
@@ -1370,7 +1407,15 @@ internal sealed class SettingsForm : Form
             if (IsDisposed || generation != _pagePaintGeneration ||
                 pageIndex != _selectedPageIndex || page.IsDisposed) return;
             NativeRedrawScope.RedrawNow(page);
+            HideInactivePages(page);
         }));
+    }
+
+    private void HideInactivePages(Control selectedPage)
+    {
+        foreach (var page in _pages)
+            if (page is not null && !ReferenceEquals(page, selectedPage) && page.Visible)
+                page.Visible = false;
     }
 
     protected override bool ProcessTabKey(bool forward)
@@ -1893,8 +1938,12 @@ internal sealed class SettingsForm : Form
         const int maximumPreviewSize = 140;
         var previewProgress = (size - PanelPreferenceManager.MinimumOrbSize) /
                               (double)(PanelPreferenceManager.MaximumOrbSize - PanelPreferenceManager.MinimumOrbSize);
-        var previewSize = minimumPreviewSize + (int)Math.Round(
+        var logicalPreviewSize = minimumPreviewSize + (int)Math.Round(
             previewProgress * (maximumPreviewSize - minimumPreviewSize));
+        var previewDpi = _orbPreview.IsHandleCreated
+            ? _orbPreview.DeviceDpi
+            : IsHandleCreated ? DeviceDpi : 96;
+        var previewSize = ScalePreviewPixels(logicalPreviewSize, previewDpi);
         _orbPreview.Size = new Size(previewSize, previewSize);
         _orbPreview.ConfigureRings(RingDisplayConfiguration.FromPreferences(_workingPreferences));
         _orbPreview.SetBackgroundColor(_workingPreferences.OrbBackgroundColorArgb);
@@ -1903,6 +1952,9 @@ internal sealed class SettingsForm : Form
         if (_snapshot is not null) _orbPreview.SetSnapshot(_snapshot, live: true);
         if (_orbPreview.Parent is { } host) CenterOrbPreview(host);
     }
+
+    internal static int ScalePreviewPixels(int logicalPixels, int dpi) =>
+        Math.Max(1, (int)Math.Round(logicalPixels * Math.Max(48, dpi) / 96d));
 
     internal void SetOrbSizeForTest(int value)
     {
@@ -2189,7 +2241,6 @@ internal sealed class BufferedSettingsHost : Panel
         SetStyle(ControlStyles.UserPaint |
                  ControlStyles.AllPaintingInWmPaint |
                  ControlStyles.OptimizedDoubleBuffer |
-                 ControlStyles.ResizeRedraw |
                  ControlStyles.Opaque, true);
         UpdateStyles();
     }

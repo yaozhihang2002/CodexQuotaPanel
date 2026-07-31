@@ -47,6 +47,50 @@ internal static class FocusedSettingsOverlapPreview
         settings.SetOrbSizeForTest(PanelPreferenceManager.MaximumOrbSize);
         settings.SetFontScaleForTest(PanelPreferenceManager.MaximumSettingsFontScale);
         Field<ComboBox>(settings, "_flameStyleCombo").SelectedIndex = 2;
+        Application.DoEvents();
+
+        var preview = Field<QuotaOrbControl>(settings, "_orbPreview");
+        var previewHost = preview.Parent
+            ?? throw new InvalidOperationException("Appearance preview has no host.");
+        var expectedPreviewSize = SettingsForm.ScalePreviewPixels(140, preview.DeviceDpi);
+        if (Math.Abs(preview.Width - expectedPreviewSize) > 1 || preview.Width != preview.Height)
+            throw new InvalidOperationException(
+                $"Appearance preview ignored monitor DPI: {preview.Size}, expected {expectedPreviewSize}px.");
+        if (!previewHost.DisplayRectangle.Contains(preview.Bounds))
+            throw new InvalidOperationException(
+                $"Appearance preview is clipped: host={previewHost.DisplayRectangle}, preview={preview.Bounds}.");
+
+        // Reproduce live border dragging. The active page must cover every
+        // intermediate viewport; inactive cached tabs must not paint behind it.
+        var pageHost = Field<Control>(settings, "_pageHost");
+        var resizeBegin = typeof(SettingsForm).GetMethod(
+            "OnResizeBegin", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Missing resize begin hook.");
+        var resizeEnd = typeof(SettingsForm).GetMethod(
+            "OnResizeEnd", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Missing resize end hook.");
+        var originalClientSize = settings.ClientSize;
+        resizeBegin.Invoke(settings, [EventArgs.Empty]);
+        foreach (var delta in new[] { new Size(36, 24), new Size(72, 46), new Size(18, 12) })
+        {
+            settings.ClientSize = new Size(
+                originalClientSize.Width + delta.Width,
+                originalClientSize.Height + delta.Height);
+            Application.DoEvents();
+            if (settings.SelectedPageForTest.Bounds != pageHost.DisplayRectangle)
+                throw new InvalidOperationException(
+                    $"Active settings page lagged behind live resize: " +
+                    $"page={settings.SelectedPageForTest.Bounds}, host={pageHost.DisplayRectangle}.");
+        }
+        settings.ClientSize = originalClientSize;
+        resizeEnd.Invoke(settings, [EventArgs.Empty]);
+        Application.DoEvents();
+        foreach (Control cachedPage in pageHost.Controls)
+        {
+            if (!ReferenceEquals(cachedPage, settings.SelectedPageForTest) && cachedPage.Visible)
+                throw new InvalidOperationException("An inactive settings page remained visible behind the active tab.");
+        }
+
         settings.SetLanguageForTest(1);
         settings.SelectPageForTest(0);
         settings.Refresh();
@@ -65,7 +109,6 @@ internal static class FocusedSettingsOverlapPreview
             if (measured.Width > item.ClientSize.Width - 32)
                 throw new InvalidOperationException($"Navigation label is clipped at maximum typography: {item.Text}");
         }
-        var preview = Field<QuotaOrbControl>(settings, "_orbPreview");
         if (preview.Visible)
             throw new InvalidOperationException("Appearance orb preview remained visible on the General page.");
         if (settings.SelectedFontScalePercent != PanelPreferenceManager.MaximumSettingsFontScale ||
