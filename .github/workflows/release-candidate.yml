@@ -198,11 +198,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = 'v${{ needs.candidate.outputs.version }}'
-          gh release view $tag *> $null
+          gh release view $tag --repo '${{ github.repository }}' *> $null
           if ($LASTEXITCODE -eq 0) {
             throw "Release $tag already exists; refusing to overwrite it."
           }
           $assets = Get-ChildItem -LiteralPath 'candidate' -File | ForEach-Object FullName
-          gh release create $tag $assets --verify-tag --prerelease `
+          gh release create $tag $assets --repo '${{ github.repository }}' --verify-tag --prerelease `
             --title "$tag Pre-release" `
             --notes 'Manually confirmed release candidate built by GitHub Actions.'
