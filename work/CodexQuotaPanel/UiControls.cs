@@ -23,6 +23,78 @@ internal static class UiPalette
 
     private sealed record TypographyBaseline(float SizeInPoints, FontStyle Style, bool Monospace);
     private static readonly ConditionalWeakTable<Control, TypographyBaseline> TypographyBaselines = new();
+    private static readonly ConditionalWeakTable<Control, ScaledFontLease> ScaledFontLeases = new();
+    private static readonly ConditionalWeakTable<Control, RetiredFontPool> RetiredFontPools = new();
+
+    private sealed class ScaledFontLease
+    {
+        private Font? _font;
+
+        internal ScaledFontLease(Control owner) => owner.Disposed += OnOwnerDisposed;
+
+        internal Font? Replace(Control owner, Font font)
+        {
+            // Control.Font ignores an assignment when the new Font is value-
+            // equal to the current one. Treat that as a no-op: otherwise the
+            // lease would remember the unused new instance and retire the font
+            // that the control is still actively painting with.
+            if (owner.Font is { } current && current.Equals(font))
+            {
+                font.Dispose();
+                return null;
+            }
+
+            var previous = _font;
+            owner.Font = font;
+            if (!ReferenceEquals(owner.Font, font))
+            {
+                font.Dispose();
+                return null;
+            }
+            _font = font;
+            return previous;
+        }
+
+        private void OnOwnerDisposed(object? sender, EventArgs e)
+        {
+            _font?.Dispose();
+            _font = null;
+        }
+    }
+
+    private sealed class RetiredFontPool : IDisposable
+    {
+        private readonly List<Font> _fonts = [];
+        private readonly System.Windows.Forms.Timer _timer = new() { Interval = 750 };
+
+        internal RetiredFontPool(Control owner)
+        {
+            _timer.Tick += (_, _) => Drain();
+            owner.Disposed += (_, _) => Dispose();
+        }
+
+        internal void Retire(IEnumerable<Font> fonts)
+        {
+            _fonts.AddRange(fonts);
+            _timer.Stop();
+            _timer.Start();
+        }
+
+        private void Drain()
+        {
+            _timer.Stop();
+            foreach (var font in _fonts) font.Dispose();
+            _fonts.Clear();
+        }
+
+        public void Dispose()
+        {
+            _timer.Stop();
+            _timer.Dispose();
+            foreach (var font in _fonts) font.Dispose();
+            _fonts.Clear();
+        }
+    }
 
     internal sealed record Colors(
         Color Canvas,
@@ -48,9 +120,11 @@ internal static class UiPalette
         Color.FromArgb(118, 191, 242), Color.FromArgb(234, 180, 91), Color.FromArgb(240, 107, 103));
 
     private static readonly Colors LightColors = new(
-        Color.FromArgb(245, 247, 246), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 242, 240),
-        Color.FromArgb(201, 210, 205), Color.FromArgb(220, 227, 223), Color.FromArgb(24, 32, 28),
-        Color.FromArgb(94, 107, 100), Color.FromArgb(103, 115, 108), Color.FromArgb(8, 123, 88),
+        // Soft mineral neutrals avoid the clinical glare of pure white while
+        // preserving clear separation between canvas, cards and selections.
+        Color.FromArgb(239, 243, 241), Color.FromArgb(249, 251, 250), Color.FromArgb(231, 238, 234),
+        Color.FromArgb(193, 206, 199), Color.FromArgb(213, 223, 218), Color.FromArgb(24, 32, 28),
+        Color.FromArgb(84, 98, 91), Color.FromArgb(103, 116, 109), Color.FromArgb(8, 123, 88),
         Color.FromArgb(40, 111, 168), Color.FromArgb(154, 95, 0), Color.FromArgb(184, 63, 59));
 
     private static Colors _colors = DarkColors;
@@ -68,6 +142,10 @@ internal static class UiPalette
     public static Color Amber => _colors.Amber;
     public static Color Coral => _colors.Coral;
     internal static Colors CurrentColors => _colors;
+    // The orb is a desktop instrument rather than part of the settings canvas.
+    // Keep its default shell consistently dark in both application themes so
+    // the coloured quota rings retain the same contrast over any wallpaper.
+    internal static Color DefaultOrbBackground => Color.Black;
 
     internal static Colors ResolveColors(int themeMode) => themeMode switch
     {
@@ -147,8 +225,26 @@ internal static class UiPalette
     public static Font Body(float size, FontStyle style = FontStyle.Regular) =>
         CreateFont(CurrentUiFontName(), Math.Max(size, MinimumBodySize), style);
 
+    internal static Font LatinBody(float size, FontStyle style = FontStyle.Regular) =>
+        CreateFont(
+            FirstInstalled("Segoe UI Variable Text", "Segoe UI", "Tahoma"),
+            Math.Max(size, MinimumBodySize),
+            style);
+
     public static Font Mono(float size, FontStyle style = FontStyle.Regular) =>
         CreateFont(MonospaceFontName(), Math.Max(size, MinimumCompactSize), style);
+
+    /// <summary>
+    /// Creates a monospace font whose size is already expressed in device
+    /// pixels. This is used by manually scaled drawing surfaces so Windows does
+    /// not apply the monitor DPI a second time to an already scaled size.
+    /// </summary>
+    internal static Font MonoPixels(float size, FontStyle style = FontStyle.Regular) =>
+        CreateFont(
+            MonospaceFontName(),
+            Math.Max(size, MinimumCompactSize * 96f / 72f),
+            style,
+            GraphicsUnit.Pixel);
 
     /// <summary>
     /// Reapplies the current language's UI font to an existing control tree.
@@ -158,8 +254,10 @@ internal static class UiPalette
     public static void ApplyTypography(Control root)
     {
         ArgumentNullException.ThrowIfNull(root);
-        ApplyTypographyRecursive(root);
+        var retiredFonts = new List<Font>();
+        ApplyTypographyRecursive(root, retiredFonts);
         root.PerformLayout();
+        RetireFonts(root, retiredFonts);
         root.Invalidate(true);
     }
 
@@ -172,12 +270,32 @@ internal static class UiPalette
     {
         ArgumentNullException.ThrowIfNull(root);
         scalePercent = PanelPreferenceManager.NormalizeSettingsFontScale(scalePercent);
-        ApplyScaledTypographyRecursive(root, scalePercent / 100f);
+        var controls = EnumerateControlTree(root).ToArray();
+        var retiredFonts = new List<Font>();
+        foreach (var control in controls) control.SuspendLayout();
+        try
+        {
+            ApplyScaledTypographyRecursive(root, scalePercent / 100f, retiredFonts);
+        }
+        finally
+        {
+            for (var index = controls.Length - 1; index >= 0; index--)
+                controls[index].ResumeLayout(performLayout: false);
+        }
         root.PerformLayout();
+        RetireFonts(root, retiredFonts);
         root.Invalidate(true);
     }
 
-    private static void ApplyScaledTypographyRecursive(Control control, float scale)
+    private static IEnumerable<Control> EnumerateControlTree(Control root)
+    {
+        yield return root;
+        foreach (Control child in root.Controls)
+            foreach (var descendant in EnumerateControlTree(child))
+                yield return descendant;
+    }
+
+    private static void ApplyScaledTypographyRecursive(Control control, float scale, List<Font> retiredFonts)
     {
         var current = control.Font;
         var hasBaseline = TypographyBaselines.TryGetValue(control, out var existingBaseline);
@@ -191,27 +309,29 @@ internal static class UiPalette
                     new TypographyBaseline(item.Font.SizeInPoints, item.Font.Style,
                         IsMonospaceFont(item.Font.Name)));
             var scaledSize = baseline.SizeInPoints * scale;
-            control.Font = baseline.Monospace
+            var font = baseline.Monospace
                 ? CreateFont(MonospaceFontName(), Math.Max(scaledSize, MinimumCompactSize), baseline.Style)
                 : CreateFont(CurrentUiFontName(), Math.Max(scaledSize, MinimumBodySize), baseline.Style);
+            AssignManagedFont(control, font, retiredFonts);
         }
 
         foreach (Control child in control.Controls)
-            ApplyScaledTypographyRecursive(child, scale);
+            ApplyScaledTypographyRecursive(child, scale, retiredFonts);
     }
 
-    private static void ApplyTypographyRecursive(Control control)
+    private static void ApplyTypographyRecursive(Control control, List<Font> retiredFonts)
     {
         var current = control.Font;
         if (current is not null && !IsIconOrEmojiFont(current.Name))
         {
-            control.Font = IsMonospaceFont(current.Name)
+            var font = IsMonospaceFont(current.Name)
                 ? Mono(current.SizeInPoints, current.Style)
                 : Body(current.SizeInPoints, current.Style);
+            AssignManagedFont(control, font, retiredFonts);
         }
 
         foreach (Control child in control.Controls)
-            ApplyTypographyRecursive(child);
+            ApplyTypographyRecursive(child, retiredFonts);
     }
 
     private static bool IsIconOrEmojiFont(string fontName) =>
@@ -221,6 +341,19 @@ internal static class UiPalette
     private static bool IsMonospaceFont(string fontName) =>
         fontName.Equals("Consolas", StringComparison.OrdinalIgnoreCase) ||
         fontName.Equals("Courier New", StringComparison.OrdinalIgnoreCase);
+
+    private static void AssignManagedFont(Control control, Font font, List<Font> retiredFonts)
+    {
+        var previous = ScaledFontLeases.GetValue(control, owner => new ScaledFontLease(owner))
+            .Replace(control, font);
+        if (previous is not null) retiredFonts.Add(previous);
+    }
+
+    private static void RetireFonts(Control root, List<Font> fonts)
+    {
+        if (fonts.Count == 0) return;
+        RetiredFontPools.GetValue(root, owner => new RetiredFontPool(owner)).Retire(fonts);
+    }
 
     private static string CurrentUiFontName() => L10n.IsChinese
         ? FirstInstalled("Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI")
@@ -239,16 +372,20 @@ internal static class UiPalette
         return SystemFonts.MessageBoxFont?.FontFamily.Name ?? FontFamily.GenericSansSerif.Name;
     }
 
-    private static Font CreateFont(string fontName, float size, FontStyle style)
+    private static Font CreateFont(
+        string fontName,
+        float size,
+        FontStyle style,
+        GraphicsUnit unit = GraphicsUnit.Point)
     {
         try
         {
-            return new Font(fontName, size, style, GraphicsUnit.Point);
+            return new Font(fontName, size, style, unit);
         }
         catch (ArgumentException)
         {
             var fallbackFamily = SystemFonts.MessageBoxFont?.FontFamily ?? FontFamily.GenericSansSerif;
-            return new Font(fallbackFamily, size, style, GraphicsUnit.Point);
+            return new Font(fallbackFamily, size, style, unit);
         }
     }
 
@@ -284,6 +421,7 @@ internal sealed class QuotaOrbControl : Control
     private double _targetFlameIntensity;
     private double _flamePhase;
     private FlameActivityLevel _flameActivity = FlameActivityLevel.Frozen;
+    private Color? _backgroundColor;
 
     internal string OuterLabel => RingWindowCatalog.FormatShort(_configuration.Outer.WindowMinutes);
     internal string InnerLabel => RingWindowCatalog.FormatShort(_configuration.Inner.WindowMinutes);
@@ -296,6 +434,7 @@ internal sealed class QuotaOrbControl : Control
     internal int FlameStyle => _flameStyle;
     internal bool FlameTimerRunning => _flameTimer.Enabled;
     internal FlameActivityLevel ActivityLevel => FlameActivity.Classify(_targetFlameIntensity);
+    internal Color WindowBackdropColor => ResolveOrbSurface().End;
 
     public QuotaOrbControl()
     {
@@ -371,6 +510,14 @@ internal sealed class QuotaOrbControl : Control
         Invalidate();
     }
 
+    public void SetBackgroundColor(int? argb)
+    {
+        _backgroundColor = argb is { } value
+            ? Color.FromArgb(255, Color.FromArgb(value))
+            : null;
+        Invalidate();
+    }
+
     public void SetConsumptionIntensity(double intensity)
     {
         _targetFlameIntensity = Math.Clamp(intensity, 0d, 1d);
@@ -440,10 +587,12 @@ internal sealed class QuotaOrbControl : Control
         DrawOrb(e.Graphics);
     }
 
-    internal Bitmap RenderTransparentPreview()
+    internal Bitmap RenderTransparentPreview(float dpi = 96f)
     {
         var bitmap = new Bitmap(Math.Max(1, Width), Math.Max(1, Height),
             System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        if (dpi is >= 48f and <= 960f)
+            bitmap.SetResolution(dpi, dpi);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
         DrawOrb(graphics);
@@ -455,22 +604,32 @@ internal sealed class QuotaOrbControl : Control
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var scale = Math.Max(0.5f, Math.Min(Width, Height) / 88f);
         using var shell = UiPalette.RoundedRect(new RectangleF(1.5f, 1.5f, Width - 3, Height - 3), (Width - 3) / 2f);
+        var (surfaceStart, surfaceEnd, borderColor, trackColor) = ResolveOrbSurface();
         using var background = new LinearGradientBrush(
             ClientRectangle,
-            UiPalette.SurfaceRaised,
-            UiPalette.Canvas,
+            surfaceStart,
+            surfaceEnd,
             LinearGradientMode.ForwardDiagonal);
-        using var border = new Pen(UiPalette.Border, 1);
+        using var border = new Pen(borderColor, 1);
         graphics.FillPath(background, shell);
         graphics.DrawPath(border, shell);
 
+        if (surfaceEnd.GetBrightness() > 0.62f)
+        {
+            using var innerShell = UiPalette.RoundedRect(
+                new RectangleF(3f, 3f, Width - 6f, Height - 6f),
+                (Width - 6f) / 2f);
+            using var innerHighlight = new Pen(Color.FromArgb(92, Color.White), Math.Max(0.65f, 0.7f * scale));
+            graphics.DrawPath(innerHighlight, innerShell);
+        }
+
         var outerBounds = new RectangleF(8 * scale, 8 * scale, Width - 16 * scale, Height - 16 * scale);
         DrawArc(graphics, outerBounds, 7 * scale,
-            _outerBucket?.RemainingPercent, _configuration.OuterColor);
+            _outerBucket?.RemainingPercent, _configuration.OuterColor, trackColor);
         DrawArc(graphics, new RectangleF(19 * scale, 19 * scale, Width - 38 * scale, Height - 38 * scale), 4.5f * scale,
-            _innerBucket?.RemainingPercent, _configuration.InnerColor);
+            _innerBucket?.RemainingPercent, _configuration.InnerColor, trackColor);
 
-        using var labelFont = UiPalette.Mono(6.4f * scale, FontStyle.Bold);
+        using var labelFont = UiPalette.MonoPixels(LabelPixelSize(scale), FontStyle.Bold);
         var outerText = $"{OuterLabel} {FormatPercent(_outerBucket)}";
         var innerText = $"{InnerLabel} {FormatPercent(_innerBucket)}";
         TextRenderer.DrawText(graphics, outerText, labelFont, ScaleRectangle(new RectangleF(22, 29, 44, 14), scale), _configuration.OuterColor,
@@ -497,7 +656,7 @@ internal sealed class QuotaOrbControl : Control
 
         var statusCenter = ArcEndpoint(outerBounds, _outerBucket?.RemainingPercent);
         var statusDiameter = 5f * scale;
-        using var statusBorder = new SolidBrush(UiPalette.Canvas);
+        using var statusBorder = new SolidBrush(surfaceEnd);
         graphics.FillEllipse(statusBorder,
             statusCenter.X - statusDiameter * 0.72f,
             statusCenter.Y - statusDiameter * 0.72f,
@@ -510,6 +669,28 @@ internal sealed class QuotaOrbControl : Control
             statusDiameter,
             statusDiameter);
     }
+
+    private (Color Start, Color End, Color Border, Color Track) ResolveOrbSurface()
+    {
+        if (_backgroundColor is { } custom)
+        {
+            var bright = custom.GetBrightness() > 0.58f;
+            return bright
+                ? (Blend(custom, Color.Black, 0.09f), Blend(custom, Color.White, 0.08f),
+                    Blend(custom, Color.Black, 0.27f), Blend(custom, Color.Black, 0.18f))
+                : (Blend(custom, Color.White, 0.12f), Blend(custom, Color.Black, 0.10f),
+                    Blend(custom, Color.White, 0.28f), Blend(custom, Color.White, 0.17f));
+        }
+
+        return (
+            Color.FromArgb(27, 31, 29),
+            Color.FromArgb(7, 9, 8),
+            Color.FromArgb(66, 76, 71),
+            Color.FromArgb(50, 58, 54));
+    }
+
+    internal static float LabelPixelSize(float scale) =>
+        6.4f * 96f / 72f * Math.Max(0.5f, scale);
 
     private void DrawFluidFlame(Graphics graphics, float scale, FlameActivityLevel activity)
     {
@@ -1118,11 +1299,17 @@ internal sealed class QuotaOrbControl : Control
         base.Dispose(disposing);
     }
 
-    private static void DrawArc(Graphics graphics, RectangleF bounds, float width, double? remaining, Color baseColor)
+    private static void DrawArc(
+        Graphics graphics,
+        RectangleF bounds,
+        float width,
+        double? remaining,
+        Color baseColor,
+        Color trackColor)
     {
         const float start = -220;
         const float sweep = 260;
-        using var track = new Pen(UiPalette.Track, width)
+        using var track = new Pen(trackColor, width)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
@@ -1453,9 +1640,16 @@ internal sealed class ActionButton : Button
         }
 
         var foreground = Primary ? UiPalette.Canvas : UiPalette.Text;
-        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, foreground,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
-            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        using var textBrush = new SolidBrush(foreground);
+        using var format = new StringFormat(StringFormat.GenericTypographic)
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+            Trimming = StringTrimming.EllipsisCharacter,
+            FormatFlags = StringFormatFlags.NoWrap
+        };
+        e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        e.Graphics.DrawString(Text, Font, textBrush, ClientRectangle, format);
     }
 
     protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }

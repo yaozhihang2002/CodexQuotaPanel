@@ -96,7 +96,16 @@ internal static class ThemePreview
         var clientOrigin = form.PointToScreen(Point.Empty);
         using var bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height);
         using var graphics = Graphics.FromImage(bitmap);
-        graphics.CopyFromScreen(clientOrigin, Point.Empty, form.ClientSize, CopyPixelOperation.SourceCopy);
+        try
+        {
+            graphics.CopyFromScreen(clientOrigin, Point.Empty, form.ClientSize, CopyPixelOperation.SourceCopy);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Headless and disconnected remote-desktop sessions can reject
+            // screen capture even though the form rendered correctly.
+            form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.ClientSize));
+        }
         bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
 

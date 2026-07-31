@@ -11,6 +11,7 @@ internal sealed record PanelPreferences
     public static PanelPreferences Default => new();
 
     public int OrbOpacityPercent { get; init; } = 100;
+    public int? OrbBackgroundColorArgb { get; init; }
     public bool OrbClickThrough { get; init; }
     public bool ShowClickThroughReminder { get; init; } = true;
     public int? OrbX { get; init; }
@@ -117,6 +118,7 @@ internal static class PanelPreferenceManager
             return Normalize(new PanelPreferences
             {
                 OrbOpacityPercent = ReadInt(key, "OrbOpacityPercent", 100),
+                OrbBackgroundColorArgb = ReadNullableInt(key, "OrbBackgroundColorArgb"),
                 OrbClickThrough = ReadBool(key, "OrbClickThrough", false),
                 ShowClickThroughReminder = ReadBool(key, "ShowClickThroughReminder", true),
                 OrbX = ReadNullableInt(key, "OrbX"),
@@ -192,6 +194,7 @@ internal static class PanelPreferenceManager
             using var key = root.CreateSubKey(preferencesKey, writable: true);
             WriteInt(key, "PreferencesVersion", CurrentPreferencesVersion);
             WriteInt(key, "OrbOpacityPercent", preferences.OrbOpacityPercent);
+            WriteNullableInt(key, "OrbBackgroundColorArgb", preferences.OrbBackgroundColorArgb);
             WriteBool(key, "OrbClickThrough", preferences.OrbClickThrough);
             WriteBool(key, "ShowClickThroughReminder", preferences.ShowClickThroughReminder);
             WriteNullableInt(key, "OrbX", preferences.OrbX);
@@ -368,6 +371,9 @@ internal static class PanelPreferenceManager
         return preferences with
         {
             OrbOpacityPercent = NormalizeOpacity(preferences.OrbOpacityPercent),
+            OrbBackgroundColorArgb = preferences.OrbBackgroundColorArgb is { } background
+                ? NormalizeColor(background, Color.FromArgb(255, 34, 40, 37).ToArgb())
+                : null,
             StartupViewMode = Math.Clamp(preferences.StartupViewMode, 0, 3),
             LastViewMode = Math.Clamp(preferences.LastViewMode, 0, 2),
             OrbSize = NormalizeOrbSize(preferences.OrbSize),

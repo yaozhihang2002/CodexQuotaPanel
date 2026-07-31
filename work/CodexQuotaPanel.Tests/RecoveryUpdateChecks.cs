@@ -94,6 +94,7 @@ internal static class RecoveryUpdateChecks
             OrbY = 300,
             LastViewMode = 2,
             OrbOpacityPercent = 68,
+            OrbBackgroundColorArgb = unchecked((int)0xFF697E74),
             OrbSize = 136,
             OuterWindowMinutes = 60,
             ThemeMode = 2,
@@ -116,7 +117,9 @@ internal static class RecoveryUpdateChecks
                 importFailure == SettingsTransferFailure.None,
             "Portable settings import failed.");
         Require(imported.OrbX == 111 && imported.OrbY == 222 && imported.LastViewMode == 1 &&
-                imported.OrbOpacityPercent == 68 && imported.OrbSize == 136 &&
+                imported.OrbOpacityPercent == 68 &&
+                imported.OrbBackgroundColorArgb == unchecked((int)0xFF697E74) &&
+                imported.OrbSize == 136 &&
                 imported.OuterWindowMinutes == 60 && imported.ThemeMode == 2 &&
                 imported.Language == 1 && imported.CheckForUpdatesOnStartup &&
                 !imported.ShowClickThroughReminder,
@@ -162,13 +165,13 @@ internal static class RecoveryUpdateChecks
 
     private static async Task CheckUpdatesAsync(string directory)
     {
-        Require(GitHubReleaseUpdateService.CurrentVersionText == "0.3.1",
+        Require(GitHubReleaseUpdateService.CurrentVersionText == "0.3.2",
             "Release version metadata is not synchronized with the update checker.");
         Require(SemanticVersion.TryParse("v0.3.0-preview.2", out var preview2) &&
                 SemanticVersion.TryParse("0.3.0-preview.10", out var preview10) &&
                 SemanticVersion.TryParse("0.3.0", out var stable) &&
                 SemanticVersion.TryParse("v0.2.0", out var older) &&
-                SemanticVersion.TryParse("v0.3.1", out var patch) &&
+                SemanticVersion.TryParse("v0.3.2", out var patch) &&
                 SemanticVersion.TryParse("v0.4.0", out var minor) &&
                 SemanticVersion.TryParse("v1.0.0", out var major) &&
                 preview10.CompareTo(preview2) > 0 && stable.CompareTo(preview10) > 0 &&

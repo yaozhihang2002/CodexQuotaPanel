@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Collections.Concurrent;
 
 namespace CodexQuotaPanel;
 
@@ -10,12 +11,40 @@ internal enum AppLanguage
 
 internal static class L10n
 {
+    private const int MaximumRecordedPairs = 2048;
+    private static readonly ConcurrentDictionary<string, string> ChineseToEnglish =
+        new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, string> EnglishToChinese =
+        new(StringComparer.Ordinal);
+
     public static AppLanguage Current { get; private set; } = AppLanguage.SimplifiedChinese;
     public static bool IsChinese => Current == AppLanguage.SimplifiedChinese;
     public static CultureInfo Culture => IsChinese ? CultureInfo.GetCultureInfo("zh-CN") : CultureInfo.GetCultureInfo("en-US");
 
     public static void SetLanguage(AppLanguage language) => Current = language;
-    public static string Pick(string chinese, string english) => IsChinese ? chinese : english;
+
+    public static string Pick(string chinese, string english)
+    {
+        if (!string.IsNullOrEmpty(chinese) && !string.IsNullOrEmpty(english) &&
+            (ChineseToEnglish.ContainsKey(chinese) || ChineseToEnglish.Count < MaximumRecordedPairs))
+        {
+            ChineseToEnglish.TryAdd(chinese, english);
+            EnglishToChinese.TryAdd(english, chinese);
+        }
+        return IsChinese ? chinese : english;
+    }
+
+    /// <summary>
+    /// Translates text that was previously produced by <see cref="Pick"/>.
+    /// This lets an already-open settings window relocalize in place without
+    /// constructing a complete hidden duplicate of every settings page.
+    /// </summary>
+    internal static string Translate(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var map = IsChinese ? EnglishToChinese : ChineseToEnglish;
+        return map.TryGetValue(text, out var translated) ? translated : text;
+    }
 
     public static string AppTitle => Pick("Codex 额度信号", "Codex Quota Signal");
     public static string AppAccessible => Pick("Codex 额度实时面板", "Codex live quota panel");
@@ -79,7 +108,7 @@ internal static class L10n
     public static string ThemeSystem => Pick("跟随系统", "Follow system");
     public static string ThemeDark => Pick("深色", "Dark");
     public static string ThemeLight => Pick("浅色", "Light");
-    public static string AppearanceIntro => Pick("尺寸、透明度和双环样式", "Size, opacity, and dual-ring styling");
+    public static string AppearanceIntro => Pick("尺寸、背景、透明度和双环样式", "Size, background, opacity, and dual-ring styling");
     public static string OrbSize => Pick("悬浮球尺寸", "Orb size");
     public static string OrbSizeSmall => Pick("小 · 72 px", "Small · 72 px");
     public static string OrbSizeStandard => Pick("标准 · 88 px", "Standard · 88 px");
@@ -90,9 +119,14 @@ internal static class L10n
     public static string SettingsFontSizeHint => Pick("拖动滑块或输入 80–150%；立即预览，保存后保持", "Drag the slider or enter 80–150%; previews immediately and persists after saving");
     public static string SettingsFontSizePresetHint => Pick("紧凑 80% · 默认 100% · 大字 125% · 超大 150%", "Compact 80% · Default 100% · Large 125% · XL 150%");
     public static string OrbOpacity => Pick("悬浮球不透明度", "Orb opacity");
+    public static string OrbBackground => Pick("悬浮球背景颜色", "Orb background color");
+    public static string OrbBackgroundHint => Pick("默认使用黑色背景，也可选择自定义颜色；更改会立即预览", "Uses a black background by default, or choose a custom color; changes preview immediately");
+    public static string DefaultBlack => Pick("默认黑色", "Default black");
+    public static string RestoreDefault => Pick("恢复默认", "Restore default");
+    public static string CustomColor => Pick("自定义", "Custom");
     public static string DualRingDisplay => Pick("双环显示", "Dual-ring display");
     public static string LiveOrbPreview => Pick("悬浮球即时预览", "Live orb preview");
-    public static string LiveOrbPreviewHint => Pick("尺寸与双环颜色会立即更新；透明度会应用到桌面悬浮球", "Size and ring colors update here immediately; opacity is applied to the desktop orb");
+    public static string LiveOrbPreviewHint => Pick("尺寸、背景与双环颜色会立即更新；透明度会应用到桌面悬浮球", "Size, background, and ring colors update here immediately; opacity is applied to the desktop orb");
     public static string ConsumptionFlame => Pick("额度消耗火焰", "Consumption flame");
     public static string ConsumptionFlameHint => Pick("根据近期消耗速度改变火焰颜色与活跃度；可关闭以减少动态效果", "Changes flame color and activity based on recent usage; turn it off to reduce motion");
     public static string FlameStyle => Pick("火焰风格", "Flame style");

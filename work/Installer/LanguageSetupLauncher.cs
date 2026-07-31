@@ -12,8 +12,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("CodexQuotaPanel")]
 [assembly: AssemblyDescription("Bilingual setup launcher for CodexQuotaPanel")]
 [assembly: AssemblyCompany("CodexQuotaPanel")]
-[assembly: AssemblyVersion("0.3.1.0")]
-[assembly: AssemblyFileVersion("0.3.1.0")]
+[assembly: AssemblyVersion("0.3.2.0")]
+[assembly: AssemblyFileVersion("0.3.2.0")]
 
 namespace CodexQuotaPanelSetup
 {
@@ -58,7 +58,10 @@ namespace CodexQuotaPanelSetup
 
     internal sealed class LanguageForm : Form
     {
-        private const string ProductCode = "{F0BB60AE-0492-4225-A60B-D5BCC0705D43}";
+        // Replaced with the ProductCode read from the embedded MSI by
+        // Build-LanguageSetupLauncher.ps1. This prevents a stale launcher
+        // from treating a major upgrade as a same-version repair.
+        private const string ProductCode = "__MSI_PRODUCT_CODE__";
         private const string ChineseMsiResource = "CodexQuotaPanel.Installer.zh-cn.msi";
         private const string EnglishTransformResource = "CodexQuotaPanel.Installer.en-us.mst";
         private static readonly Color Background = Color.FromArgb(18, 23, 21);
@@ -100,7 +103,7 @@ namespace CodexQuotaPanelSetup
             Label eyebrow = new Label
             {
                 AutoSize = true,
-                Text = "CODEX · V0.3.1 PRE-RELEASE",
+                Text = "CODEX · V0.3.2 PRE-RELEASE",
                 ForeColor = Accent,
                 Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
                 Location = new Point(32, 24)

@@ -32,21 +32,59 @@ internal static class MotionPerformancePreview
         WaitForTransition(form);
         var collapse = Snapshot(form, collapseCall.ElapsedMilliseconds);
 
-        var preferences = PanelPreferenceManager.Default with { Language = 0 };
+        var preferences = PanelPreferenceManager.Default with
+        {
+            Language = 0,
+            SettingsFontScalePercent = PanelPreferenceManager.MaximumSettingsFontScale
+        };
+        var settingsConstructor = Stopwatch.StartNew();
         using var settings = new SettingsForm(preferences, startupEnabled: false, snapshot);
+        settingsConstructor.Stop();
+        var settingsShow = Stopwatch.StartNew();
         settings.Show();
         Application.DoEvents();
-        var tabWatch = Stopwatch.StartNew();
-        var maximumTabMs = 0L;
+        settingsShow.Stop();
+        var coldMaximumTabMs = 0L;
+        var coldMaximumCallMs = 0L;
+        var coldTabTimes = new List<long>();
+        var coldTabCallTimes = new List<long>();
+        for (var page = 1; page < 5; page++)
+        {
+            var coldSwitch = Stopwatch.StartNew();
+            settings.SelectPageForTest(page);
+            coldTabCallTimes.Add(coldSwitch.ElapsedMilliseconds);
+            coldMaximumCallMs = Math.Max(coldMaximumCallMs, coldSwitch.ElapsedMilliseconds);
+            Application.DoEvents();
+            coldSwitch.Stop();
+            coldTabTimes.Add(coldSwitch.ElapsedMilliseconds);
+            coldMaximumTabMs = Math.Max(coldMaximumTabMs, coldSwitch.ElapsedMilliseconds);
+        }
+        settings.SelectPageForTest(0);
+        Application.DoEvents();
+
+        var warmedMaximumTabMs = 0L;
+        var warmedMaximumCallMs = 0L;
         for (var pass = 0; pass < 2; pass++)
         {
             for (var page = 0; page < 5; page++)
             {
-                var started = tabWatch.ElapsedMilliseconds;
+                var warmedSwitch = Stopwatch.StartNew();
                 settings.SelectPageForTest(page);
-                maximumTabMs = Math.Max(maximumTabMs, tabWatch.ElapsedMilliseconds - started);
+                warmedMaximumCallMs = Math.Max(warmedMaximumCallMs, warmedSwitch.ElapsedMilliseconds);
+                Application.DoEvents();
+                warmedSwitch.Stop();
+                warmedMaximumTabMs = Math.Max(warmedMaximumTabMs, warmedSwitch.ElapsedMilliseconds);
             }
         }
+
+        var languageSwitch = Stopwatch.StartNew();
+        settings.SetLanguageForTest(1);
+        Application.DoEvents();
+        languageSwitch.Stop();
+        if (!string.Equals(settings.Text, "Codex Quota Panel settings", StringComparison.Ordinal))
+            throw new InvalidOperationException("The in-place English settings localization did not complete.");
+        settings.SetLanguageForTest(0);
+        Application.DoEvents();
         settings.SelectPageForTest(2);
         Application.DoEvents();
         settings.SavePreview(outputPath);
@@ -57,7 +95,23 @@ internal static class MotionPerformancePreview
         Console.WriteLine(
             $"MOTION collapse prep={collapse.Preparation}ms call={collapse.Call}ms total={collapse.Duration}ms " +
             $"frames={collapse.Frames} max-gap={collapse.MaxGap}ms");
-        Console.WriteLine($"MOTION settings max synchronous tab switch={maximumTabMs}ms");
+        Console.WriteLine(
+            $"MOTION settings constructor={settingsConstructor.ElapsedMilliseconds}ms " +
+            $"first-show={settingsShow.ElapsedMilliseconds}ms at maximum typography");
+        Console.WriteLine(
+            $"MOTION settings tab switch cold-call=[{string.Join(",", coldTabCallTimes)}]ms " +
+            $"cold-settled=[{string.Join(",", coldTabTimes)}]ms max={coldMaximumTabMs}ms " +
+            $"warmed-call={warmedMaximumCallMs}ms warmed-settled={warmedMaximumTabMs}ms");
+        Console.WriteLine($"MOTION settings in-place language switch={languageSwitch.ElapsedMilliseconds}ms");
+        if (settingsConstructor.ElapsedMilliseconds > 300 ||
+            settingsShow.ElapsedMilliseconds > 900 ||
+            coldMaximumCallMs > 400 || coldMaximumTabMs > 650 ||
+            warmedMaximumCallMs > 16 || warmedMaximumTabMs > 180 ||
+            languageSwitch.ElapsedMilliseconds > 450)
+        {
+            throw new InvalidOperationException(
+                "Settings opening or tab switching exceeded the maximum-typography responsiveness budget.");
+        }
     }
 
     private static void WaitForTransition(QuotaForm form)

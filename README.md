@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.3.1--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.3.2--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-f0c674"></a>
@@ -16,7 +16,7 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.3.1 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.3.2 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
 ## 一眼了解
 
@@ -58,14 +58,14 @@
   <img src="docs/images/tray-status.png" width="640" alt="CodexQuotaPanel 动态托盘额度图标">
 </p>
 
-## v0.3.1 Pre-release 功能
+## v0.3.2 Pre-release 功能
 
 ### 额度与显示
 
 - 五小时与一周额度双环，可选择窗口、内外环角色及自定义颜色。
 - 点击悬浮球展开详情，支持本地 24 小时趋势、额度提醒、免打扰时段和最早到期重置卡信息。
 - 深色、浅色、跟随系统三种主题，以及简体中文 / English 界面。
-- 多显示器与 DPI 保护：跨屏拖动时依据目标显示器缩放，并处理负坐标与可见区域边界。
+- 多显示器与 DPI 保护：跨屏拖动时依据目标显示器缩放，处理负坐标与可见区域边界，并修复远程桌面高缩放下的悬浮球重复放大。
 - 悬浮球位置、大小、字体比例、透明度、置顶和交互偏好会在重启后恢复。
 
 ### 动画与交互
@@ -87,7 +87,7 @@
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.3.1` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.3.2` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
 
 Release 发布后可按需要选择安装包或便携包，并使用同时提供的 SHA-256 信息校验文件。预发布版仍可能存在特定显卡、DPI 组合或系统环境下的兼容性问题。
 

@@ -37,6 +37,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
     private bool _exiting;
     private int? _trayIconRemainingPercent;
     private bool _trayIconLive;
+    private int _displayRefreshGeneration;
     private PanelPreferences _preferences;
     private QuotaSnapshot? _latestSnapshot;
     private ReminderPromptForm? _quotaAlertPrompt;
@@ -166,6 +167,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
             UiPalette.SetTheme(preferences.ThemeMode);
             _form.ApplyTheme(previousColors);
             _form.SetOrbOpacityPercent(preferences.OrbOpacityPercent);
+            _form.SetOrbBackgroundColor(preferences.OrbBackgroundColorArgb);
             _form.SetOrbClickThroughPreference(preferences.OrbClickThrough);
             _form.SetHoverPreviewEnabled(preferences.HoverPreviewEnabled);
             _form.SetTopMostPreference(preferences.AlwaysOnTop);
@@ -210,6 +212,8 @@ internal sealed class QuotaApplicationContext : ApplicationContext
             }
             if (previous.OrbOpacityPercent != next.OrbOpacityPercent)
                 _form.SetOrbOpacityPercent(next.OrbOpacityPercent);
+            if (previous.OrbBackgroundColorArgb != next.OrbBackgroundColorArgb)
+                _form.SetOrbBackgroundColor(next.OrbBackgroundColorArgb);
             if (previous.OrbClickThrough != next.OrbClickThrough)
                 _form.SetOrbClickThroughPreference(next.OrbClickThrough);
             if (previous.HoverPreviewEnabled != next.HoverPreviewEnabled)
@@ -637,6 +641,7 @@ internal sealed class QuotaApplicationContext : ApplicationContext
             SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
+            SystemEvents.SessionSwitch += OnSessionSwitch;
             _systemEventsAttached = true;
         }
         catch (InvalidOperationException)
@@ -650,16 +655,26 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
         _systemEventsAttached = false;
     }
 
-    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => QueueEnsureVisible();
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => QueueDisplayEnvironmentRefresh();
+
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.RemoteConnect or
+            SessionSwitchReason.RemoteDisconnect or
+            SessionSwitchReason.SessionLogon or
+            SessionSwitchReason.SessionUnlock)
+            QueueDisplayEnvironmentRefresh();
+    }
 
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         if (e.Category is UserPreferenceCategory.Desktop or UserPreferenceCategory.General or UserPreferenceCategory.Window)
         {
-            QueueEnsureVisible();
+            QueueDisplayEnvironmentRefresh();
             if (_preferences.ThemeMode == 0)
             {
                 SafeUi(() =>
@@ -676,16 +691,38 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         }
     }
 
-    private void QueueEnsureVisible() => SafeUi(() =>
+    private void QueueDisplayEnvironmentRefresh()
     {
-        _form.EnsureVisibleOnCurrentDisplays();
+        var generation = Interlocked.Increment(ref _displayRefreshGeneration);
+        RefreshDisplayEnvironment();
+        _ = RefreshDisplayEnvironmentAfterDpiSettlesAsync(generation);
+    }
+
+    private void RefreshDisplayEnvironment() => SafeUi(() =>
+    {
+        _form.RefreshDisplayEnvironment();
         SaveCurrentOrbLocation();
     });
+
+    private async Task RefreshDisplayEnvironmentAfterDpiSettlesAsync(int generation)
+    {
+        try
+        {
+            await Task.Delay(400, _lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (generation != Volatile.Read(ref _displayRefreshGeneration)) return;
+        RefreshDisplayEnvironment();
+    }
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
         if (e.Mode != PowerModes.Resume) return;
-        QueueEnsureVisible();
+        QueueDisplayEnvironmentRefresh();
         _ = RefreshAsync();
     }
 

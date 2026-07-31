@@ -6,7 +6,11 @@ internal static class SettingsHeaderPreview
     {
         L10n.SetLanguage(AppLanguage.SimplifiedChinese);
         using var settings = new SettingsForm(
-            PanelPreferenceManager.Default with { Language = 0 },
+            PanelPreferenceManager.Default with
+            {
+                Language = 0,
+                SettingsFontScalePercent = PanelPreferenceManager.MaximumSettingsFontScale
+            },
             startupEnabled: true)
         {
             StartPosition = FormStartPosition.Manual,
@@ -18,6 +22,6 @@ internal static class SettingsHeaderPreview
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         settings.SavePreview(fullPath);
-        Console.WriteLine($"PASS settings brand header preview | {fullPath}");
+        Console.WriteLine($"PASS settings brand header + maximum typography preview | {fullPath}");
     }
 }

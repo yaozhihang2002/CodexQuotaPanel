@@ -22,6 +22,7 @@ internal sealed record PortableSettingsEnvelope(
 internal sealed record PortablePanelPreferences
 {
     public int OrbOpacityPercent { get; init; } = 100;
+    public int? OrbBackgroundColorArgb { get; init; }
     public bool OrbClickThrough { get; init; }
     public bool ShowClickThroughReminder { get; init; } = true;
     public bool AlwaysOnTop { get; init; } = true;
@@ -158,6 +159,7 @@ internal static class SettingsTransferService
             imported = PanelPreferenceManager.Normalize(new PanelPreferences
             {
                 OrbOpacityPercent = portable.OrbOpacityPercent,
+                OrbBackgroundColorArgb = portable.OrbBackgroundColorArgb,
                 OrbClickThrough = portable.OrbClickThrough,
                 ShowClickThroughReminder = portable.ShowClickThroughReminder,
                 OrbX = currentDevicePreferences.OrbX,
@@ -213,6 +215,7 @@ internal static class SettingsTransferService
         return new PortablePanelPreferences
         {
             OrbOpacityPercent = preferences.OrbOpacityPercent,
+            OrbBackgroundColorArgb = preferences.OrbBackgroundColorArgb,
             OrbClickThrough = preferences.OrbClickThrough,
             ShowClickThroughReminder = preferences.ShowClickThroughReminder,
             AlwaysOnTop = preferences.AlwaysOnTop,

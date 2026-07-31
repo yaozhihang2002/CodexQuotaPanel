@@ -15,6 +15,18 @@ internal static class NativeTheme
     {
         if (form.IsDisposed || !form.IsHandleCreated) return;
         var dark = UiPalette.Canvas.GetBrightness() < 0.45f;
+        ApplyCaption(form, dark);
+        ApplyToTree(form, dark);
+    }
+
+    internal static void ApplyCaption(Form form)
+    {
+        if (form.IsDisposed || !form.IsHandleCreated) return;
+        ApplyCaption(form, UiPalette.Canvas.GetBrightness() < 0.45f);
+    }
+
+    private static void ApplyCaption(Form form, bool dark)
+    {
         try
         {
             var enabled = dark ? 1 : 0;
@@ -23,26 +35,60 @@ internal static class NativeTheme
         }
         catch (DllNotFoundException) { }
         catch (EntryPointNotFoundException) { }
+    }
 
-        ApplyToTree(form, dark);
+    internal static void Apply(Control root)
+    {
+        if (root.IsDisposed || !root.IsHandleCreated) return;
+        var dark = UiPalette.Canvas.GetBrightness() < 0.45f;
+        ApplyControl(root, dark);
+        ApplyToTree(root, dark);
     }
 
     private static void ApplyToTree(Control root, bool dark)
     {
         foreach (Control child in root.Controls)
         {
-            if (child.IsHandleCreated && child is ComboBox or NumericUpDown or TrackBar or ScrollBar)
-            {
-                try
-                {
-                    _ = SetWindowTheme(child.Handle, dark ? "DarkMode_Explorer" : "Explorer", null);
-                    _ = SendMessage(child.Handle, WmThemeChanged, IntPtr.Zero, IntPtr.Zero);
-                }
-                catch (DllNotFoundException) { }
-                catch (EntryPointNotFoundException) { }
-            }
+            ApplyControl(child, dark);
             ApplyToTree(child, dark);
         }
+    }
+
+    private static void ApplyControl(Control control, bool dark)
+    {
+        if (!control.IsHandleCreated ||
+            (control is not ComboBox and not NumericUpDown and not TrackBar and not ScrollBar &&
+             control is not ScrollableControl { AutoScroll: true })) return;
+        try
+        {
+            // Set explicit application colours before asking Windows to refresh
+            // the native parts. "Explorer" can otherwise inherit the OS dark
+            // theme even when this window is intentionally using light mode.
+            switch (control)
+            {
+                case ComboBox:
+                    control.BackColor = UiPalette.SurfaceRaised;
+                    control.ForeColor = UiPalette.Text;
+                    break;
+                case NumericUpDown:
+                    control.BackColor = UiPalette.SurfaceRaised;
+                    control.ForeColor = UiPalette.Text;
+                    break;
+                case TrackBar:
+                    control.BackColor = UiPalette.Surface;
+                    control.ForeColor = UiPalette.Text;
+                    break;
+            }
+
+            var theme = dark
+                ? control is ComboBox or NumericUpDown ? "DarkMode_CFD" : "DarkMode_Explorer"
+                : "Explorer";
+            _ = SetWindowTheme(control.Handle, theme, null);
+            _ = SendMessage(control.Handle, WmThemeChanged, IntPtr.Zero, IntPtr.Zero);
+            control.Invalidate();
+        }
+        catch (DllNotFoundException) { }
+        catch (EntryPointNotFoundException) { }
     }
 
     [DllImport("dwmapi.dll")]

@@ -402,7 +402,7 @@ internal sealed class QuotaForm : Form
     {
         if (_collapsed && !_animating)
         {
-            e.Graphics.Clear(UiPalette.Canvas);
+            e.Graphics.Clear(_orb.WindowBackdropColor);
             return;
         }
         using var gradient = new LinearGradientBrush(
@@ -612,6 +612,20 @@ internal sealed class QuotaForm : Form
         ApplyOrbPresentation();
     }
 
+    public void SetOrbBackgroundColor(int? argb)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => SetOrbBackgroundColor(argb));
+            return;
+        }
+
+        _orb.SetBackgroundColor(argb);
+        ApplyOrbPresentation();
+        Invalidate(true);
+        MarkTransitionPreviewCacheDirty();
+    }
+
     public void ApplyTheme(UiPalette.Colors previousColors)
     {
         if (InvokeRequired)
@@ -629,6 +643,7 @@ internal sealed class QuotaForm : Form
             BackColor = UiPalette.Canvas;
             ForeColor = UiPalette.Text;
         }
+        ApplyOrbPresentation();
         UpdateRegion();
         Invalidate(true);
         MarkTransitionPreviewCacheDirty();
@@ -911,6 +926,23 @@ internal sealed class QuotaForm : Form
         NormalizeStoredCollapsedBounds();
         if (previousOrbLocation != _collapsedBounds.Location)
             OrbPositionChanged?.Invoke(_collapsedBounds.Location);
+    }
+
+    public void RefreshDisplayEnvironment()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(RefreshDisplayEnvironment);
+            return;
+        }
+
+        if (IsDisposed) return;
+        ApplyDetailLayoutForCurrentDpi(force: true);
+        EnsureVisibleOnCurrentDisplays();
+        MarkTransitionPreviewCacheDirty();
+        _orb.Invalidate();
+        UpdateRegion();
+        Invalidate(true);
     }
 
     public void MoveOrbToCurrentDisplay()
@@ -1559,6 +1591,11 @@ internal sealed class QuotaForm : Form
 
     private void ApplyOrbPresentation()
     {
+        var desiredBackground = _collapsed && !_animating
+            ? _orb.WindowBackdropColor
+            : UiPalette.Canvas;
+        if (BackColor.ToArgb() != desiredBackground.ToArgb())
+            BackColor = desiredBackground;
         Opacity = _collapsed && !_animating ? _orbOpacityPercent / 100d : 1d;
         if (!IsHandleCreated) return;
         UpdateStyles();

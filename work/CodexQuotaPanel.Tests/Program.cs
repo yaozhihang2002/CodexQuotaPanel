@@ -16,6 +16,16 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         throw new InvalidOperationException("The English restart menu label is missing.");
     L10n.SetLanguage(AppLanguage.SimplifiedChinese);
 
+    var labelAt100 = QuotaOrbControl.LabelPixelSize(1f);
+    var labelAt200 = QuotaOrbControl.LabelPixelSize(2f);
+    using var dpiSafeFont = UiPalette.MonoPixels(labelAt200, FontStyle.Bold);
+    if (Math.Abs(labelAt100 - 8.533333f) > 0.001f ||
+        Math.Abs(labelAt200 / labelAt100 - 2f) > 0.001f ||
+        dpiSafeFont.Unit != GraphicsUnit.Pixel)
+        throw new InvalidOperationException("The orb label font is not using single-pass pixel scaling.");
+    if (GitHubReleaseUpdateService.CurrentVersionText != "0.3.2")
+        throw new InvalidOperationException("The local candidate version is not v0.3.2.");
+
     var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
     var secondaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 302, 332, 70), 168);
@@ -32,11 +42,11 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         QuotaForm.IsOrbDragGesture(new Size(2, 2), Size.Empty, new Size(8, 8)))
         throw new InvalidOperationException("The native-drag or DPI-aware monitor placement check failed.");
 
-    Console.WriteLine($"PASS targeted check | restart labels zh/en | 175% panel={panel.Width}x{panel.Height} | DPI-aware negative-screen placement");
+    Console.WriteLine($"PASS targeted check | RDP-safe pixel labels | restart labels zh/en | 175% panel={panel.Width}x{panel.Height} | DPI-aware negative-screen placement");
     return;
 }
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--remote-dpi-preview" or "--orb-background-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -146,9 +156,21 @@ if (args.Length >= 2 && args[0] == "--theme-preview")
     return;
 }
 
+if (args.Length >= 2 && args[0] == "--orb-background-preview")
+{
+    OrbBackgroundPreview.Run(args[1]);
+    return;
+}
+
 if (args.Length >= 2 && args[0] == "--menu-preview")
 {
     MenuContrastPreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--remote-dpi-preview")
+{
+    RemoteDpiPreview.Run(args[1]);
     return;
 }
 

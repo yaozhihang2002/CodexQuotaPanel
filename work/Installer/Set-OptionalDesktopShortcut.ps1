@@ -159,6 +159,43 @@ try
     $installer = New-Object -ComObject WindowsInstaller.Installer
     $database = Invoke-ComMethod $installer 'OpenDatabase' @($resolvedMsi, 1)
 
+    $productVersion = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductVersion'"
+    $upgradeCode = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='UpgradeCode'"
+    if ($productVersion -notmatch '^\d+\.\d+\.\d+$' -or
+        $upgradeCode -notmatch '^\{[0-9A-Fa-f-]{36}\}$')
+    {
+        throw "The generated MSI has invalid upgrade identity: version=$productVersion upgradeCode=$upgradeCode"
+    }
+
+    # Visual Studio Installer Projects can emit an empty Upgrade table even
+    # when RemovePreviousVersions is enabled. Add explicit major-upgrade rules
+    # so older releases are removed and newer releases cannot be downgraded.
+    Invoke-MsiNonQuery "DELETE FROM ``Upgrade`` WHERE ``UpgradeCode``='$upgradeCode'"
+    Invoke-MsiNonQuery "INSERT INTO ``Upgrade`` (``UpgradeCode``, ``VersionMin``, ``VersionMax``, ``Language``, ``Attributes``, ``Remove``, ``ActionProperty``) VALUES ('$upgradeCode', NULL, '$productVersion', NULL, 1, NULL, 'PREVIOUSVERSIONSINSTALLED')"
+    Invoke-MsiNonQuery "INSERT INTO ``Upgrade`` (``UpgradeCode``, ``VersionMin``, ``VersionMax``, ``Language``, ``Attributes``, ``Remove``, ``ActionProperty``) VALUES ('$upgradeCode', '$productVersion', NULL, NULL, 2, NULL, 'NEWERPRODUCTFOUND')"
+
+    $secureProperties = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='SecureCustomProperties'"
+    $securePropertyList = @(
+        @($secureProperties -split ';') +
+        @('PREVIOUSVERSIONSINSTALLED', 'NEWERPRODUCTFOUND') |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique)
+    Set-MsiProperty 'SecureCustomProperties' ($securePropertyList -join ';')
+
+    if ($null -ne (Get-MsiScalar "SELECT ``Condition`` FROM ``LaunchCondition`` WHERE ``Condition``='NOT NEWERPRODUCTFOUND'"))
+    {
+        Invoke-MsiNonQuery "DELETE FROM ``LaunchCondition`` WHERE ``Condition``='NOT NEWERPRODUCTFOUND'"
+    }
+    $newerVersionMessage = if ((Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductLanguage'") -eq '2052')
+    {
+        '此计算机上已安装较新的 CodexQuotaPanel 版本。'
+    }
+    else
+    {
+        'A newer version of CodexQuotaPanel is already installed.'
+    }
+    Invoke-MsiNonQuery "INSERT INTO ``LaunchCondition`` (``Condition``, ``Description``) VALUES ('NOT NEWERPRODUCTFOUND', '$newerVersionMessage')"
+
     $arpIconName = 'CodexQuotaPanel.ico'
     Add-MsiIcon $arpIconName $resolvedIcon
     if ($null -ne (Get-MsiScalar "SELECT ``Name`` FROM ``Icon`` WHERE ``Name``='CodexQuotaPanelIcon'"))
@@ -312,6 +349,9 @@ try
     $rollbackActionSequence = Get-MsiScalar "SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action``='$rollbackAction'"
     $restartActionSequence = Get-MsiScalar "SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action``='$restartAction'"
     $upgradeBinaryRow = Get-MsiScalar "SELECT ``Name`` FROM ``Binary`` WHERE ``Name``='$upgradeBinaryName'"
+    $previousVersionRule = Get-MsiScalar "SELECT ``ActionProperty`` FROM ``Upgrade`` WHERE ``UpgradeCode``='$upgradeCode' AND ``ActionProperty``='PREVIOUSVERSIONSINSTALLED'"
+    $newerVersionRule = Get-MsiScalar "SELECT ``ActionProperty`` FROM ``Upgrade`` WHERE ``UpgradeCode``='$upgradeCode' AND ``ActionProperty``='NEWERPRODUCTFOUND'"
+    $secureUpgradeProperties = Get-MsiScalar "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='SecureCustomProperties'"
     $confirmationTitleValid = if ($productLanguage -eq '2052')
     {
         $confirmationTitle -like '*确认安装*'
@@ -338,12 +378,16 @@ try
         $restartActionType -ne '2' -or
         $closeActionSequence -ne '1390' -or
         $rollbackActionSequence -ne '1511' -or
-        $restartActionSequence -ne '6700')
+        $restartActionSequence -ne '6700' -or
+        $previousVersionRule -ne 'PREVIOUSVERSIONSINSTALLED' -or
+        $newerVersionRule -ne 'NEWERPRODUCTFOUND' -or
+        $secureUpgradeProperties -notmatch '(^|;)PREVIOUSVERSIONSINSTALLED(;|$)' -or
+        $secureUpgradeProperties -notmatch '(^|;)NEWERPRODUCTFOUND(;|$)')
     {
         throw "The installer MSI tables did not validate after commit: language=$productLanguage; condition=$condition; component=$boundComponent; target=$shortcutTarget; shortcutIcon=$shortcutIcon; arpIcon=$arpIcon; optionsNext=$afterOptionsDialog; folderBack=$beforeFolderDialog; folderNext=$afterFolderDialog; confirmBack=$beforeConfirmationDialog; confirmation=$confirmationTitle; notice=$welcomeNotice"
     }
 
-    Write-Output "PASS installer customization | language=$productLanguage + optional desktop shortcut + bidirectional navigation + MIT notice + EXE logo + branded ARP icon + final-click shutdown + conditional restart | $resolvedMsi"
+    Write-Output "PASS installer customization | language=$productLanguage + major upgrade $upgradeCode -> $productVersion + optional desktop shortcut + bidirectional navigation + MIT notice + EXE logo + branded ARP icon + final-click shutdown + conditional restart | $resolvedMsi"
 }
 finally
 {

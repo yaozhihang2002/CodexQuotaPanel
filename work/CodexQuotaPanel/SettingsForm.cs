@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.ComponentModel;
 
 namespace CodexQuotaPanel;
 
@@ -11,12 +12,18 @@ namespace CodexQuotaPanel;
 /// </summary>
 internal sealed class SettingsForm : Form
 {
+    private static readonly Size CompactClientSize = new(800, 520);
+    private static readonly Size CompactMinimumSize = new(780, 480);
+
     private PanelPreferences _savedPreferences;
     private bool _savedStartupEnabled;
     private readonly QuotaSnapshot? _snapshot;
     private readonly string _diagnostics;
     private readonly List<SettingsNavButton> _navigation = [];
-    private readonly List<Control> _pages = [];
+    private readonly List<Control?> _pages = [];
+    private readonly List<Func<Control>> _pageFactories = [];
+    private readonly HashSet<Control> _nativeThemedPages = [];
+    private Control _pageHost = null!;
 
     private PanelPreferences _workingPreferences;
     private bool _initializing;
@@ -25,6 +32,7 @@ internal sealed class SettingsForm : Form
     private bool _syncingFontScale;
     private bool _relocalizing;
     private int _selectedPageIndex = -1;
+    private int _appliedLayoutScalePercent = 100;
 
     private ActionButton _saveButton = null!;
     private Label _saveStatusLabel = null!;
@@ -36,11 +44,14 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _languageCombo;
     private readonly ComboBox _themeCombo;
     private readonly SettingsToggle _topMostToggle;
-    private readonly TrackBar _orbSizeSlider;
+    private readonly SettingsSlider _orbSizeSlider;
     private readonly NumericUpDown _orbSizeInput;
-    private readonly TrackBar _fontScaleSlider;
+    private readonly SettingsSlider _fontScaleSlider;
     private readonly NumericUpDown _fontScaleInput;
     private readonly Label _opacitySummary;
+    private readonly Label _orbBackgroundSummary;
+    private readonly RingColorButton _orbBackgroundColorButton;
+    private readonly ActionButton _orbBackgroundDefaultButton;
     private readonly Label _ringSummary;
     private readonly SettingsToggle _consumptionFlameToggle;
     private readonly ComboBox _flameStyleCombo;
@@ -55,9 +66,14 @@ internal sealed class SettingsForm : Form
     private readonly SettingsToggle _trendRecordingToggle;
     private readonly SettingsToggle _checkUpdatesToggle;
     private readonly CancellationTokenSource _operationLifetime = new();
+    private readonly System.Windows.Forms.Timer _fontScalePreviewTimer;
     private ActionButton _updateCheckButton = null!;
     private Label _updateStatusLabel = null!;
     private bool _checkingForUpdates;
+    private bool _managedResourcesDisposed;
+    private bool _initialNativeThemeApplied;
+    private bool _interactiveResize;
+    private int _pagePaintGeneration;
 
     public PanelPreferences SelectedPreferences => PanelPreferenceManager.Normalize(_workingPreferences);
     public bool StartupEnabled => _startupToggle.Checked;
@@ -98,11 +114,12 @@ internal sealed class SettingsForm : Form
         _snapshot = snapshot;
         _diagnostics = diagnostics ?? L10n.Pick("诊断信息暂不可用", "Diagnostics are currently unavailable");
         _initializing = true;
+        SuspendLayout();
 
         AutoScaleDimensions = new SizeF(96f, 96f);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(860, 620);
-        MinimumSize = new Size(700, 520);
+        ClientSize = CompactClientSize;
+        MinimumSize = CompactMinimumSize;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -115,7 +132,7 @@ internal sealed class SettingsForm : Form
         AccessibleName = L10n.SettingsTitle;
         DoubleBuffered = true;
 
-        _rootLayout = new TableLayoutPanel
+        _rootLayout = new BufferedTableLayoutPanel
         {
             Dock = DockStyle.Fill,
             BackColor = UiPalette.Canvas,
@@ -124,11 +141,11 @@ internal sealed class SettingsForm : Form
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
-        _rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176f));
+        _rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 166f));
         _rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        _rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+        _rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72f));
         _rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        _rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76f));
+        _rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60f));
         Controls.Add(_rootLayout);
 
         var header = BuildHeader();
@@ -142,7 +159,11 @@ internal sealed class SettingsForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = UiPalette.Canvas,
-            Padding = new Padding(16, 6, 16, 8)
+            Padding = new Padding(16, 10, 16, 10)
+        };
+        contentHost.Resize += (_, _) =>
+        {
+            if (!_interactiveResize) ResizeSettingsPagesToViewport();
         };
         _rootLayout.Controls.Add(contentHost, 1, 1);
 
@@ -155,7 +176,7 @@ internal sealed class SettingsForm : Form
         AddItems(_themeCombo, L10n.ThemeSystem, L10n.ThemeDark, L10n.ThemeLight);
 
         _topMostToggle = MakeToggle(L10n.AlwaysOnTop);
-        _orbSizeSlider = new TrackBar
+        _orbSizeSlider = new SettingsSlider
         {
             Dock = DockStyle.Fill,
             Minimum = PanelPreferenceManager.MinimumOrbSize,
@@ -163,7 +184,6 @@ internal sealed class SettingsForm : Form
             TickFrequency = 16,
             SmallChange = 1,
             LargeChange = 8,
-            TickStyle = TickStyle.None,
             BackColor = UiPalette.Surface,
             Margin = new Padding(0, 1, 8, 0),
             AccessibleName = L10n.OrbSize
@@ -176,13 +196,14 @@ internal sealed class SettingsForm : Form
             Increment = 1,
             DecimalPlaces = 0,
             TextAlign = HorizontalAlignment.Center,
+            BorderStyle = BorderStyle.FixedSingle,
             BackColor = UiPalette.SurfaceRaised,
             ForeColor = UiPalette.Text,
             Font = UiPalette.Body(8f),
             Margin = Padding.Empty,
             AccessibleName = L10n.OrbSize
         };
-        _fontScaleSlider = new TrackBar
+        _fontScaleSlider = new SettingsSlider
         {
             Dock = DockStyle.Fill,
             Minimum = PanelPreferenceManager.MinimumSettingsFontScale,
@@ -190,7 +211,6 @@ internal sealed class SettingsForm : Form
             TickFrequency = 5,
             SmallChange = 1,
             LargeChange = 5,
-            TickStyle = TickStyle.None,
             BackColor = UiPalette.Surface,
             Margin = new Padding(0, 1, 8, 0),
             AccessibleName = L10n.SettingsFontSize
@@ -203,6 +223,7 @@ internal sealed class SettingsForm : Form
             Increment = 1,
             DecimalPlaces = 0,
             TextAlign = HorizontalAlignment.Center,
+            BorderStyle = BorderStyle.FixedSingle,
             BackColor = UiPalette.SurfaceRaised,
             ForeColor = UiPalette.Text,
             Font = UiPalette.Body(8f),
@@ -210,6 +231,15 @@ internal sealed class SettingsForm : Form
             AccessibleName = L10n.SettingsFontSize
         };
         _opacitySummary = MakeSummaryLabel();
+        _orbBackgroundSummary = MakeSummaryLabel();
+        _orbBackgroundColorButton = new RingColorButton
+        {
+            Size = new Size(94, 34),
+            MinimumSize = new Size(94, 34),
+            SelectedColor = UiPalette.DefaultOrbBackground,
+            AccessibleName = L10n.OrbBackground
+        };
+        _orbBackgroundDefaultButton = MakeActionButton(L10n.RestoreDefault, 134, primary: false);
         _ringSummary = MakeSummaryLabel();
         _consumptionFlameToggle = MakeToggle(L10n.ConsumptionFlame);
         _flameStyleCombo = MakeCombo();
@@ -226,12 +256,19 @@ internal sealed class SettingsForm : Form
         _alertSoundToggle = MakeToggle(L10n.AlertSound);
         _trendRecordingToggle = MakeToggle(L10n.TrendRecording);
         _checkUpdatesToggle = MakeToggle(L10n.CheckUpdatesOnStartup);
+        _fontScalePreviewTimer = new System.Windows.Forms.Timer { Interval = 45 };
+        _fontScalePreviewTimer.Tick += (_, _) => ApplyPendingFontScalePreview();
 
-        AddPage(contentHost, BuildGeneralPage());
-        AddPage(contentHost, BuildAppearancePage());
-        AddPage(contentHost, BuildInteractionPage());
-        AddPage(contentHost, BuildNotificationsPage());
-        AddPage(contentHost, BuildDataPage());
+        _pageHost = contentHost;
+        _pageFactories.AddRange([
+            BuildGeneralPage,
+            BuildAppearancePage,
+            BuildInteractionPage,
+            BuildNotificationsPage,
+            BuildDataPage
+        ]);
+        for (var index = 0; index < _pageFactories.Count; index++) _pages.Add(null);
+        EnsurePageBuilt(0);
 
         var footer = BuildFooter();
         _rootLayout.Controls.Add(footer, 0, 2);
@@ -242,31 +279,93 @@ internal sealed class SettingsForm : Form
         SelectPage(0);
         _initializing = false;
         UpdateDirtyState();
+        ResumeLayout(performLayout: false);
 
         FormClosing += OnSettingsFormClosing;
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !_managedResourcesDisposed)
         {
+            _managedResourcesDisposed = true;
             _operationLifetime.Cancel();
             _operationLifetime.Dispose();
+            _fontScalePreviewTimer.Stop();
+            _fontScalePreviewTimer.Dispose();
+            Control[] lazilyParentedControls =
+            [
+                _topMostToggle, _orbSizeSlider, _orbSizeInput, _fontScaleSlider, _fontScaleInput,
+                _opacitySummary, _orbBackgroundSummary, _orbBackgroundColorButton,
+                _orbBackgroundDefaultButton, _ringSummary, _consumptionFlameToggle, _flameStyleCombo,
+                _positionLockedToggle, _snapToEdgeToggle, _clickThroughToggle,
+                _clickThroughReminderToggle, _hoverPreviewToggle, _globalHotKeyToggle,
+                _alertSummary, _alertSoundToggle, _trendRecordingToggle, _checkUpdatesToggle
+            ];
+            foreach (var control in lazilyParentedControls)
+            {
+                if (control.Parent is null && !control.IsDisposed) control.Dispose();
+            }
         }
         base.Dispose(disposing);
     }
 
-    protected override void OnShown(EventArgs e)
+    protected override void OnLoad(EventArgs e)
     {
-        base.OnShown(e);
+        // OnLoad runs before the first visible frame, so finish monitor sizing
+        // directly while the window is still hidden. Suspending native redraw
+        // here forced an unnecessary full-tree RedrawWindow before Show().
+        FitToCurrentDisplay();
+        ApplyCompactTypographyMetrics(this, _workingPreferences.SettingsFontScalePercent);
+        if (!_initialNativeThemeApplied)
+        {
+            NativeTheme.ApplyCaption(this);
+            _initialNativeThemeApplied = true;
+        }
+        if (_pages[0] is { IsHandleCreated: true } generalPage)
+            _nativeThemedPages.Add(generalPage);
+        RestoreSelectedPageZOrder();
+        base.OnLoad(e);
+    }
+
+    protected override void OnResizeBegin(EventArgs e)
+    {
+        _interactiveResize = true;
+        _orbPreview?.SetAnimationPaused(true);
+        base.OnResizeBegin(e);
+    }
+
+    protected override void OnResizeEnd(EventArgs e)
+    {
+        base.OnResizeEnd(e);
+        _interactiveResize = false;
+        ResizeSettingsPagesToViewport();
+        if (_selectedPageIndex == 1) _orbPreview?.SetAnimationPaused(false);
+    }
+
+    private void RestoreSelectedPageZOrder()
+    {
+        if (_selectedPageIndex < 0 || _pages[_selectedPageIndex] is not { } selectedPage) return;
+        NativeZOrder.BringToFront(selectedPage);
+    }
+
+    private void FitToCurrentDisplay()
+    {
         var workArea = Screen.FromControl(this).WorkingArea;
-        const int margin = 20;
+        var dpiScale = Math.Max(0.5f, DeviceDpi / 96f);
+        var margin = Math.Max(8, (int)Math.Round(20 * dpiScale));
         var availableWidth = Math.Max(1, workArea.Width - margin * 2);
         var availableHeight = Math.Max(1, workArea.Height - margin * 2);
+        // WinForms DPI scaling already turns these logical dimensions into
+        // physical pixels. Typography is intentionally excluded here: a larger
+        // reading size must not turn this lightweight settings window into a
+        // near-full-screen surface on high-DPI or remote-desktop sessions.
+        var minimumWidth = Math.Max(1, (int)Math.Round(CompactMinimumSize.Width * dpiScale));
+        var minimumHeight = Math.Max(1, (int)Math.Round(CompactMinimumSize.Height * dpiScale));
 
         MinimumSize = new Size(
-            Math.Min(700, availableWidth),
-            Math.Min(520, availableHeight));
+            Math.Min(minimumWidth, availableWidth),
+            Math.Min(minimumHeight, availableHeight));
         Size = new Size(
             Math.Min(Width, availableWidth),
             Math.Min(Height, availableHeight));
@@ -278,10 +377,31 @@ internal sealed class SettingsForm : Form
         Location = new Point(left, top);
     }
 
+    private void ApplySettingsLayoutScale(int scalePercent)
+    {
+        scalePercent = PanelPreferenceManager.NormalizeSettingsFontScale(scalePercent);
+        if (scalePercent == _appliedLayoutScalePercent) return;
+
+        // Font scale is a readability preference, not a zoom command. Scaling
+        // the complete control tree also scales ClientSize, fixed columns,
+        // margins and padding; on a 150% display that compounded with DPI and
+        // made the small utility almost fill the screen. The baseline geometry
+        // below is deliberately roomy enough for 150% typography, while long
+        // pages remain scrollable.
+        _appliedLayoutScalePercent = scalePercent;
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        NativeTheme.Apply(this);
+        // Keep the first frame cheap: the settings controls already use the
+        // app's owner-drawn palette, so only the native title bar must be set
+        // before the form becomes visible. A full native-tree refresh remains
+        // available for an explicit live theme change.
+        NativeTheme.ApplyCaption(this);
+        _initialNativeThemeApplied = true;
+        if (_pages.Count > 0 && _pages[0] is { IsHandleCreated: true } generalPage)
+            _nativeThemedPages.Add(generalPage);
     }
 
     private Panel BuildHeader()
@@ -293,12 +413,12 @@ internal sealed class SettingsForm : Form
             BackColor = Color.Transparent,
             ColumnCount = 3,
             RowCount = 1,
-            Padding = new Padding(24, 16, 22, 14),
+            Padding = new Padding(18, 9, 17, 8),
             Margin = Padding.Empty
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 4f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 3f));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         layout.Controls.Add(new Panel
@@ -312,8 +432,8 @@ internal sealed class SettingsForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.Transparent,
-            Font = UiPalette.Display(18.5f, FontStyle.Bold),
-            Margin = new Padding(14, 0, 10, 0),
+            Font = UiPalette.Display(14.5f, FontStyle.Bold),
+            Margin = new Padding(11, 0, 8, 0),
             AccessibleName = L10n.SettingsTitle
         };
         layout.Controls.Add(title, 1, 0);
@@ -330,19 +450,26 @@ internal sealed class SettingsForm : Form
         var host = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = UiPalette.Canvas,
-            Padding = new Padding(12, 10, 12, 10)
+            BackColor = UiPalette.Surface,
+            Padding = new Padding(8, 10, 8, 8)
         };
         var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            BackColor = UiPalette.Canvas,
+            BackColor = UiPalette.Surface,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             Padding = Padding.Empty,
             Margin = Padding.Empty
         };
         host.Controls.Add(flow);
+        host.Controls.Add(new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 1,
+            BackColor = UiPalette.Border,
+            Margin = Padding.Empty
+        });
 
         AddNav(flow, L10n.SettingsGeneral, 0);
         AddNav(flow, L10n.SettingsAppearance, 1);
@@ -357,8 +484,8 @@ internal sealed class SettingsForm : Form
         var button = new SettingsNavButton
         {
             Text = text,
-            Size = new Size(152, 46),
-            Margin = new Padding(0, 0, 0, 5),
+            Size = new Size(148, 38),
+            Margin = new Padding(0, 0, 0, 4),
             AccessibleName = text
         };
         button.Click += (_, _) => SelectPage(pageIndex);
@@ -374,9 +501,12 @@ internal sealed class SettingsForm : Form
         page.AddItem(MakePageIntro(L10n.SettingsGeneral, L10n.GeneralIntro));
         page.AddItem(MakeToggleRow(L10n.StartWithWindows, L10n.StartWithWindowsHint, _startupToggle));
         page.AddItem(MakeControlRow(L10n.StartupBehavior,
-            L10n.Pick("选择悬浮球、详情、仅托盘或恢复上次状态", "Choose the orb, details, tray only, or restore last state"), _startupViewCombo));
-        page.AddItem(MakeControlRow(L10n.InterfaceLanguage, L10n.LanguageRestartHint, _languageCombo));
-        page.AddItem(MakeControlRow(L10n.InterfaceTheme, L10n.ThemeHint, _themeCombo));
+            L10n.Pick("选择悬浮球、详情、仅托盘或恢复上次状态", "Choose the orb, details, tray only, or restore last state"),
+            BuildChoiceSelector(_startupViewCombo, columns: 2), rightColumnWidth: 334));
+        page.AddItem(MakeControlRow(L10n.InterfaceLanguage, L10n.LanguageRestartHint,
+            BuildChoiceSelector(_languageCombo, columns: 2), rightColumnWidth: 334));
+        page.AddItem(MakeControlRow(L10n.InterfaceTheme, L10n.ThemeHint,
+            BuildChoiceSelector(_themeCombo, columns: 3), rightColumnWidth: 334));
         return page;
     }
 
@@ -393,10 +523,12 @@ internal sealed class SettingsForm : Form
             L10n.SettingsFontSizeHint, BuildFontScaleEditor(), rightColumnWidth: 258));
         page.AddItem(MakeEditorRow(L10n.OrbOpacity,
             L10n.Pick("可使用滑块或直接输入精确数值", "Use a slider or enter an exact value"), _opacitySummary, EditOpacity));
+        page.AddItem(MakeControlRow(L10n.OrbBackground, L10n.OrbBackgroundHint,
+            BuildOrbBackgroundEditor(), rightColumnWidth: 334));
         page.AddItem(MakeEditorRow(L10n.DualRingDisplay,
             L10n.Pick("选择额度窗口并分别设置环形颜色", "Choose quota windows and a color for each ring"), _ringSummary, EditRings));
         page.AddItem(MakeControlRow(L10n.FlameStyle,
-            L10n.FlameStyleHint, _flameStyleCombo));
+            L10n.FlameStyleHint, BuildChoiceSelector(_flameStyleCombo, columns: 3), rightColumnWidth: 334));
         page.AddItem(MakeToggleRow(L10n.ConsumptionFlame,
             L10n.ConsumptionFlameHint, _consumptionFlameToggle));
         return page;
@@ -447,6 +579,34 @@ internal sealed class SettingsForm : Form
         presets.TextAlign = ContentAlignment.MiddleCenter;
         layout.Controls.Add(presets, 0, 1);
         layout.SetColumnSpan(presets, 2);
+        return layout;
+    }
+
+    private Control BuildOrbBackgroundEditor()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Size = new Size(320, 40),
+            BackColor = Color.Transparent,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _orbBackgroundSummary.Dock = DockStyle.Fill;
+        _orbBackgroundSummary.TextAlign = ContentAlignment.MiddleCenter;
+        _orbBackgroundSummary.Margin = Padding.Empty;
+        layout.Controls.Add(_orbBackgroundSummary, 0, 0);
+        _orbBackgroundColorButton.Dock = DockStyle.Fill;
+        _orbBackgroundColorButton.Margin = new Padding(4, 3, 6, 3);
+        layout.Controls.Add(_orbBackgroundColorButton, 1, 0);
+        _orbBackgroundDefaultButton.Dock = DockStyle.Fill;
+        _orbBackgroundDefaultButton.Margin = new Padding(4, 3, 0, 3);
+        layout.Controls.Add(_orbBackgroundDefaultButton, 2, 0);
         return layout;
     }
 
@@ -560,37 +720,42 @@ internal sealed class SettingsForm : Form
             L10n.Pick("重置界面、交互、提醒和本地数据选项", "Reset appearance, interaction, alerts, and local-data options"), resetButton));
 
         var version = ProductVersionInfo.Current;
-        var about = new SettingsCard { Size = new Size(570, 126), Margin = new Padding(0, 0, 0, 10) };
+        var about = new SettingsCard { Size = new Size(570, 144), Margin = new Padding(0, 0, 0, 10) };
         var aboutLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.Transparent,
             ColumnCount = 2,
             RowCount = 3,
-            Padding = new Padding(18, 12, 18, 12),
+            Padding = new Padding(18, 14, 18, 14),
             Margin = Padding.Empty
         };
         aboutLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         aboutLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 142f));
-        aboutLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));
+        aboutLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
         aboutLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
         aboutLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
-        aboutLayout.Controls.Add(MakeDockLabel(L10n.AboutThisApp,
-            UiPalette.Body(9f, FontStyle.Bold), UiPalette.Text), 0, 0);
+        var aboutTitle = MakeDockLabel(L10n.AboutThisApp,
+            UiPalette.Body(9f, FontStyle.Bold), UiPalette.Text);
+        aboutTitle.Padding = new Padding(0, 0, 0, 4);
+        aboutLayout.Controls.Add(aboutTitle, 0, 0);
         var sourceText = _snapshot is null
             ? L10n.Pick("数据源 · 等待连接", "Source · Waiting for connection")
             : L10n.Pick(
                 $"数据源 · {L10n.SourceName(_snapshot.Source)} · 更新于 {_snapshot.ObservedAt.ToLocalTime():HH:mm:ss}",
                 $"Source · {L10n.SourceName(_snapshot.Source)} · Updated {_snapshot.ObservedAt.ToLocalTime():HH:mm:ss}");
         var privacyLabel = MakeDockLabel(L10n.LocalPrivacyNote, UiPalette.Body(7.6f), UiPalette.Muted);
+        privacyLabel.Padding = new Padding(0, 0, 0, 2);
         aboutLayout.Controls.Add(privacyLabel, 0, 1);
         aboutLayout.SetColumnSpan(privacyLabel, 2);
         var sourceLabel = MakeDockLabel(sourceText, UiPalette.Mono(6.7f, FontStyle.Bold), UiPalette.Faint);
+        sourceLabel.Padding = new Padding(0, 0, 0, 3);
         aboutLayout.Controls.Add(sourceLabel, 0, 2);
         aboutLayout.SetColumnSpan(sourceLabel, 2);
         var versionLabel = MakeDockLabel($"{L10n.VersionLabel} {version}",
             UiPalette.Mono(7f, FontStyle.Bold), UiPalette.Mint);
         versionLabel.TextAlign = ContentAlignment.MiddleRight;
+        versionLabel.Padding = new Padding(0, 0, 0, 4);
         aboutLayout.Controls.Add(versionLabel, 1, 0);
         about.Controls.Add(aboutLayout);
         page.AddItem(about);
@@ -778,9 +943,11 @@ internal sealed class SettingsForm : Form
             BackColor = UiPalette.SurfaceRaised,
             Padding = new Padding(10, 5, 10, 5)
         };
-        var link = new LinkLabel
+        var link = new BaselineSafeLinkLabel
         {
-            Text = $"{caption}  ·  {text}",
+            Text = $"{caption}  \u00B7  {text}",
+            PrefixText = $"{caption}  \u00B7  ",
+            ProjectText = text,
             Dock = DockStyle.Fill,
             AutoSize = false,
             AutoEllipsis = true,
@@ -795,6 +962,7 @@ internal sealed class SettingsForm : Form
             Cursor = Cursors.Hand,
             TabStop = true,
             Margin = Padding.Empty,
+            Padding = new Padding(0, 2, 0, 2),
             UseMnemonic = false
         };
         link.LinkArea = new LinkArea(0, link.Text.Length);
@@ -905,8 +1073,7 @@ internal sealed class SettingsForm : Form
         {
             var previousColors = UiPalette.ResolveColors(previous.ThemeMode);
             UiPalette.SetTheme(_workingPreferences.ThemeMode);
-            UiPalette.ApplyTheme(this, previousColors);
-            NativeTheme.Apply(this);
+            ApplyThemeToOpenForm(previousColors);
         }
         if (previous.Language != _workingPreferences.Language)
         {
@@ -967,6 +1134,10 @@ internal sealed class SettingsForm : Form
     }
 
     internal void SelectPageForTest(int index) => SelectPage(index);
+    internal Control SelectedPageForTest =>
+        _selectedPageIndex >= 0 && _pages[_selectedPageIndex] is { } page
+            ? page
+            : throw new InvalidOperationException("No settings page is selected.");
     internal void CenterOnDisplay(Point screenPoint)
     {
         var area = Screen.FromPoint(screenPoint).WorkingArea;
@@ -1014,7 +1185,20 @@ internal sealed class SettingsForm : Form
                 using var layer = new Bitmap(section.Width, section.Height);
                 try
                 {
-                    section.DrawToBitmap(layer, new Rectangle(Point.Empty, section.Size));
+                    if (ReferenceEquals(section, _pageHost) &&
+                        _selectedPageIndex >= 0 && _pages[_selectedPageIndex] is { } selectedPage)
+                    {
+                        using var layerGraphics = Graphics.FromImage(layer);
+                        layerGraphics.Clear(_pageHost.BackColor);
+                        using var pageLayer = new Bitmap(selectedPage.Width, selectedPage.Height);
+                        selectedPage.DrawToBitmap(pageLayer,
+                            new Rectangle(Point.Empty, selectedPage.Size));
+                        layerGraphics.DrawImageUnscaled(pageLayer, selectedPage.Left, selectedPage.Top);
+                    }
+                    else
+                    {
+                        section.DrawToBitmap(layer, new Rectangle(Point.Empty, section.Size));
+                    }
                     graphics.DrawImageUnscaled(layer, section.Left, section.Top);
                 }
                 catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or
@@ -1034,7 +1218,7 @@ internal sealed class SettingsForm : Form
         var footer = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = UiPalette.Canvas,
+            BackColor = UiPalette.Surface,
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
@@ -1051,28 +1235,39 @@ internal sealed class SettingsForm : Form
             BackColor = Color.Transparent,
             ColumnCount = 3,
             RowCount = 1,
-            Padding = new Padding(22, 13, 20, 13),
+            Padding = new Padding(16, 8, 16, 8),
             Margin = Padding.Empty
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104f));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         _saveStatusLabel = MakeDockLabel(L10n.SettingsSavedState,
             UiPalette.Body(7.7f, FontStyle.Bold), UiPalette.Faint);
         _saveStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        layout.Controls.Add(_saveStatusLabel, 0, 0);
+        // A Label can exceed an absolute TableLayoutPanel cell at high DPI when
+        // its translated preferred width grows. A clipping host makes the cell
+        // boundary authoritative so status text can never cover the buttons.
+        var statusHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        statusHost.Controls.Add(_saveStatusLabel);
+        layout.Controls.Add(statusHost, 0, 0);
 
         var cancel = MakeActionButton(L10n.Cancel, 92, primary: false);
         cancel.Dock = DockStyle.Fill;
-        cancel.Margin = new Padding(4, 7, 8, 7);
+        cancel.Margin = new Padding(4, 5, 7, 5);
         cancel.Click += (_, _) => CancelAndClose();
         layout.Controls.Add(cancel, 1, 0);
 
         _saveButton = MakeActionButton(L10n.Save, 138, primary: true);
         _saveButton.Dock = DockStyle.Fill;
-        _saveButton.Margin = new Padding(4, 7, 0, 7);
+        _saveButton.Margin = new Padding(4, 5, 0, 5);
         _saveButton.Click += (_, _) => SaveAndStayOpen();
         layout.Controls.Add(_saveButton, 2, 0);
         footer.Controls.Add(layout);
@@ -1082,43 +1277,122 @@ internal sealed class SettingsForm : Form
         return footer;
     }
 
-    private void AddPage(Control host, Control page)
+    private Control EnsurePageBuilt(int index)
     {
+        if (_pages[index] is { } existing) return existing;
+        var page = _pageFactories[index]();
+        page.Dock = DockStyle.None;
+        page.Anchor = AnchorStyles.None;
         page.Visible = false;
-        _pages.Add(page);
-        host.Controls.Add(page);
+        _pages[index] = page;
+        _pageHost.Controls.Add(page);
+
+        // Pages are built lazily after the form's automatic DPI pass. WinForms
+        // does not retroactively scale those newly created descendants, so give
+        // them the monitor DPI exactly once before applying the independent
+        // user typography preference.
+        if (IsHandleCreated)
+        {
+            var dpiScale = Math.Max(0.5f, DeviceDpi / 96f);
+            if (Math.Abs(dpiScale - 1f) > 0.01f)
+                page.Scale(new SizeF(dpiScale, dpiScale));
+        }
+
+        if (_appliedLayoutScalePercent != 100)
+        {
+            UiPalette.ApplyScaledTypography(page, _appliedLayoutScalePercent);
+            ApplyCompactTypographyMetrics(page, _appliedLayoutScalePercent);
+        }
+        if (page is ResponsiveSettingsPage responsivePage)
+            responsivePage.CompleteBuild();
+        page.Bounds = _pageHost.DisplayRectangle;
+        return page;
+    }
+
+    private void ResizeSettingsPagesToViewport()
+    {
+        if (_pageHost is null) return;
+        var viewport = _pageHost.DisplayRectangle;
+        foreach (var page in _pages)
+            if (page is not null && page.Bounds != viewport) page.Bounds = viewport;
     }
 
     private void SelectPage(int index)
     {
         if (index < 0 || index >= _pages.Count) return;
         if (index == _selectedPageIndex) return;
-        var previousIndex = _selectedPageIndex;
-        var nextPage = _pages[index];
-        var host = nextPage.Parent;
-        using (NativeRedrawScope.Suspend(this))
+        var pageWasBuilt = _pages[index] is not null;
+        var previousPage = _selectedPageIndex >= 0 && _pages[_selectedPageIndex] is { } previous
+            ? previous
+            : null;
+        Control nextPage;
+
+        // Prepare a newly requested page completely behind the currently visible
+        // page. The user keeps seeing the previous stable frame during control
+        // construction, scaling and native theming; only the final z-order swap
+        // is visible.
+        _pageHost.SuspendLayout();
+        try
         {
-            SuspendLayout();
-            host?.SuspendLayout();
-            try
+            nextPage = EnsurePageBuilt(index);
+            nextPage.Bounds = _pageHost.DisplayRectangle;
+            nextPage.Visible = true;
+            if (previousPage is { Visible: true }) nextPage.SendToBack();
+            if (_orbPreview is not null && index == 1) _orbPreview.Visible = true;
+            nextPage.CreateControl();
+            if (!pageWasBuilt)
             {
-                if (_orbPreview is not null && index != 1)
-                    _orbPreview.Hide();
-                if (previousIndex >= 0 && previousIndex < _pages.Count)
-                    _pages[previousIndex].Visible = false;
-                nextPage.Visible = true;
-                nextPage.BringToFront();
-                _selectedPageIndex = index;
-                for (var i = 0; i < _navigation.Count; i++) _navigation[i].Active = i == index;
-                if (_orbPreview is not null)
-                    _orbPreview.Visible = index == 1;
+                nextPage.PerformLayout();
+                if (nextPage.IsHandleCreated && _nativeThemedPages.Add(nextPage))
+                    NativeTheme.Apply(nextPage);
             }
-            finally
-            {
-                host?.ResumeLayout(performLayout: true);
-                ResumeLayout(performLayout: false);
-            }
-            nextPage.PerformLayout();
+            // Adjust only the native child-window order. WinForms BringToFront
+            // runs a layout pass for the complete settings tree; SetWindowPos
+            // avoids that cost while still allowing ordinary Windows repainting.
+            NativeZOrder.BringToFront(nextPage);
+            if (_orbPreview is not null && index != 1) _orbPreview.Hide();
+            _selectedPageIndex = index;
+            for (var i = 0; i < _navigation.Count; i++) _navigation[i].Active = i == index;
+            QueueSelectedPagePaint(nextPage, index);
+        }
+        finally
+        {
+            _pageHost.ResumeLayout(performLayout: false);
+        }
+    }
+
+    private void QueueSelectedPagePaint(Control page, int pageIndex)
+    {
+        if (!IsHandleCreated || IsDisposed) return;
+        var generation = ++_pagePaintGeneration;
+        BeginInvoke((Action)(() =>
+        {
+            if (IsDisposed || generation != _pagePaintGeneration ||
+                pageIndex != _selectedPageIndex || page.IsDisposed) return;
+            NativeRedrawScope.RedrawNow(page);
+        }));
+    }
+
+    protected override bool ProcessTabKey(bool forward)
+    {
+        var candidates = EnumerateActiveTabStops(_rootLayout).ToArray();
+        if (candidates.Length == 0) return base.ProcessTabKey(forward);
+        var current = Array.FindIndex(candidates, control => control.Focused || control.ContainsFocus);
+        var next = current < 0
+            ? forward ? 0 : candidates.Length - 1
+            : (current + (forward ? 1 : -1) + candidates.Length) % candidates.Length;
+        return candidates[next].Focus() || base.ProcessTabKey(forward);
+    }
+
+    private IEnumerable<Control> EnumerateActiveTabStops(Control root)
+    {
+        var children = root.Controls.Cast<Control>().OrderBy(control => control.TabIndex);
+        foreach (var child in children)
+        {
+            if (_pages.Contains(child) && !ReferenceEquals(child, SelectedPageForTest)) continue;
+            if (child.TabStop && child.CanSelect) yield return child;
+            foreach (var descendant in EnumerateActiveTabStops(child))
+                yield return descendant;
         }
     }
 
@@ -1135,6 +1409,8 @@ internal sealed class SettingsForm : Form
         _orbSizeInput.ValueChanged += (_, _) => OrbSizeInputChanged();
         _fontScaleSlider.ValueChanged += (_, _) => FontScaleSliderChanged();
         _fontScaleInput.ValueChanged += (_, _) => FontScaleInputChanged();
+        _orbBackgroundColorButton.Click += (_, _) => ChooseOrbBackgroundColor();
+        _orbBackgroundDefaultButton.Click += (_, _) => RestoreDefaultOrbBackground();
         _positionLockedToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _snapToEdgeToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
         _clickThroughToggle.CheckedChanged += (_, _) => UpdateFromDirectControls();
@@ -1215,16 +1491,48 @@ internal sealed class SettingsForm : Form
         {
             var previousColors = UiPalette.ResolveColors(previousPreferences.ThemeMode);
             UiPalette.SetTheme(_workingPreferences.ThemeMode);
-            UiPalette.ApplyTheme(this, previousColors);
-            NativeTheme.Apply(this);
+            ApplyThemeToOpenForm(previousColors);
         }
         TopMost = _workingPreferences.AlwaysOnTop;
         _flameStyleCombo.Enabled = _workingPreferences.ConsumptionFlameEnabled;
         if (!languageChanged &&
             previousPreferences.SettingsFontScalePercent != _workingPreferences.SettingsFontScalePercent)
-            UiPalette.ApplyScaledTypography(this, _workingPreferences.SettingsFontScalePercent);
+            QueueFontScalePreview();
         RaisePreview();
         if (languageChanged) ApplyLanguageToOpenForm();
+    }
+
+    private void ApplyThemeToOpenForm(UiPalette.Colors previousColors)
+    {
+        using (NativeRedrawScope.Suspend(this))
+        {
+            UiPalette.ApplyTheme(this, previousColors);
+            NativeTheme.Apply(this);
+            UpdateOrbBackgroundControls();
+            UpdateOrbPreview();
+            PerformLayout();
+        }
+    }
+
+    private void QueueFontScalePreview()
+    {
+        _fontScalePreviewTimer.Stop();
+        _fontScalePreviewTimer.Start();
+    }
+
+    private void ApplyPendingFontScalePreview()
+    {
+        _fontScalePreviewTimer.Stop();
+        var target = _workingPreferences.SettingsFontScalePercent;
+        if (_appliedLayoutScalePercent == target) return;
+        using (NativeRedrawScope.Suspend(this))
+        {
+            ApplySettingsLayoutScale(target);
+            UiPalette.ApplyScaledTypography(this, target);
+            ApplyCompactTypographyMetrics(this, target);
+            ResizeSettingsPagesToViewport();
+            PerformLayout();
+        }
     }
 
     private void ApplyLanguageToOpenForm()
@@ -1235,73 +1543,67 @@ internal sealed class SettingsForm : Form
         _initializing = true;
         try
         {
-            using var template = new SettingsForm(
-                _workingPreferences,
-                StartupEnabled,
-                _snapshot,
-                _diagnostics);
-            Text = template.Text;
-            AccessibleName = template.AccessibleName;
-            // Page BringToFront calls change the Controls z-order. Copy common
-            // chrome while skipping page subtrees, then pair the five pages by
-            // their stable logical index so localization never crosses pages.
-            CopyLocalizedControlTree(this, template, skipSettingsPages: true);
-            for (var index = 0; index < Math.Min(_pages.Count, template._pages.Count); index++)
-                CopyLocalizedControlTree(_pages[index], template._pages[index], skipSettingsPages: false);
+            // Pick() records every bilingual pair as controls are built. Update
+            // the live tree in place instead of constructing a second hidden
+            // SettingsForm with five complete pages, which used to make the
+            // first language switch pause noticeably.
+            using (NativeRedrawScope.Suspend(this))
+            {
+                Text = L10n.Translate(Text);
+                AccessibleName = L10n.Translate(AccessibleName ?? string.Empty);
+                RelocalizeControlTree(this);
+                UiPalette.ApplyScaledTypography(this, _workingPreferences.SettingsFontScalePercent);
+                ApplyCompactTypographyMetrics(this, _workingPreferences.SettingsFontScalePercent);
+                NativeTheme.Apply(this);
+                UpdateSummaries();
+                UpdateDirtyState();
+                UpdateOrbPreview();
+                PerformLayout();
+            }
         }
         finally
         {
             _initializing = wasInitializing;
             _relocalizing = false;
         }
-        UiPalette.ApplyScaledTypography(this, _workingPreferences.SettingsFontScalePercent);
-        NativeTheme.Apply(this);
-        UpdateSummaries();
-        UpdateDirtyState();
-        UpdateOrbPreview();
-        PerformLayout();
-        foreach (var navigationButton in _navigation)
-        {
-            navigationButton.Invalidate();
-            navigationButton.Update();
-        }
         Invalidate(invalidateChildren: true);
     }
 
-    private static void CopyLocalizedControlTree(Control target, Control source, bool skipSettingsPages)
+    private static void RelocalizeControlTree(Control root)
     {
-        var count = Math.Min(target.Controls.Count, source.Controls.Count);
-        for (var index = 0; index < count; index++)
+        foreach (Control control in root.Controls)
         {
-            var destination = target.Controls[index];
-            var localized = source.Controls[index];
-            if (skipSettingsPages &&
-                (destination is ResponsiveSettingsPage || localized is ResponsiveSettingsPage))
-                continue;
-
-            if (destination is ComboBox destinationCombo && localized is ComboBox localizedCombo)
+            if (control is ComboBox combo)
             {
-                var selectedIndex = destinationCombo.SelectedIndex;
-                destinationCombo.BeginUpdate();
+                var selectedIndex = combo.SelectedIndex;
+                combo.BeginUpdate();
                 try
                 {
-                    destinationCombo.Items.Clear();
-                    foreach (var item in localizedCombo.Items) destinationCombo.Items.Add(item);
-                    destinationCombo.SelectedIndex = Math.Clamp(
+                    for (var index = 0; index < combo.Items.Count; index++)
+                    {
+                        if (combo.Items[index] is string item)
+                            combo.Items[index] = L10n.Translate(item);
+                    }
+                    combo.SelectedIndex = Math.Clamp(
                         selectedIndex,
-                        destinationCombo.Items.Count == 0 ? -1 : 0,
-                        destinationCombo.Items.Count - 1);
+                        combo.Items.Count == 0 ? -1 : 0,
+                        combo.Items.Count - 1);
                 }
-                finally { destinationCombo.EndUpdate(); }
+                finally { combo.EndUpdate(); }
             }
-            else if (destination is Label or ButtonBase)
+            else if (control is BaselineSafeLinkLabel link)
             {
-                destination.Text = localized.Text;
+                link.PrefixText = $"{L10n.GitHubProject}  \u00B7  ";
+                link.Text = link.PrefixText + link.ProjectText;
             }
+            else if (control is Label or ButtonBase or GroupBox)
+                control.Text = L10n.Translate(control.Text);
 
-            if (!string.IsNullOrWhiteSpace(localized.AccessibleName))
-                destination.AccessibleName = localized.AccessibleName;
-            CopyLocalizedControlTree(destination, localized, skipSettingsPages);
+            if (!string.IsNullOrWhiteSpace(control.AccessibleName))
+                control.AccessibleName = L10n.Translate(control.AccessibleName);
+            if (!string.IsNullOrWhiteSpace(control.AccessibleDescription))
+                control.AccessibleDescription = L10n.Translate(control.AccessibleDescription);
+            RelocalizeControlTree(control);
         }
     }
 
@@ -1345,9 +1647,22 @@ internal sealed class SettingsForm : Form
         TopMost = preferences.AlwaysOnTop;
         UpdateSummaries();
         _initializing = false;
+        ApplySettingsLayoutScale(fontScale);
         UiPalette.ApplyScaledTypography(this, preferences.SettingsFontScalePercent);
+        if (IsHandleCreated)
+            ApplyCompactTypographyMetrics(this, preferences.SettingsFontScalePercent);
         UpdateOrbPreview();
         UpdateDirtyState();
+    }
+
+    private static void ApplyCompactTypographyMetrics(Control root, int scalePercent)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is SettingsCard card)
+                card.ApplyTypographyDensity(scalePercent);
+            ApplyCompactTypographyMetrics(child, scalePercent);
+        }
     }
 
     private void EditOpacity()
@@ -1372,6 +1687,35 @@ internal sealed class SettingsForm : Form
             RaisePreview();
         }
         UpdateSummaries();
+    }
+
+    private void ChooseOrbBackgroundColor()
+    {
+        var initial = _workingPreferences.OrbBackgroundColorArgb is { } argb
+            ? Color.FromArgb(argb)
+            : UiPalette.DefaultOrbBackground;
+        using var picker = new ColorDialog
+        {
+            Color = initial,
+            FullOpen = true,
+            AnyColor = true,
+            SolidColorOnly = true
+        };
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        _workingPreferences = PanelPreferenceManager.Normalize(_workingPreferences with
+        {
+            OrbBackgroundColorArgb = Color.FromArgb(255, picker.Color).ToArgb()
+        });
+        UpdateOrbBackgroundControls();
+        RaisePreview();
+    }
+
+    private void RestoreDefaultOrbBackground()
+    {
+        if (_workingPreferences.OrbBackgroundColorArgb is null) return;
+        _workingPreferences = _workingPreferences with { OrbBackgroundColorArgb = null };
+        UpdateOrbBackgroundControls();
+        RaisePreview();
     }
 
     private void EditRings()
@@ -1433,11 +1777,22 @@ internal sealed class SettingsForm : Form
     private void UpdateSummaries()
     {
         _opacitySummary.Text = $"{_workingPreferences.OrbOpacityPercent}%";
+        UpdateOrbBackgroundControls();
         _ringSummary.Text = $"{RingWindowCatalog.FormatShort(_workingPreferences.OuterWindowMinutes)}  /  " +
                             RingWindowCatalog.FormatShort(_workingPreferences.InnerWindowMinutes);
         _alertSummary.Text = _workingPreferences.AlertsEnabled
             ? L10n.AlertsSummary(_workingPreferences.WarningThreshold, _workingPreferences.CriticalThreshold)
             : L10n.AlertsOff;
+    }
+
+    private void UpdateOrbBackgroundControls()
+    {
+        var custom = _workingPreferences.OrbBackgroundColorArgb;
+        _orbBackgroundSummary.Text = custom is null ? L10n.DefaultBlack : L10n.CustomColor;
+        _orbBackgroundColorButton.SelectedColor = custom is { } argb
+            ? Color.FromArgb(argb)
+            : UiPalette.DefaultOrbBackground;
+        _orbBackgroundDefaultButton.Enabled = custom is not null;
     }
 
     private void RequestClearHistory()
@@ -1479,6 +1834,7 @@ internal sealed class SettingsForm : Form
     private void SaveAndStayOpen()
     {
         UpdateFromDirectControls();
+        ApplyPendingFontScalePreview();
         if (_resetPending) ResetRequested?.Invoke();
         if (SaveRequested is null)
         {
@@ -1541,6 +1897,7 @@ internal sealed class SettingsForm : Form
             previewProgress * (maximumPreviewSize - minimumPreviewSize));
         _orbPreview.Size = new Size(previewSize, previewSize);
         _orbPreview.ConfigureRings(RingDisplayConfiguration.FromPreferences(_workingPreferences));
+        _orbPreview.SetBackgroundColor(_workingPreferences.OrbBackgroundColorArgb);
         _orbPreview.SetFlameAnimationEnabled(_workingPreferences.ConsumptionFlameEnabled);
         _orbPreview.SetFlameStyle(_workingPreferences.ConsumptionFlameStyle);
         if (_snapshot is not null) _orbPreview.SetSnapshot(_snapshot, live: true);
@@ -1566,32 +1923,44 @@ internal sealed class SettingsForm : Form
             UpdateFromDirectControls();
     }
 
-    private static Panel MakePageIntro(string title, string subtitle)
+    private static Control MakePageIntro(string title, string subtitle)
     {
-        var panel = new Panel
+        var layout = new BufferedTableLayoutPanel
         {
-            Size = new Size(570, 62),
-            Margin = new Padding(0, 0, 0, 8),
-            BackColor = Color.Transparent
-        };
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(570, 0),
+            Size = new Size(570, 74),
             BackColor = Color.Transparent,
             ColumnCount = 1,
-            RowCount = 2,
-            Margin = Padding.Empty,
-            Padding = new Padding(2, 0, 2, 0)
+            RowCount = 3,
+            Margin = new Padding(0, 0, 0, 14),
+            Padding = new Padding(4, 3, 2, 0)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        layout.Controls.Add(MakeDockLabel(title,
-            UiPalette.Display(13f, FontStyle.Bold), UiPalette.Text), 0, 0);
-        layout.Controls.Add(MakeDockLabel(subtitle,
-            UiPalette.Body(7.7f), UiPalette.Muted), 0, 1);
-        panel.Controls.Add(layout);
-        return panel;
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 15f));
+        var titleLabel = MakeDockLabel(title,
+            UiPalette.Display(12.2f, FontStyle.Bold), UiPalette.Text);
+        titleLabel.AutoSize = true;
+        titleLabel.Margin = new Padding(0, 0, 0, 5);
+        titleLabel.TextAlign = ContentAlignment.BottomLeft;
+        layout.Controls.Add(titleLabel, 0, 0);
+        var subtitleLabel = MakeDockLabel(subtitle,
+            UiPalette.Body(7.4f), UiPalette.Muted);
+        subtitleLabel.AutoSize = true;
+        subtitleLabel.Margin = new Padding(0, 1, 0, 0);
+        subtitleLabel.TextAlign = ContentAlignment.TopLeft;
+        layout.Controls.Add(subtitleLabel, 0, 1);
+        layout.Controls.Add(new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 1,
+            Margin = new Padding(0, 12, 0, 0),
+            BackColor = UiPalette.Border
+        }, 0, 2);
+        return layout;
     }
 
     private static SettingsCard MakeToggleRow(string title, string hint, SettingsToggle toggle) =>
@@ -1635,11 +2004,11 @@ internal sealed class SettingsForm : Form
         Control rightControl,
         int rightColumnWidth)
     {
-        var height = Math.Max(86, rightControl.Height + 26);
+        var height = Math.Max(84, rightControl.Height + 24);
         var card = new SettingsCard
         {
             Size = new Size(570, height),
-            Margin = new Padding(0, 0, 0, 10)
+            Margin = new Padding(0, 0, 0, 9)
         };
         var layout = new TableLayoutPanel
         {
@@ -1647,13 +2016,13 @@ internal sealed class SettingsForm : Form
             BackColor = Color.Transparent,
             ColumnCount = 2,
             RowCount = 1,
-            Padding = new Padding(18, 10, 18, 10),
+            Padding = new Padding(16, 11, 16, 11),
             Margin = Padding.Empty
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, rightColumnWidth));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        layout.Controls.Add(MakeTextBlock(title, hint, height - 20), 0, 0);
+        layout.Controls.Add(MakeTextBlock(title, hint, height - 22), 0, 0);
         rightControl.Anchor = AnchorStyles.None;
         rightControl.Margin = new Padding(12, 0, 0, 0);
         layout.Controls.Add(rightControl, 1, 0);
@@ -1674,11 +2043,16 @@ internal sealed class SettingsForm : Form
             Padding = Padding.Empty
         };
         text.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        text.RowStyles.Add(new RowStyle(SizeType.Absolute, 27f));
+        text.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         text.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        text.Controls.Add(MakeDockLabel(title,
-            UiPalette.Body(8.7f, FontStyle.Bold), UiPalette.Text), 0, 0);
-        var hintLabel = MakeDockLabel(hint, UiPalette.Body(7.1f), UiPalette.Muted);
+        var titleLabel = MakeDockLabel(title,
+            UiPalette.Body(8.5f, FontStyle.Bold), UiPalette.Text);
+        titleLabel.AutoSize = true;
+        titleLabel.Margin = new Padding(0, 0, 0, 5);
+        titleLabel.TextAlign = ContentAlignment.BottomLeft;
+        text.Controls.Add(titleLabel, 0, 0);
+        var hintLabel = MakeDockLabel(hint, UiPalette.Body(7f), UiPalette.Muted);
+        hintLabel.Margin = new Padding(0, 2, 0, 0);
         hintLabel.TextAlign = ContentAlignment.TopLeft;
         text.Controls.Add(hintLabel, 0, 1);
         return text;
@@ -1693,12 +2067,73 @@ internal sealed class SettingsForm : Form
 
     private static ComboBox MakeCombo() => new ThemedComboBox
     {
-        Size = new Size(166, 32),
+        Size = new Size(176, 34),
         BackColor = UiPalette.SurfaceRaised,
         ForeColor = UiPalette.Text,
         Font = UiPalette.Body(8f),
         DropDownHeight = 160
     };
+
+    private static Control BuildChoiceSelector(ComboBox model, int columns)
+    {
+        columns = Math.Clamp(columns, 1, Math.Max(1, model.Items.Count));
+        var rows = Math.Max(1, (int)Math.Ceiling(model.Items.Count / (double)columns));
+        var host = new Panel
+        {
+            Size = new Size(320, rows * 38),
+            BackColor = Color.Transparent,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        var choices = new BufferedTableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            ColumnCount = columns,
+            RowCount = rows,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        for (var column = 0; column < columns; column++)
+            choices.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
+        for (var row = 0; row < rows; row++)
+            choices.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
+
+        var buttons = new List<SettingsChoiceButton>();
+        for (var index = 0; index < model.Items.Count; index++)
+        {
+            var choiceIndex = index;
+            var button = new SettingsChoiceButton
+            {
+                Text = model.Items[index]?.ToString() ?? string.Empty,
+                AccessibleName = model.Items[index]?.ToString() ?? string.Empty,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3)
+            };
+            button.Click += (_, _) => model.SelectedIndex = choiceIndex;
+            buttons.Add(button);
+            choices.Controls.Add(button, index % columns, index / columns);
+        }
+
+        void SynchronizeSelection()
+        {
+            for (var index = 0; index < buttons.Count; index++)
+            {
+                buttons[index].Active = model.SelectedIndex == index;
+                buttons[index].Enabled = model.Enabled;
+            }
+        }
+
+        model.SelectedIndexChanged += (_, _) => SynchronizeSelection();
+        model.EnabledChanged += (_, _) => SynchronizeSelection();
+        model.Visible = false;
+        model.TabStop = false;
+        host.Controls.Add(model);
+        host.Controls.Add(choices);
+        choices.BringToFront();
+        SynchronizeSelection();
+        return host;
+    }
 
     private static void AddItems(ComboBox comboBox, params string[] items) => comboBox.Items.AddRange(items);
 
@@ -1776,12 +2211,13 @@ internal sealed class ResponsiveSettingsPage : Panel
 {
     private readonly TableLayoutPanel _content;
     private bool _repaintQueued;
+    private bool _building = true;
 
     public ResponsiveSettingsPage()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
-                 ControlStyles.Opaque, true);
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.Opaque, false);
         Dock = DockStyle.Fill;
         AutoScroll = true;
         BackColor = UiPalette.Canvas;
@@ -1802,6 +2238,8 @@ internal sealed class ResponsiveSettingsPage : Panel
         };
         _content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         Controls.Add(_content);
+        SuspendLayout();
+        _content.SuspendLayout();
     }
 
     protected override void OnPaintBackground(PaintEventArgs e) =>
@@ -1809,23 +2247,21 @@ internal sealed class ResponsiveSettingsPage : Panel
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        // The scroll page is also opaque for low-flicker wheel scrolling, so it
-        // must repaint every uncovered pixel itself after a theme change.
-        e.Graphics.Clear(BackColor);
         base.OnPaint(e);
     }
 
     protected override void OnScroll(ScrollEventArgs se)
     {
         base.OnScroll(se);
-        // Coalesce rapid wheel messages into one buffered repaint. A synchronous
-        // Update() here used to block the UI thread and leave copied text trails.
+        // ScrollableControl moves child windows before the background is repainted.
+        // Coalesce wheel messages, then erase and redraw the viewport plus every
+        // child in one native paint pass so copied text cannot survive as trails.
         if (_repaintQueued || !IsHandleCreated) return;
         _repaintQueued = true;
         BeginInvoke((Action)(() =>
         {
             _repaintQueued = false;
-            if (!IsDisposed) Invalidate(invalidateChildren: true);
+            if (!IsDisposed) NativeRedrawScope.RedrawNow(this);
         }));
     }
 
@@ -1836,6 +2272,14 @@ internal sealed class ResponsiveSettingsPage : Panel
         _content.RowCount = rowIndex + 1;
         _content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _content.Controls.Add(control, 0, rowIndex);
+    }
+
+    internal void CompleteBuild()
+    {
+        if (!_building) return;
+        _building = false;
+        _content.ResumeLayout(performLayout: false);
+        ResumeLayout(performLayout: false);
     }
 }
 
@@ -1849,9 +2293,11 @@ internal sealed class SettingsHeaderPanel : Panel
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         using var gradient = new LinearGradientBrush(ClientRectangle,
-            UiPalette.SurfaceRaised, UiPalette.Canvas, LinearGradientMode.Horizontal);
+            UiPalette.Mix(UiPalette.SurfaceRaised, UiPalette.Mint, 0.035f),
+            UiPalette.Surface,
+            LinearGradientMode.Horizontal);
         e.Graphics.FillRectangle(gradient, ClientRectangle);
-        using var line = new Pen(UiPalette.Border);
+        using var line = new Pen(UiPalette.Mix(UiPalette.Border, UiPalette.Canvas, 0.22f));
         e.Graphics.DrawLine(line, 0, Height - 1, Width, Height - 1);
     }
 }
@@ -1869,12 +2315,14 @@ internal sealed class SettingsBrandTitle : Control
     {
         base.OnPaint(e);
         var brand = "Codex";
-        var separator = "  /  ";
+        var separator = " / ";
         var product = L10n.Pick("额度面板", "Quota Panel");
         var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+        using var productFont = UiPalette.Body(
+            Math.Max(8f, Font.SizeInPoints * 0.78f), FontStyle.Bold);
         var brandSize = TextRenderer.MeasureText(e.Graphics, brand, Font, Size.Empty, flags);
         var separatorSize = TextRenderer.MeasureText(e.Graphics, separator, Font, Size.Empty, flags);
-        var productSize = TextRenderer.MeasureText(e.Graphics, product, Font, Size.Empty, flags);
+        var productSize = TextRenderer.MeasureText(e.Graphics, product, productFont, Size.Empty, flags);
         var totalWidth = brandSize.Width + separatorSize.Width + productSize.Width;
         var x = 0;
         var y = Math.Max(0, (Height - Math.Max(brandSize.Height, productSize.Height)) / 2);
@@ -1885,7 +2333,7 @@ internal sealed class SettingsBrandTitle : Control
         TextRenderer.DrawText(e.Graphics, separator, Font,
             new Point(x, y), UiPalette.Mint, flags);
         x += separatorSize.Width;
-        TextRenderer.DrawText(e.Graphics, product, Font,
+        TextRenderer.DrawText(e.Graphics, product, productFont,
             new Point(x, y), UiPalette.Muted, flags);
 
         if (totalWidth > Width)
@@ -1897,11 +2345,25 @@ internal sealed class SettingsBrandTitle : Control
 
 internal sealed class SettingsCard : Panel
 {
+    private int _baselineHeight;
+
     public SettingsCard()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         BackColor = UiPalette.Canvas;
+    }
+
+    internal void ApplyTypographyDensity(int scalePercent)
+    {
+        if (_baselineHeight <= 0) _baselineHeight = Math.Max(1, Height);
+        // Only vertical reading room grows, and at half the typography rate.
+        // This preserves both text lines at 150% without zooming the window,
+        // card width, gutters, and every other piece of geometry.
+        var density = scalePercent <= 100
+            ? 1f
+            : 1f + (scalePercent - 100) / 200f;
+        Height = (int)Math.Ceiling(_baselineHeight * density);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e) =>
@@ -1910,11 +2372,17 @@ internal sealed class SettingsCard : Panel
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var path = UiPalette.RoundedRect(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), 10);
-        using var fill = new SolidBrush(UiPalette.Surface);
-        using var border = new Pen(UiPalette.Border);
+        using var path = UiPalette.RoundedRect(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), 13);
+        using var fill = new LinearGradientBrush(
+            ClientRectangle,
+            UiPalette.Mix(UiPalette.Surface, UiPalette.SurfaceRaised, 0.34f),
+            UiPalette.Surface,
+            LinearGradientMode.Horizontal);
+        using var border = new Pen(UiPalette.Mix(UiPalette.Border, UiPalette.Canvas, 0.25f));
         e.Graphics.FillPath(fill, path);
         e.Graphics.DrawPath(border, path);
+        using var highlight = new Pen(Color.FromArgb(28, UiPalette.Mint));
+        e.Graphics.DrawLine(highlight, 14, 1.5f, Math.Max(14, Width - 14), 1.5f);
         base.OnPaint(e);
     }
 }
@@ -1938,12 +2406,12 @@ internal sealed class SettingsNavButton : Button
                  ControlStyles.OptimizedDoubleBuffer, true);
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        BackColor = UiPalette.Canvas;
+        BackColor = UiPalette.Surface;
         ForeColor = UiPalette.Text;
-        Font = UiPalette.Body(8.5f, FontStyle.Bold);
+        Font = UiPalette.Body(8.2f, FontStyle.Bold);
         Cursor = Cursors.Hand;
         TextAlign = ContentAlignment.MiddleLeft;
-        Padding = new Padding(20, 0, 8, 0);
+        Padding = new Padding(22, 0, 10, 0);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -1952,17 +2420,19 @@ internal sealed class SettingsNavButton : Button
         e.Graphics.Clear(BackColor);
         if (_active || _hovered)
         {
-            using var path = UiPalette.RoundedRect(new RectangleF(0, 1, Width - 1, Height - 2), 9);
-            using var fill = new SolidBrush(_active ? UiPalette.SurfaceRaised : UiPalette.Surface);
+            using var path = UiPalette.RoundedRect(new RectangleF(0, 1, Width - 1, Height - 2), 10);
+            using var fill = new SolidBrush(_active
+                ? UiPalette.Mix(UiPalette.SurfaceRaised, UiPalette.Mint, 0.075f)
+                : UiPalette.SurfaceRaised);
             e.Graphics.FillPath(fill, path);
         }
         if (_active)
         {
-            using var rail = UiPalette.RoundedRect(new RectangleF(5, 12, 3, Height - 24), 1.5f);
+            using var rail = UiPalette.RoundedRect(new RectangleF(6, 10, 3, Height - 20), 1.5f);
             using var fill = new SolidBrush(UiPalette.Mint);
             e.Graphics.FillPath(fill, rail);
         }
-        var textBounds = new Rectangle(20, 0, Math.Max(0, Width - 28), Height);
+        var textBounds = new Rectangle(22, 0, Math.Max(0, Width - 32), Height);
         TextRenderer.DrawText(e.Graphics, Text, Font, textBounds,
             _active ? UiPalette.Text : UiPalette.Muted,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
@@ -1970,6 +2440,413 @@ internal sealed class SettingsNavButton : Button
 
     protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hovered = false; Invalidate(); base.OnMouseLeave(e); }
+}
+
+internal sealed class SettingsChoiceButton : Button
+{
+    private bool _active;
+    private bool _hovered;
+
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Active
+    {
+        get => _active;
+        set
+        {
+            if (_active == value) return;
+            _active = value;
+            Invalidate();
+        }
+    }
+
+    public SettingsChoiceButton()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                 ControlStyles.SupportsTransparentBackColor, true);
+        FlatStyle = FlatStyle.Flat;
+        FlatAppearance.BorderSize = 0;
+        BackColor = UiPalette.Surface;
+        ForeColor = UiPalette.Text;
+        Font = UiPalette.Body(7.6f, FontStyle.Bold);
+        Cursor = Cursors.Hand;
+        TabStop = true;
+        UseMnemonic = false;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.Clear(UiPalette.Surface);
+        var bounds = new RectangleF(0.5f, 0.5f, Math.Max(1, Width - 1), Math.Max(1, Height - 1));
+        using var path = UiPalette.RoundedRect(bounds, 9);
+        var fillColor = !Enabled
+            ? UiPalette.Mix(UiPalette.Surface, UiPalette.Track, 0.24f)
+            : _active
+                ? UiPalette.Mix(UiPalette.SurfaceRaised, UiPalette.Mint, _hovered ? 0.18f : 0.12f)
+                : _hovered
+                    ? UiPalette.SurfaceRaised
+                    : UiPalette.Mix(UiPalette.Surface, UiPalette.SurfaceRaised, 0.34f);
+        var borderColor = _active && Enabled
+            ? UiPalette.Mix(UiPalette.Border, UiPalette.Mint, 0.72f)
+            : UiPalette.Mix(UiPalette.Border, UiPalette.Surface, 0.18f);
+        using var fill = new SolidBrush(fillColor);
+        using var border = new Pen(borderColor, _active ? 1.35f : 1f);
+        e.Graphics.FillPath(fill, path);
+        e.Graphics.DrawPath(border, path);
+
+        var textBounds = new Rectangle(8, 1, Math.Max(0, Width - 16), Math.Max(0, Height - 2));
+        var textColor = !Enabled ? UiPalette.Faint : _active ? UiPalette.Text : UiPalette.Muted;
+        TextRenderer.DrawText(e.Graphics, Text, Font, textBounds, textColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+
+        if (Focused && ShowFocusCues)
+        {
+            using var focusPath = UiPalette.RoundedRect(new RectangleF(2.5f, 2.5f,
+                Math.Max(1, Width - 5), Math.Max(1, Height - 5)), 7);
+            using var focus = new Pen(UiPalette.Sky) { DashStyle = DashStyle.Dot };
+            e.Graphics.DrawPath(focus, focusPath);
+        }
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hovered = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+}
+
+internal sealed class BaselineSafeLinkLabel : LinkLabel
+{
+    private bool _hovered;
+    private bool _pressed;
+    private Font? _latinFont;
+
+    internal string PrefixText = string.Empty;
+    internal string ProjectText = string.Empty;
+
+    public BaselineSafeLinkLabel()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                 ControlStyles.SupportsTransparentBackColor, true);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(UiPalette.SurfaceRaised);
+        var color = !Enabled
+            ? UiPalette.Faint
+            : _pressed
+                ? ActiveLinkColor
+                : LinkColor;
+        _latinFont ??= UiPalette.LatinBody(Font.SizeInPoints, Font.Style);
+        using var format = new StringFormat(StringFormat.GenericTypographic)
+        {
+            Alignment = StringAlignment.Near,
+            FormatFlags = StringFormatFlags.NoWrap,
+            HotkeyPrefix = System.Drawing.Text.HotkeyPrefix.None
+        };
+
+        using var prefixPath = CreateGlyphPath(
+            string.IsNullOrEmpty(PrefixText) ? Text : PrefixText, Font, e.Graphics, format);
+        using var projectPath = CreateGlyphPath(ProjectText, _latinFont, e.Graphics, format);
+        var prefixBounds = prefixPath.GetBounds();
+        var projectBounds = projectPath.PointCount == 0 ? RectangleF.Empty : projectPath.GetBounds();
+        var usableTop = Padding.Top + 1f;
+        var usableBottom = Math.Max(usableTop, ClientSize.Height - Padding.Bottom - 1f);
+        var centerY = (usableTop + usableBottom) / 2f;
+        var x = (float)Padding.Left;
+        PositionGlyphPath(prefixPath, prefixBounds, x, centerY);
+        var gap = Math.Max(4f, e.Graphics.DpiX / 96f * 5f);
+        x += prefixBounds.Width + gap;
+        PositionGlyphPath(projectPath, projectBounds, x, centerY);
+
+        var previousSmoothing = e.Graphics.SmoothingMode;
+        var previousPixelOffset = e.Graphics.PixelOffsetMode;
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        using var brush = new SolidBrush(color);
+        e.Graphics.FillPath(brush, prefixPath);
+        e.Graphics.FillPath(brush, projectPath);
+        if (_hovered)
+        {
+            var combinedBounds = RectangleF.Union(prefixPath.GetBounds(), projectPath.GetBounds());
+            var underlineY = Math.Min(ClientSize.Height - Padding.Bottom - 1f, combinedBounds.Bottom + 1f);
+            using var underline = new Pen(color, Math.Max(1f, e.Graphics.DpiY / 96f));
+            e.Graphics.DrawLine(underline, combinedBounds.Left, underlineY,
+                Math.Min(ClientSize.Width - Padding.Right, combinedBounds.Right), underlineY);
+        }
+        e.Graphics.SmoothingMode = previousSmoothing;
+        e.Graphics.PixelOffsetMode = previousPixelOffset;
+
+        if (Focused && ShowFocusCues)
+        {
+            var focus = Rectangle.Inflate(ClientRectangle, -2, -2);
+            ControlPaint.DrawFocusRectangle(e.Graphics, focus, color, Color.Transparent);
+        }
+    }
+
+    private static GraphicsPath CreateGlyphPath(
+        string text,
+        Font font,
+        Graphics graphics,
+        StringFormat format)
+    {
+        var path = new GraphicsPath();
+        if (string.IsNullOrEmpty(text)) return path;
+        var emSize = font.SizeInPoints * graphics.DpiY / 72f;
+        var outlineStyle = font.Style & (FontStyle.Bold | FontStyle.Italic);
+        path.AddString(text, font.FontFamily, (int)outlineStyle, emSize, PointF.Empty, format);
+        return path;
+    }
+
+    private static void PositionGlyphPath(
+        GraphicsPath path,
+        RectangleF bounds,
+        float left,
+        float centerY)
+    {
+        if (path.PointCount == 0) return;
+        using var transform = new Matrix();
+        transform.Translate(left - bounds.Left, centerY - (bounds.Top + bounds.Height / 2f));
+        path.Transform(transform);
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hovered = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { _pressed = e.Button == MouseButtons.Left; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+    protected override void OnFontChanged(EventArgs e)
+    {
+        _latinFont?.Dispose();
+        _latinFont = null;
+        Invalidate();
+        base.OnFontChanged(e);
+    }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _latinFont?.Dispose();
+            _latinFont = null;
+        }
+        base.Dispose(disposing);
+    }
+}
+
+internal sealed class SettingsSlider : Control
+{
+    private int _minimum;
+    private int _maximum = 100;
+    private int _value;
+    private bool _dragging;
+    private bool _hovered;
+
+    public SettingsSlider()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                 ControlStyles.Selectable, true);
+        TabStop = true;
+        Cursor = Cursors.Hand;
+        AccessibleRole = AccessibleRole.Slider;
+        Size = new Size(160, 30);
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int Minimum
+    {
+        get => _minimum;
+        set
+        {
+            _minimum = value;
+            if (_maximum < value) _maximum = value;
+            Value = _value;
+            Invalidate();
+        }
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int Maximum
+    {
+        get => _maximum;
+        set
+        {
+            _maximum = Math.Max(value, _minimum);
+            Value = _value;
+            Invalidate();
+        }
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int Value
+    {
+        get => _value;
+        set
+        {
+            var normalized = Math.Clamp(value, _minimum, _maximum);
+            if (_value == normalized) return;
+            _value = normalized;
+            AccessibleDescription = $"{_value} ({_minimum}–{_maximum})";
+            Invalidate();
+            if (IsHandleCreated)
+                AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
+            ValueChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int TickFrequency { get; set; } = 10;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int SmallChange { get; set; } = 1;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int LargeChange { get; set; } = 10;
+    public event EventHandler? ValueChanged;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(UiPalette.Surface);
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+        var knobDiameter = Math.Clamp(Height * 0.44f, 12f, 18f);
+        var radius = knobDiameter / 2f;
+        var left = radius + 2f;
+        var right = Math.Max(left + 1f, Width - radius - 2f);
+        var centerY = Height / 2f;
+        var progress = _maximum == _minimum ? 0f : (_value - _minimum) / (float)(_maximum - _minimum);
+        var knobX = left + (right - left) * progress;
+        var trackHeight = Math.Clamp(Height * 0.13f, 3f, 5f);
+
+        using var fullTrack = UiPalette.RoundedRect(
+            new RectangleF(left, centerY - trackHeight / 2f, right - left, trackHeight),
+            trackHeight / 2f);
+        using var trackBrush = new SolidBrush(UiPalette.Track);
+        e.Graphics.FillPath(trackBrush, fullTrack);
+
+        if (knobX > left)
+        {
+            using var activeTrack = UiPalette.RoundedRect(
+                new RectangleF(left, centerY - trackHeight / 2f, knobX - left, trackHeight),
+                trackHeight / 2f);
+            using var activeBrush = new SolidBrush(UiPalette.Mint);
+            e.Graphics.FillPath(activeBrush, activeTrack);
+        }
+
+        var knobColor = !Enabled
+            ? UiPalette.Faint
+            : _hovered || _dragging
+                ? UiPalette.Mix(UiPalette.Mint, UiPalette.Text, 0.10f)
+                : UiPalette.Mint;
+        using var knobBrush = new SolidBrush(knobColor);
+        using var knobBorder = new Pen(UiPalette.Surface, 2f);
+        e.Graphics.FillEllipse(knobBrush, knobX - radius, centerY - radius, knobDiameter, knobDiameter);
+        e.Graphics.DrawEllipse(knobBorder, knobX - radius, centerY - radius, knobDiameter, knobDiameter);
+
+        if (Focused)
+        {
+            using var focus = new Pen(Color.FromArgb(170, UiPalette.Sky)) { DashStyle = DashStyle.Dot };
+            e.Graphics.DrawRectangle(focus, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+        }
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button != MouseButtons.Left) return;
+        Focus();
+        _dragging = true;
+        Capture = true;
+        SetValueFromPointer(e.X);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_dragging) SetValueFromPointer(e.X);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button != MouseButtons.Left) return;
+        _dragging = false;
+        Capture = false;
+    }
+
+    protected override void OnMouseCaptureChanged(EventArgs e)
+    {
+        if (!Capture) _dragging = false;
+        Invalidate();
+        base.OnMouseCaptureChanged(e);
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        Value += Math.Sign(e.Delta) * Math.Max(1, SmallChange);
+        if (e is HandledMouseEventArgs handled) handled.Handled = true;
+        base.OnMouseWheel(e);
+    }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down or
+            Keys.PageUp or Keys.PageDown or Keys.Home or Keys.End ||
+        base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        switch (e.KeyCode)
+        {
+            case Keys.Left:
+            case Keys.Down:
+                Value -= Math.Max(1, SmallChange);
+                e.Handled = true;
+                break;
+            case Keys.Right:
+            case Keys.Up:
+                Value += Math.Max(1, SmallChange);
+                e.Handled = true;
+                break;
+            case Keys.PageDown:
+                Value -= Math.Max(1, LargeChange);
+                e.Handled = true;
+                break;
+            case Keys.PageUp:
+                Value += Math.Max(1, LargeChange);
+                e.Handled = true;
+                break;
+            case Keys.Home:
+                Value = Minimum;
+                e.Handled = true;
+                break;
+            case Keys.End:
+                Value = Maximum;
+                e.Handled = true;
+                break;
+        }
+        base.OnKeyDown(e);
+    }
+
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hovered = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+
+    private void SetValueFromPointer(int x)
+    {
+        var radius = Math.Clamp(Height * 0.44f, 12f, 18f) / 2f;
+        var left = radius + 2f;
+        var right = Math.Max(left + 1f, Width - radius - 2f);
+        var progress = Math.Clamp((x - left) / (right - left), 0f, 1f);
+        Value = _minimum + (int)Math.Round(progress * (_maximum - _minimum));
+    }
 }
 
 internal sealed class SettingsToggle : CheckBox
@@ -1989,7 +2866,9 @@ internal sealed class SettingsToggle : CheckBox
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(BackColor);
+        // Paint the card surface explicitly. A previously selected dark native
+        // theme must never leak through the rounded corners in light mode.
+        e.Graphics.Clear(UiPalette.Surface);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var trackBounds = new RectangleF(0.5f, 1.5f, Width - 1, Height - 3);
         using var track = UiPalette.RoundedRect(trackBounds, trackBounds.Height / 2f);

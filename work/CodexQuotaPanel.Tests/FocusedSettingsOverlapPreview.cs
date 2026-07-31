@@ -33,6 +33,13 @@ internal static class FocusedSettingsOverlapPreview
         };
         settings.Show();
         Application.DoEvents();
+        var dpiScale = Math.Max(0.5f, settings.DeviceDpi / 96f);
+        var logicalClient = new Size(
+            (int)Math.Round(settings.ClientSize.Width / dpiScale),
+            (int)Math.Round(settings.ClientSize.Height / dpiScale));
+        if (logicalClient.Width > 810 || logicalClient.Height > 530)
+            throw new InvalidOperationException(
+                $"Settings window is no longer compact: {logicalClient.Width}x{logicalClient.Height} logical px.");
 
         // Reproduce the sequence most likely to expose the reported artifact:
         // show the appearance preview, switch language, then return to General.
@@ -50,6 +57,13 @@ internal static class FocusedSettingsOverlapPreview
         {
             if (navigation[index - 1].Bounds.IntersectsWith(navigation[index].Bounds))
                 throw new InvalidOperationException("Navigation buttons overlap after page/language switching.");
+        }
+        foreach (var item in navigation)
+        {
+            var measured = TextRenderer.MeasureText(item.Text, item.Font, Size.Empty,
+                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+            if (measured.Width > item.ClientSize.Width - 32)
+                throw new InvalidOperationException($"Navigation label is clipped at maximum typography: {item.Text}");
         }
         var preview = Field<QuotaOrbControl>(settings, "_orbPreview");
         if (preview.Visible)
@@ -75,10 +89,38 @@ internal static class FocusedSettingsOverlapPreview
         }
         settings.Refresh();
         Application.DoEvents();
+        var cancelButton = (Button)settings.CancelButton!;
+        var acceptButton = (Button)settings.AcceptButton!;
+        var footerLayout = (TableLayoutPanel)cancelButton.Parent!;
+        var statusHost = footerLayout.GetControlFromPosition(0, 0)
+            ?? throw new InvalidOperationException("Missing settings footer status host.");
+        if (statusHost.Bounds.IntersectsWith(cancelButton.Bounds) ||
+            cancelButton.Bounds.IntersectsWith(acceptButton.Bounds))
+            throw new InvalidOperationException("Settings footer controls overlap at maximum typography.");
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        settings.SavePreview(fullPath);
+        CaptureClient(settings, fullPath);
         Console.WriteLine($"PASS focused settings overlap screenshot | {fullPath}");
+    }
+
+    private static void CaptureClient(SettingsForm form, string path)
+    {
+        try
+        {
+            form.Activate();
+            form.BringToFront();
+            Application.DoEvents();
+            var clientOrigin = form.PointToScreen(Point.Empty);
+            using var bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height);
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.CopyFromScreen(clientOrigin, Point.Empty, form.ClientSize,
+                CopyPixelOperation.SourceCopy);
+            bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            form.SavePreview(path);
+        }
     }
 
     private static T Field<T>(object instance, string name) where T : class =>
