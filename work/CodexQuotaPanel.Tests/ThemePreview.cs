@@ -45,6 +45,9 @@ internal static class ThemePreview
         settings.SelectPageForTest(0);
         settings.Show();
         Application.DoEvents();
+        settings.PrewarmAllPagesForTest();
+        if (settings.BuiltPageCountForTest != 5)
+            throw new InvalidOperationException("Theme regression did not prebuild all settings pages.");
         settings.SavePreview(path);
     }
 

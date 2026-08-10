@@ -217,7 +217,7 @@ internal static class L10n
     public static string WaitingData => Pick("等待数据", "Waiting for data");
     public static string QuotaFull => Pick("额度已满", "Quota exhausted");
     public static string NearlyUsed => Pick("即将用尽", "Nearly exhausted");
-    public static string WatchBalance => Pick("注意余量", "Watch remaining");
+    public static string WatchBalance => Pick("注意余量", "Watch quota");
     public static string QuotaHealthy => Pick("额度充足", "Quota healthy");
     public static string ResetUnavailable => Pick("重置时间暂不可用", "Reset time unavailable");
     public static string ResetCreditExpiryUnavailable => Pick("重置卡到期时间暂不可用", "Reset-credit expiry unavailable");

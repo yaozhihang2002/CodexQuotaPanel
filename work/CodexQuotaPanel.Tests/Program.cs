@@ -46,7 +46,7 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
     return;
 }
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--menu-preview" or "--remote-dpi-preview" or "--orb-background-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--innovation-preview" or "--menu-preview" or "--remote-dpi-preview" or "--orb-background-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -153,6 +153,12 @@ if (args.Length >= 2 && args[0] == "--detail-preview")
 if (args.Length >= 2 && args[0] == "--theme-preview")
 {
     ThemePreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--innovation-preview")
+{
+    InnovationPreview.Run(args[1]);
     return;
 }
 
@@ -411,6 +417,35 @@ Assert(fastConsumption.PercentPerHour >= 11.9d && fastConsumption.Intensity >= 0
     "Fast recent consumption did not produce a vigorous flame.");
 Assert(fastConsumption.Activity == FlameActivityLevel.Inferno,
     "Fast recent consumption did not select the inferno visual state.");
+var forecastReset = flameNow.AddHours(4);
+var forecastSnapshot = new QuotaSnapshot(
+    "codex", null,
+    new LimitBucket(80, 300, forecastReset),
+    new LimitBucket(25, 10080, flameNow.AddDays(6)),
+    null, "pro", null, flameNow, "App Server");
+QuotaHistoryPoint[] forecastHistory =
+[
+    new QuotaHistoryPoint(flameMinute - 60, 0, 300, 320),
+    new QuotaHistoryPoint(flameMinute - 30, 0, 300, 260),
+    new QuotaHistoryPoint(flameMinute, 0, 300, 200),
+    new QuotaHistoryPoint(flameMinute - 60, 1, 10080, 950),
+    new QuotaHistoryPoint(flameMinute - 30, 1, 10080, 750),
+    new QuotaHistoryPoint(flameMinute, 1, 10080, 550)
+];
+var primaryWindowRate = QuotaConsumptionRate.EvaluateWindow(forecastHistory, 0, 300, flameNow);
+Assert(primaryWindowRate.PercentPerHour is >= 11.9d and <= 12.1d,
+    "Window-specific runway rate borrowed consumption from the other ring.");
+var forecast = QuotaRunwayForecaster.Evaluate(forecastSnapshot, forecastHistory, flameNow);
+Assert(forecast is { Slot: 1, WindowMinutes: 10080, State: QuotaRunwayState.AtRisk } &&
+       forecast.ExhaustsAt < forecast.ResetsAt &&
+       forecast.PercentPerHour is >= 39.9d and <= 40.1d,
+    "Runway forecast did not select the window with the shortest at-risk runway.");
+Assert(QuotaRunwayForecaster.Evaluate(forecastSnapshot,
+[
+    new QuotaHistoryPoint(flameMinute - 30, 0, 300, 220),
+    new QuotaHistoryPoint(flameMinute, 0, 300, 200)
+], flameNow) is null,
+    "Runway forecast appeared before enough valid sample intervals existed.");
 
 var lightDefaultRings = RingDisplayConfiguration.FromPreferences(new PanelPreferences { ThemeMode = 2 });
 var lightThemeColors = UiPalette.ResolveColors(2);
