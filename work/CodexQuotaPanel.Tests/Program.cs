@@ -6,6 +6,39 @@ using System.Text.Json;
 
 TestProcessGuard.Install();
 
+if (args.Length == 1 && args[0] == "--forecast-check")
+{
+    var now = DateTimeOffset.UtcNow;
+    var minute = now.ToUnixTimeSeconds() / 60;
+    var checkedBurstWithIdle = QuotaConsumptionRate.EvaluateRunwayWindow([
+        new QuotaHistoryPoint(minute - 90, 0, 300, 800),
+        new QuotaHistoryPoint(minute - 60, 0, 300, 800),
+        new QuotaHistoryPoint(minute - 30, 0, 300, 800),
+        new QuotaHistoryPoint(minute - 20, 0, 300, 700),
+        new QuotaHistoryPoint(minute - 10, 0, 300, 700),
+        new QuotaHistoryPoint(minute, 0, 300, 700)
+    ], 0, 300, now);
+    Assert(checkedBurstWithIdle.PercentPerHour is >= 6.6d and <= 6.7d,
+        "Idle-inclusive runway rate remained burst-sensitive.");
+
+    var flameRate = QuotaConsumptionRate.Evaluate([
+        new QuotaHistoryPoint(minute - 30, 0, 300, 800),
+        new QuotaHistoryPoint(minute - 20, 0, 300, 700)
+    ], now);
+    Assert(flameRate.PercentPerHour >= 59.9d,
+        "Responsive flame rate was unintentionally smoothed with runway prediction.");
+    Assert(QuotaRunwayForecaster.Evaluate(
+        new QuotaSnapshot("codex", null,
+            new LimitBucket(30, 300, now.AddHours(4)), null,
+            null, "pro", null, now, "App Server"),
+        [new QuotaHistoryPoint(minute - 30, 0, 300, 720),
+         new QuotaHistoryPoint(minute, 0, 300, 700)], now) is null,
+        "A low-sample forecast was shown with inadequate confidence.");
+
+    Console.WriteLine($"PASS conservative runway | idle-inclusive={checkedBurstWithIdle.PercentPerHour:0.00}%/h | confidence={checkedBurstWithIdle.Confidence:0.00} | flame={flameRate.PercentPerHour:0.00}%/h");
+    return;
+}
+
 if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check")
 {
     L10n.SetLanguage(AppLanguage.SimplifiedChinese);
@@ -435,6 +468,17 @@ QuotaHistoryPoint[] forecastHistory =
 var primaryWindowRate = QuotaConsumptionRate.EvaluateWindow(forecastHistory, 0, 300, flameNow);
 Assert(primaryWindowRate.PercentPerHour is >= 11.9d and <= 12.1d,
     "Window-specific runway rate borrowed consumption from the other ring.");
+var burstWithIdle = QuotaConsumptionRate.EvaluateRunwayWindow([
+    new QuotaHistoryPoint(flameMinute - 90, 0, 300, 800),
+    new QuotaHistoryPoint(flameMinute - 60, 0, 300, 800),
+    new QuotaHistoryPoint(flameMinute - 30, 0, 300, 800),
+    new QuotaHistoryPoint(flameMinute - 20, 0, 300, 700),
+    new QuotaHistoryPoint(flameMinute - 10, 0, 300, 700),
+    new QuotaHistoryPoint(flameMinute, 0, 300, 700)
+], 0, 300, flameNow);
+Assert(burstWithIdle.PercentPerHour is >= 6.6d and <= 6.7d &&
+       burstWithIdle.PercentPerHour < 10d,
+    "Runway prediction ignored idle intervals and remained overly burst-sensitive.");
 var forecast = QuotaRunwayForecaster.Evaluate(forecastSnapshot, forecastHistory, flameNow);
 Assert(forecast is { Slot: 1, WindowMinutes: 10080, State: QuotaRunwayState.AtRisk } &&
        forecast.ExhaustsAt < forecast.ResetsAt &&

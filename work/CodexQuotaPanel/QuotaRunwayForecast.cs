@@ -13,7 +13,11 @@ internal sealed record QuotaRunwayForecast(
     int WindowMinutes,
     double RemainingPercent,
     double PercentPerHour,
+    double ShortPercentPerHour,
+    double LongPercentPerHour,
+    double Confidence,
     int SampleIntervals,
+    double ObservedMinutes,
     DateTimeOffset? ResetsAt,
     DateTimeOffset? ExhaustsAt,
     double? SustainablePercentPerHour,
@@ -28,7 +32,7 @@ internal static class QuotaRunwayForecaster
 {
     private const int MinimumIntervals = 2;
     private const double MinimumMeaningfulRate = 0.05d;
-    private const double SustainableMargin = 1.08d;
+    private const double MinimumConfidence = 0.45d;
 
     internal static QuotaRunwayForecast? Evaluate(
         QuotaSnapshot snapshot,
@@ -63,13 +67,15 @@ internal static class QuotaRunwayForecaster
         if (bucket.RemainingPercent <= 0.001d)
         {
             candidates.Add(new QuotaRunwayForecast(
-                slot, bucket.WindowMinutes.Value, 0d, 0d, 0,
+                slot, bucket.WindowMinutes.Value, 0d, 0d, 0d, 0d, 1d, 0, 0d,
                 bucket.ResetsAt, now, null, QuotaRunwayState.Exhausted));
             return;
         }
 
-        var rate = QuotaConsumptionRate.EvaluateWindow(history, slot, bucket.WindowMinutes.Value, now);
-        if (rate.SampleIntervals < MinimumIntervals || rate.PercentPerHour < MinimumMeaningfulRate)
+        var rate = QuotaConsumptionRate.EvaluateRunwayWindow(history, slot, bucket.WindowMinutes.Value, now);
+        if (rate.SampleIntervals < MinimumIntervals ||
+            rate.Confidence < MinimumConfidence ||
+            rate.PercentPerHour < MinimumMeaningfulRate)
             return;
 
         var runwayHours = bucket.RemainingPercent / rate.PercentPerHour;
@@ -81,7 +87,10 @@ internal static class QuotaRunwayForecaster
         {
             var resetHours = Math.Max(1d / 60d, (reset - now).TotalHours);
             sustainableRate = bucket.RemainingPercent / resetHours;
-            state = exhaustsAt < reset && rate.PercentPerHour > sustainableRate.Value * SustainableMargin
+            // Require a wider safety margin when confidence is lower. A short
+            // burst should not immediately turn a healthy balance into a warning.
+            var riskMargin = 1.15d + (1d - rate.Confidence) * 0.35d;
+            state = exhaustsAt < reset && rate.PercentPerHour > sustainableRate.Value * riskMargin
                 ? QuotaRunwayState.AtRisk
                 : QuotaRunwayState.Sustainable;
         }
@@ -91,7 +100,11 @@ internal static class QuotaRunwayForecaster
             bucket.WindowMinutes.Value,
             bucket.RemainingPercent,
             rate.PercentPerHour,
+            rate.ShortPercentPerHour,
+            rate.LongPercentPerHour,
+            rate.Confidence,
             rate.SampleIntervals,
+            rate.ObservedMinutes,
             bucket.ResetsAt,
             exhaustsAt,
             sustainableRate,

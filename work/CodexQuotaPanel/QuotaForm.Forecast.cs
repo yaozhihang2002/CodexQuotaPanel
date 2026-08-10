@@ -42,13 +42,13 @@ internal sealed partial class QuotaForm
         {
             QuotaRunwayState.Exhausted => L10n.Pick("续航预测 · 额度已用尽", "Runway · quota exhausted"),
             QuotaRunwayState.AtRisk => L10n.Pick(
-                $"预计可用 {FormatRunway(runway)} · {window}",
-                $"About {FormatRunway(runway)} left · {window}"),
+                $"预计可用 {FormatRunway(runway, forecast.Confidence)} · {window}",
+                $"About {FormatRunway(runway, forecast.Confidence)} left · {window}"),
             _ when forecast.ResetsAt is not null => L10n.Pick(
                 $"续航预测 · 可维持到重置", "Runway · lasts until reset"),
             _ => L10n.Pick(
-                $"预计可用 {FormatRunway(runway)} · {window}",
-                $"About {FormatRunway(runway)} left · {window}")
+                $"预计可用 {FormatRunway(runway, forecast.Confidence)} · {window}",
+                $"About {FormatRunway(runway, forecast.Confidence)} left · {window}")
         };
 
         var detail = resetCredit?.ExpiresAt is { } resetExpiry
@@ -69,9 +69,14 @@ internal sealed partial class QuotaForm
         _nextResetLabel.ForeColor = forecast.State is QuotaRunwayState.AtRisk or QuotaRunwayState.Exhausted
             ? UiPalette.Amber
             : UiPalette.Muted;
+        var confidence = forecast.Confidence >= 0.78d
+            ? L10n.Pick("高", "high")
+            : forecast.Confidence >= 0.58d
+                ? L10n.Pick("中", "medium")
+                : L10n.Pick("较低", "low");
         _toolTip.SetToolTip(_nextResetLabel, L10n.Pick(
-            $"基于最近 {forecast.SampleIntervals} 个有效区间估算；不读取对话内容。",
-            $"Estimated from {forecast.SampleIntervals} recent valid intervals; conversation content is not read."));
+            $"空闲时间已计入；短期 {forecast.ShortPercentPerHour:0.#}%/小时，长期 {forecast.LongPercentPerHour:0.#}%/小时，置信度{confidence}。不读取对话内容。",
+            $"Idle time included; short {forecast.ShortPercentPerHour:0.#}%/h, long {forecast.LongPercentPerHour:0.#}%/h, {confidence} confidence. Conversation content is not read."));
     }
 
     private static RateLimitResetCreditInfo? FindSoonestResetCredit(
@@ -83,18 +88,23 @@ internal sealed partial class QuotaForm
         .OrderBy(credit => credit.ExpiresAt)
         .FirstOrDefault();
 
-    internal static string FormatRunway(TimeSpan runway)
+    internal static string FormatRunway(TimeSpan runway, double confidence = 1d)
     {
         if (runway <= TimeSpan.Zero) return L10n.Pick("不足 1 分钟", "less than 1 min");
-        if (runway.TotalMinutes < 60)
-            return L10n.Pick($"{Math.Max(1, (int)Math.Ceiling(runway.TotalMinutes))} 分钟",
-                $"{Math.Max(1, (int)Math.Ceiling(runway.TotalMinutes))} min");
-        if (runway.TotalHours < 24)
-            return runway.Minutes == 0
-                ? L10n.Pick($"{(int)runway.TotalHours}小时", $"{(int)runway.TotalHours}h")
-                : L10n.Pick($"{(int)runway.TotalHours}小时 {runway.Minutes}分",
-                    $"{(int)runway.TotalHours}h {runway.Minutes}m");
-        return L10n.Pick($"{(int)runway.TotalDays}天 {runway.Hours}小时",
-            $"{(int)runway.TotalDays}d {runway.Hours}h");
+        var stepMinutes = runway.TotalHours >= 24d
+            ? 6 * 60
+            : confidence >= 0.78d ? 15 : confidence >= 0.58d ? 30 : 60;
+        var roundedMinutes = Math.Max(stepMinutes,
+            (int)Math.Ceiling(runway.TotalMinutes / stepMinutes) * stepMinutes);
+        var rounded = TimeSpan.FromMinutes(roundedMinutes);
+        if (rounded.TotalMinutes < 60)
+            return L10n.Pick($"{roundedMinutes} 分钟", $"{roundedMinutes} min");
+        if (rounded.TotalHours < 24)
+            return rounded.Minutes == 0
+                ? L10n.Pick($"{(int)rounded.TotalHours}小时", $"{(int)rounded.TotalHours}h")
+                : L10n.Pick($"{(int)rounded.TotalHours}小时 {rounded.Minutes}分",
+                    $"{(int)rounded.TotalHours}h {rounded.Minutes}m");
+        return L10n.Pick($"{(int)rounded.TotalDays}天 {rounded.Hours}小时",
+            $"{(int)rounded.TotalDays}d {rounded.Hours}h");
     }
 }
