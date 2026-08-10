@@ -185,8 +185,8 @@ internal static class L10n
     public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
     public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
     public static string ReleaseNotesSummary => Pick(
-        "启动始终恢复已保存状态；新增应用重启、穿透提醒偏好和单周期额度提醒静音。",
-        "Startup always restores saved state; adds app restart, click-through reminder preferences, and per-cycle quota alert muting.");
+        "新增稳健续航预测；优化设置首次切页、窗口绘制与远程 DPI，并继续保留已有设置。",
+        "Adds conservative runway forecasts; improves first tab switches, window rendering, remote DPI, and preserves existing settings.");
     public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
     public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");

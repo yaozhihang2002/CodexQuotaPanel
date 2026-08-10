@@ -56,8 +56,8 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         Math.Abs(labelAt200 / labelAt100 - 2f) > 0.001f ||
         dpiSafeFont.Unit != GraphicsUnit.Pixel)
         throw new InvalidOperationException("The orb label font is not using single-pass pixel scaling.");
-    if (GitHubReleaseUpdateService.CurrentVersionText != "0.3.2")
-        throw new InvalidOperationException("The local candidate version is not v0.3.2.");
+    if (GitHubReleaseUpdateService.CurrentVersionText != "0.4.0")
+        throw new InvalidOperationException("The local candidate version is not v0.4.0.");
 
     var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
@@ -267,10 +267,10 @@ using var rpcJson = JsonDocument.Parse("""
   "rateLimitResetCredits": {
     "availableCount": 4,
     "credits": [
-      {"id":"reset-2","title":"Full reset","description":null,"status":"available","grantedAt":1783900000,"expiresAt":1785110400},
-      {"id":"reset-1","title":"Full reset","description":null,"status":"available","grantedAt":1783900000,"expiresAt":1784332800},
-      {"id":"reset-4","title":"Full reset","description":null,"status":"available","grantedAt":1783900000,"expiresAt":1786492800},
-      {"id":"reset-3","title":"Full reset","description":null,"status":"available","grantedAt":1783900000,"expiresAt":1785542400}
+      {"id":"reset-2","title":"Full reset","description":null,"status":"available","grantedAt":1990000000,"expiresAt":2002000000},
+      {"id":"reset-1","title":"Full reset","description":null,"status":"available","grantedAt":1990000000,"expiresAt":2001000000},
+      {"id":"reset-4","title":"Full reset","description":null,"status":"available","grantedAt":1990000000,"expiresAt":2004000000},
+      {"id":"reset-3","title":"Full reset","description":null,"status":"available","grantedAt":1990000000,"expiresAt":2003000000}
     ]
   },
   "rateLimitsByLimitId": {
@@ -453,7 +453,7 @@ Assert(fastConsumption.Activity == FlameActivityLevel.Inferno,
 var forecastReset = flameNow.AddHours(4);
 var forecastSnapshot = new QuotaSnapshot(
     "codex", null,
-    new LimitBucket(80, 300, forecastReset),
+    new LimitBucket(60, 300, forecastReset),
     new LimitBucket(25, 10080, flameNow.AddDays(6)),
     null, "pro", null, flameNow, "App Server");
 QuotaHistoryPoint[] forecastHistory =
