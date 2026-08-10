@@ -32,8 +32,6 @@ internal static class DetailPanelPreview
         using var form = new QuotaForm();
         form.SetHistory(history);
         form.ApplySnapshot(snapshot);
-        if (form.OrbControl.ResetOrbitNodeCount != 4)
-            throw new InvalidOperationException("The reset-card orbit did not expose all four available cards.");
         if (form.CurrentRunwayForecast is not { State: QuotaRunwayState.Sustainable })
             throw new InvalidOperationException("The detail panel did not show a sustainable runway forecast.");
         form.ShowDetails(animate: false);
@@ -42,6 +40,6 @@ internal static class DetailPanelPreview
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         form.SavePreview(fullPath);
-        Console.WriteLine($"PASS detail runway forecast + four-node reset-card orbit | {fullPath}");
+        Console.WriteLine($"PASS detail runway forecast | {fullPath}");
     }
 }

@@ -7,7 +7,6 @@ internal static class InnovationPreview
         var fullPath = Path.GetFullPath(outputPath);
         var directory = Path.GetDirectoryName(fullPath)!;
         Directory.CreateDirectory(directory);
-        var orbitPath = Path.Combine(directory, "reset-card-orbit.png");
         var cells = new List<(string Label, Bitmap Image)>();
 
         try
@@ -50,33 +49,6 @@ internal static class InnovationPreview
                 Application.DoEvents();
                 if (form.CurrentRunwayForecast is not { State: QuotaRunwayState.AtRisk })
                     throw new InvalidOperationException("At-risk runway was not rendered in the visual matrix.");
-                if (form.OrbControl.ResetOrbitNodeCount != 4)
-                    throw new InvalidOperationException("Reset-card orbit lost nodes in the visual matrix.");
-
-                if (cells.Count == 0)
-                {
-                    using var orbitHost = new Form
-                    {
-                        AutoScaleMode = AutoScaleMode.None,
-                        ClientSize = new Size(176, 176),
-                        FormBorderStyle = FormBorderStyle.None,
-                        ShowInTaskbar = false,
-                        BackColor = Color.FromArgb(26, 30, 28),
-                        StartPosition = FormStartPosition.Manual,
-                        Location = new Point(-10000, -10000)
-                    };
-                    using var orb = new QuotaOrbControl { Bounds = new Rectangle(16, 16, 144, 144) };
-                    orb.SetSnapshot(snapshot, live: true);
-                    orb.SetConsumptionIntensity(0.42d);
-                    orb.SetFlamePhaseForTest(1.15d);
-                    orbitHost.Controls.Add(orb);
-                    orbitHost.Show();
-                    Application.DoEvents();
-                    using var orbitCanvas = new Bitmap(orbitHost.ClientSize.Width, orbitHost.ClientSize.Height);
-                    orbitHost.DrawToBitmap(orbitCanvas, new Rectangle(Point.Empty, orbitCanvas.Size));
-                    orbitCanvas.Save(orbitPath, System.Drawing.Imaging.ImageFormat.Png);
-                }
-
                 var cellPath = Path.Combine(directory,
                     $"innovation-{(theme == 1 ? "dark" : "light")}-{(language == AppLanguage.SimplifiedChinese ? "zh" : "en")}.png");
                 form.SavePreview(cellPath);
@@ -105,7 +77,7 @@ internal static class InnovationPreview
                 graphics.DrawImageUnscaled(cells[index].Image, x, y + heading);
             }
             sheet.Save(fullPath, System.Drawing.Imaging.ImageFormat.Png);
-            Console.WriteLine($"PASS runway + reset-orbit visual matrix dark/light zh/en | {fullPath} | {orbitPath}");
+            Console.WriteLine($"PASS runway visual matrix dark/light zh/en | {fullPath}");
         }
         finally
         {

@@ -99,11 +99,9 @@ internal sealed partial class QuotaOrbControl : Control
             L10n.Pick($"剩余 {Math.Round(_innerBucket.RemainingPercent):0}%", $"{Math.Round(_innerBucket.RemainingPercent):0}% remaining");
         AccessibleName = L10n.Pick(
             $"Codex 额度悬浮球，{RingWindowCatalog.FormatLong(_configuration.Outer.WindowMinutes)}{outerText}，" +
-            $"{RingWindowCatalog.FormatLong(_configuration.Inner.WindowMinutes)}{innerText}，" +
-            FormatResetCreditAccessibility(_snapshot?.ResetCredits) + "，单击展开详情",
+            $"{RingWindowCatalog.FormatLong(_configuration.Inner.WindowMinutes)}{innerText}，单击展开详情",
             $"Codex quota orb, {RingWindowCatalog.FormatLong(_configuration.Outer.WindowMinutes)} {outerText}, " +
-            $"{RingWindowCatalog.FormatLong(_configuration.Inner.WindowMinutes)} {innerText}, " +
-            FormatResetCreditAccessibility(_snapshot?.ResetCredits) + ", click to open details");
+            $"{RingWindowCatalog.FormatLong(_configuration.Inner.WindowMinutes)} {innerText}, click to open details");
         Invalidate();
     }
 
@@ -225,8 +223,6 @@ internal sealed partial class QuotaOrbControl : Control
             using var innerHighlight = new Pen(Color.FromArgb(92, Color.White), Math.Max(0.65f, 0.7f * scale));
             graphics.DrawPath(innerHighlight, innerShell);
         }
-
-        DrawResetCreditOrbit(graphics, scale);
 
         var outerBounds = new RectangleF(8 * scale, 8 * scale, Width - 16 * scale, Height - 16 * scale);
         DrawArc(graphics, outerBounds, 7 * scale,
