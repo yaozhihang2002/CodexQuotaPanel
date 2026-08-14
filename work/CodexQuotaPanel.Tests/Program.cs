@@ -996,6 +996,13 @@ if (args.Length >= 2 && args[0] == "--preview")
         settingsCancelCheck.PreviewPreferencesChanged += preferences => restoredPreview = preferences;
         settingsCancelCheck.Show();
         Application.DoEvents();
+        var wheelOrbSize = settingsCancelCheck.SelectedOrbSize;
+        var wheelFontScale = settingsCancelCheck.SelectedFontScalePercent;
+        settingsCancelCheck.SelectPageForTest(1);
+        settingsCancelCheck.SimulateSizeEditorsMouseWheelForTest(120);
+        Assert(settingsCancelCheck.SelectedOrbSize == wheelOrbSize &&
+               settingsCancelCheck.SelectedFontScalePercent == wheelFontScale,
+            "Mouse wheel changed orb size or font scale.");
         settingsCancelCheck.SetOrbSizeForTest(113);
         settingsCancelCheck.Close();
         Assert(settingsCancelCheck.DialogResult == DialogResult.Cancel && restoredPreview == settingsPreviewPreferences,

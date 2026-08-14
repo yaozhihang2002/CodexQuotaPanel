@@ -384,6 +384,13 @@ internal sealed class QuotaApplicationContext : ApplicationContext
         }
         finally
         {
+            // FormClosing emits a reversible preview, but an in-flight orb-size
+            // animation can otherwise finish on its old target after that event.
+            // Reapply the authoritative persisted state and use SetOrbSize,
+            // which stops any preview timer. This also covers Esc, Cancel and X.
+            ApplyPreferencePreview(lastPreview, _preferences);
+            _form.SetOrbSize(_preferences.OrbSize);
+            lastPreview = _preferences;
             _settingsItem.Enabled = true;
         }
         UpdateRuntimeMenu();

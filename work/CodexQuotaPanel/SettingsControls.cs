@@ -122,6 +122,19 @@ internal sealed class ResponsiveSettingsPage : Panel
         }));
     }
 
+    internal void ScrollByMouseWheel(int delta)
+    {
+        if (delta == 0 || !VerticalScroll.Visible) return;
+        var lines = SystemInformation.MouseWheelScrollLines;
+        var step = lines < 0
+            ? Math.Max(48, ClientSize.Height - 48)
+            : Math.Max(48, Math.Max(1, lines) * Math.Max(16, Font.Height));
+        var current = Math.Max(0, -AutoScrollPosition.Y);
+        var maximum = Math.Max(0, VerticalScroll.Maximum - VerticalScroll.LargeChange + 1);
+        var target = Math.Clamp(current - Math.Sign(delta) * step, 0, maximum);
+        AutoScrollPosition = new Point(Math.Max(0, -AutoScrollPosition.X), target);
+    }
+
     public void AddItem(Control control)
     {
         control.Dock = DockStyle.Fill;
@@ -646,10 +659,12 @@ internal sealed class SettingsSlider : Control
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
-        Value += Math.Sign(e.Delta) * Math.Max(1, SmallChange);
+        SettingsMouseWheel.RouteToPage(this, e.Delta);
         if (e is HandledMouseEventArgs handled) handled.Handled = true;
-        base.OnMouseWheel(e);
     }
+
+    internal void SimulateMouseWheelForTest(int delta) =>
+        OnMouseWheel(new HandledMouseEventArgs(MouseButtons.None, 0, 0, 0, delta));
 
     protected override bool IsInputKey(Keys keyData) =>
         keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down or
@@ -703,6 +718,31 @@ internal sealed class SettingsSlider : Control
         var right = Math.Max(left + 1f, Width - radius - 2f);
         var progress = Math.Clamp((x - left) / (right - left), 0f, 1f);
         Value = _minimum + (int)Math.Round(progress * (_maximum - _minimum));
+    }
+}
+
+internal sealed class WheelSafeNumericUpDown : NumericUpDown
+{
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        SettingsMouseWheel.RouteToPage(this, e.Delta);
+        if (e is HandledMouseEventArgs handled) handled.Handled = true;
+    }
+
+    internal void SimulateMouseWheelForTest(int delta) =>
+        OnMouseWheel(new HandledMouseEventArgs(MouseButtons.None, 0, 0, 0, delta));
+}
+
+internal static class SettingsMouseWheel
+{
+    internal static void RouteToPage(Control source, int delta)
+    {
+        for (var parent = source.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is not ResponsiveSettingsPage page) continue;
+            page.ScrollByMouseWheel(delta);
+            return;
+        }
     }
 }
 

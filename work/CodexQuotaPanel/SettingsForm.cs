@@ -193,7 +193,7 @@ internal sealed class SettingsForm : Form
             Margin = new Padding(0, 1, 8, 0),
             AccessibleName = L10n.OrbSize
         };
-        _orbSizeInput = new NumericUpDown
+        _orbSizeInput = new WheelSafeNumericUpDown
         {
             Dock = DockStyle.Fill,
             Minimum = PanelPreferenceManager.MinimumOrbSize,
@@ -220,7 +220,7 @@ internal sealed class SettingsForm : Form
             Margin = new Padding(0, 1, 8, 0),
             AccessibleName = L10n.SettingsFontSize
         };
-        _fontScaleInput = new NumericUpDown
+        _fontScaleInput = new WheelSafeNumericUpDown
         {
             Dock = DockStyle.Fill,
             Minimum = PanelPreferenceManager.MinimumSettingsFontScale,
@@ -1994,6 +1994,7 @@ internal sealed class SettingsForm : Form
     private void OnSettingsFormClosing(object? sender, FormClosingEventArgs e)
     {
         _operationLifetime.Cancel();
+        _fontScalePreviewTimer.Stop();
         _workingPreferences = _savedPreferences;
         _initializing = true;
         _startupToggle.Checked = _savedStartupEnabled;
@@ -2060,6 +2061,14 @@ internal sealed class SettingsForm : Form
         if (!_initializing && SelectedFontScalePercent == value &&
             _workingPreferences.SettingsFontScalePercent != value)
             UpdateFromDirectControls();
+    }
+
+    internal void SimulateSizeEditorsMouseWheelForTest(int delta)
+    {
+        _orbSizeSlider.SimulateMouseWheelForTest(delta);
+        ((WheelSafeNumericUpDown)_orbSizeInput).SimulateMouseWheelForTest(delta);
+        _fontScaleSlider.SimulateMouseWheelForTest(delta);
+        ((WheelSafeNumericUpDown)_fontScaleInput).SimulateMouseWheelForTest(delta);
     }
 
     private static Control MakePageIntro(string title, string subtitle)
