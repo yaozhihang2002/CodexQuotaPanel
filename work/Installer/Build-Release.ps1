@@ -264,7 +264,8 @@ try
     $totalStopwatch.Stop()
     Write-Output "PASS local release v$Version | application-builds=1 | reused-payload-sha256=$($payloadHashBeforePackaging.ToLowerInvariant())"
     Write-Output "OUTPUT $candidateDirectory"
-    Write-Output "TIMINGS $([System.Text.Json.JsonSerializer]::Serialize($timings)) total=$([math]::Round($totalStopwatch.Elapsed.TotalSeconds, 2))s"
+    $timingsJson = $timings | ConvertTo-Json -Compress
+    Write-Output "TIMINGS $timingsJson total=$([math]::Round($totalStopwatch.Elapsed.TotalSeconds, 2))s"
 }
 finally
 {
