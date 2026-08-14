@@ -12,8 +12,8 @@ internal sealed record HistoryFileModel(int v, List<int[]> p);
 
 internal sealed class QuotaHistoryStore
 {
-    private const int RetentionMinutes = 24 * 60 + 15;
-    private const int MaximumPoints = 1024;
+    internal const int RetentionMinutes = 24 * 60 + 15;
+    internal const int MaximumPointsPerSeries = RetentionMinutes + 2;
     private readonly object _gate = new();
     private readonly string _path;
     private readonly List<QuotaHistoryPoint> _points;
@@ -129,10 +129,11 @@ internal sealed class QuotaHistoryStore
                 _points[lastIndex] = last with { RemainingTenths = remaining };
                 return true;
             }
-            if (minute - last.UtcMinute < 5 && Math.Abs(remaining - last.RemainingTenths) < 5)
-                return false;
         }
 
+        // Preserve every observed minute, including unchanged values. The
+        // history format is already minute-based, so this retains all source
+        // precision without inventing intermediate samples or downsampling.
         _points.Add(new QuotaHistoryPoint(minute, slot, bucket.WindowMinutes.Value, remaining));
         return true;
     }
@@ -141,8 +142,7 @@ internal sealed class QuotaHistoryStore
     {
         var cutoff = currentMinute - RetentionMinutes;
         _points.RemoveAll(point => point.UtcMinute < cutoff);
-        if (_points.Count <= MaximumPoints) return;
-        _points.RemoveRange(0, _points.Count - MaximumPoints);
+        TrimEachSeries(_points);
     }
 
     private void Persist()
@@ -194,17 +194,34 @@ internal sealed class QuotaHistoryStore
             if (!File.Exists(path)) return [];
             var model = JsonSerializer.Deserialize<HistoryFileModel>(File.ReadAllText(path));
             if (model?.v != 1 || model.p is null) return [];
-            return model.p
+            return TrimEachSeries(model.p
                 .Where(item => item.Length == 4 && item[1] is 0 or 1 && item[2] > 0 && item[3] is >= 0 and <= 1000)
                 .Select(item => new QuotaHistoryPoint(item[0] + 28_000_000L, item[1], item[2], item[3]))
                 .OrderBy(point => point.UtcMinute)
-                .TakeLast(MaximumPoints)
-                .ToList();
+                .ToList());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                    System.Security.SecurityException or ArgumentException or JsonException or OverflowException)
         {
             return [];
         }
+    }
+
+    private static List<QuotaHistoryPoint> TrimEachSeries(List<QuotaHistoryPoint> points)
+    {
+        if (points.Count == 0) return points;
+        var retained = points
+            .GroupBy(point => (point.Slot, point.WindowMinutes))
+            .SelectMany(group => group
+                .OrderBy(point => point.UtcMinute)
+                .TakeLast(MaximumPointsPerSeries))
+            .OrderBy(point => point.UtcMinute)
+            .ToList();
+        if (!ReferenceEquals(points, retained))
+        {
+            points.Clear();
+            points.AddRange(retained);
+        }
+        return points;
     }
 }

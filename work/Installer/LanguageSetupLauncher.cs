@@ -12,8 +12,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("CodexQuotaPanel")]
 [assembly: AssemblyDescription("Bilingual setup launcher for CodexQuotaPanel")]
 [assembly: AssemblyCompany("CodexQuotaPanel")]
-[assembly: AssemblyVersion("0.4.0.0")]
-[assembly: AssemblyFileVersion("0.4.0.0")]
+[assembly: AssemblyVersion("0.4.1.0")]
+[assembly: AssemblyFileVersion("0.4.1.0")]
 
 namespace CodexQuotaPanelSetup
 {
@@ -103,7 +103,7 @@ namespace CodexQuotaPanelSetup
             Label eyebrow = new Label
             {
                 AutoSize = true,
-                Text = "CODEX · V0.4.0 PRE-RELEASE",
+                Text = "CODEX · V0.4.1 PRE-RELEASE",
                 ForeColor = Accent,
                 Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
                 Location = new Point(32, 24)

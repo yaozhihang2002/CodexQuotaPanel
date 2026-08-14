@@ -56,8 +56,8 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         Math.Abs(labelAt200 / labelAt100 - 2f) > 0.001f ||
         dpiSafeFont.Unit != GraphicsUnit.Pixel)
         throw new InvalidOperationException("The orb label font is not using single-pass pixel scaling.");
-    if (GitHubReleaseUpdateService.CurrentVersionText != "0.4.0")
-        throw new InvalidOperationException("The local candidate version is not v0.4.0.");
+    if (GitHubReleaseUpdateService.CurrentVersionText != "0.4.1")
+        throw new InvalidOperationException("The local candidate version is not v0.4.1.");
 
     var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
@@ -579,14 +579,35 @@ try
     Assert(history.Enabled && history.Count == 2 &&
            history.LastRecordedAt?.ToUnixTimeSeconds() / 60 == historyTime.ToUnixTimeSeconds() / 60,
         "History status did not report its enabled state, point count, or last sample time.");
-    Assert(!history.Record(Snapshot(89.8, 80, historyTime.AddMinutes(2))),
-        "History sampled a sub-0.5% change before five minutes.");
+    Assert(history.Record(Snapshot(89.8, 80, historyTime.AddMinutes(2))),
+        "History did not preserve a sub-0.5% minute sample exactly.");
     Assert(history.Record(Snapshot(89.5, 80, historyTime.AddMinutes(2))),
         "History did not sample the exact 0.5% change boundary.");
     Assert(history.Record(Snapshot(88, 79, historyTime.AddMinutes(7))), "Five-minute history sample was not recorded.");
     var reloadedHistory = new QuotaHistoryStore(historyPath).GetRecent();
     Assert(reloadedHistory.Count >= 4 && reloadedHistory.All(point => point.Slot is 0 or 1),
         "History did not survive reload or mixed its slots.");
+
+    var coveragePath = Path.Combine(historyDirectory, "history-full-24h.json");
+    var coverageNowMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+    var coveragePoints = Enumerable.Range(0, 24 * 60 + 1)
+        .SelectMany(index => new[]
+        {
+            new[] { checked((int)(coverageNowMinute - 24 * 60 + index - 28_000_000L)), 0, 300, 1000 - index % 1001 },
+            new[] { checked((int)(coverageNowMinute - 24 * 60 + index - 28_000_000L)), 1, 10080, 900 - index % 401 }
+        })
+        .ToList();
+    File.WriteAllText(coveragePath, JsonSerializer.Serialize(new HistoryFileModel(1, coveragePoints)));
+    var fullCoverage = new QuotaHistoryStore(coveragePath).GetRecent(DateTimeOffset.FromUnixTimeSeconds(coverageNowMinute * 60));
+    var coverageBySeries = fullCoverage
+        .GroupBy(point => (point.Slot, point.WindowMinutes))
+        .ToDictionary(group => group.Key, group => group.OrderBy(point => point.UtcMinute).ToArray());
+    Assert(coverageBySeries[(0, 300)].Length == 24 * 60 + 1 &&
+           coverageBySeries[(1, 10080)].Length == 24 * 60 + 1,
+        "Per-window history did not retain every minute across the full 24-hour range.");
+    Assert(coverageBySeries[(0, 300)][731].RemainingTenths == 1000 - 731 % 1001 &&
+           coverageBySeries[(1, 10080)][1199].RemainingTenths == 900 - 1199 % 401,
+        "Per-window 24-hour history changed stored sample precision.");
     var historyJson = File.ReadAllText(historyPath);
     Assert(!historyJson.Contains("codex", StringComparison.OrdinalIgnoreCase) &&
            !historyJson.Contains("pro", StringComparison.OrdinalIgnoreCase) &&
