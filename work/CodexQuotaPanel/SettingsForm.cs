@@ -68,6 +68,7 @@ internal sealed class SettingsForm : Form
     private readonly CancellationTokenSource _operationLifetime = new();
     private readonly System.Windows.Forms.Timer _fontScalePreviewTimer;
     private readonly System.Windows.Forms.Timer _pagePrewarmTimer;
+    private readonly SettingsWheelMessageFilter _sizeEditorWheelFilter;
     private ActionButton _updateCheckButton = null!;
     private Label _updateStatusLabel = null!;
     private bool _checkingForUpdates;
@@ -235,6 +236,8 @@ internal sealed class SettingsForm : Form
             Margin = Padding.Empty,
             AccessibleName = L10n.SettingsFontSize
         };
+        _sizeEditorWheelFilter = new SettingsWheelMessageFilter(
+            _orbSizeSlider, _orbSizeInput, _fontScaleSlider, _fontScaleInput);
         _opacitySummary = MakeSummaryLabel();
         _orbBackgroundSummary = MakeSummaryLabel();
         _orbBackgroundColorButton = new RingColorButton
@@ -289,7 +292,11 @@ internal sealed class SettingsForm : Form
         ResumeLayout(performLayout: false);
 
         FormClosing += OnSettingsFormClosing;
-        Shown += (_, _) => _pagePrewarmTimer.Start();
+        Shown += (_, _) =>
+        {
+            _sizeEditorWheelFilter.Install();
+            _pagePrewarmTimer.Start();
+        };
     }
 
     protected override void Dispose(bool disposing)
@@ -303,6 +310,7 @@ internal sealed class SettingsForm : Form
             _fontScalePreviewTimer.Dispose();
             _pagePrewarmTimer.Stop();
             _pagePrewarmTimer.Dispose();
+            _sizeEditorWheelFilter.Dispose();
             Control[] lazilyParentedControls =
             [
                 _topMostToggle, _orbSizeSlider, _orbSizeInput, _fontScaleSlider, _fontScaleInput,
@@ -2069,6 +2077,12 @@ internal sealed class SettingsForm : Form
         ((WheelSafeNumericUpDown)_orbSizeInput).SimulateMouseWheelForTest(delta);
         _fontScaleSlider.SimulateMouseWheelForTest(delta);
         ((WheelSafeNumericUpDown)_fontScaleInput).SimulateMouseWheelForTest(delta);
+    }
+
+    internal bool SimulateNativeSizeEditorMouseWheelForTest(int delta)
+    {
+        var numericChild = _orbSizeInput.Controls.Cast<Control>().FirstOrDefault() ?? _orbSizeInput;
+        return _sizeEditorWheelFilter.SimulateForTest(numericChild, delta);
     }
 
     private static Control MakePageIntro(string title, string subtitle)

@@ -723,6 +723,21 @@ internal sealed class SettingsSlider : Control
 
 internal sealed class WheelSafeNumericUpDown : NumericUpDown
 {
+    private const int WmMouseWheel = 0x020A;
+    private const int WmMouseHorizontalWheel = 0x020E;
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg is WmMouseWheel or WmMouseHorizontalWheel)
+        {
+            SettingsMouseWheel.RouteToPage(this, SettingsMouseWheel.GetDelta(m.WParam));
+            m.Result = IntPtr.Zero;
+            return;
+        }
+
+        base.WndProc(ref m);
+    }
+
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         SettingsMouseWheel.RouteToPage(this, e.Delta);
@@ -735,6 +750,9 @@ internal sealed class WheelSafeNumericUpDown : NumericUpDown
 
 internal static class SettingsMouseWheel
 {
+    internal static int GetDelta(IntPtr wParam) =>
+        unchecked((short)(((long)wParam >> 16) & 0xFFFF));
+
     internal static void RouteToPage(Control source, int delta)
     {
         for (var parent = source.Parent; parent is not null; parent = parent.Parent)
@@ -743,6 +761,59 @@ internal static class SettingsMouseWheel
             page.ScrollByMouseWheel(delta);
             return;
         }
+    }
+}
+
+/// <summary>
+/// NumericUpDown contains native child windows. Depending on focus and Windows
+/// mouse-wheel routing, those children can receive WM_MOUSEWHEEL before the
+/// parent override. This settings-scoped filter consumes that native message
+/// for the two size editors and turns it into ordinary page scrolling.
+/// </summary>
+internal sealed class SettingsWheelMessageFilter : IMessageFilter, IDisposable
+{
+    private const int WmMouseWheel = 0x020A;
+    private const int WmMouseHorizontalWheel = 0x020E;
+    private readonly HashSet<Control> _targets;
+    private bool _installed;
+
+    internal SettingsWheelMessageFilter(params Control[] targets) =>
+        _targets = [.. targets];
+
+    internal void Install()
+    {
+        if (_installed) return;
+        Application.AddMessageFilter(this);
+        _installed = true;
+    }
+
+    public bool PreFilterMessage(ref Message m)
+    {
+        if (m.Msg is not WmMouseWheel and not WmMouseHorizontalWheel) return false;
+
+        var source = Control.FromChildHandle(m.HWnd);
+        for (var current = source; current is not null; current = current.Parent)
+        {
+            if (!_targets.Contains(current)) continue;
+            SettingsMouseWheel.RouteToPage(current, SettingsMouseWheel.GetDelta(m.WParam));
+            return true;
+        }
+
+        return false;
+    }
+
+    internal bool SimulateForTest(Control source, int delta)
+    {
+        var wParam = (IntPtr)(unchecked((long)(ushort)(short)delta) << 16);
+        var message = Message.Create(source.Handle, WmMouseWheel, wParam, IntPtr.Zero);
+        return PreFilterMessage(ref message);
+    }
+
+    public void Dispose()
+    {
+        if (!_installed) return;
+        Application.RemoveMessageFilter(this);
+        _installed = false;
     }
 }
 

@@ -1003,6 +1003,11 @@ if (args.Length >= 2 && args[0] == "--preview")
         Assert(settingsCancelCheck.SelectedOrbSize == wheelOrbSize &&
                settingsCancelCheck.SelectedFontScalePercent == wheelFontScale,
             "Mouse wheel changed orb size or font scale.");
+        Assert(settingsCancelCheck.SimulateNativeSizeEditorMouseWheelForTest(-120),
+            "Native mouse-wheel message from a numeric editor child was not consumed.");
+        Assert(settingsCancelCheck.SelectedOrbSize == wheelOrbSize &&
+               settingsCancelCheck.SelectedFontScalePercent == wheelFontScale,
+            "Native mouse-wheel message changed orb size or font scale.");
         settingsCancelCheck.SetOrbSizeForTest(113);
         settingsCancelCheck.Close();
         Assert(settingsCancelCheck.DialogResult == DialogResult.Cancel && restoredPreview == settingsPreviewPreferences,
