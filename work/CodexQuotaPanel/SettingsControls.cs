@@ -287,7 +287,7 @@ internal sealed class SettingsNavButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        e.Graphics.Clear(BackColor);
+        e.Graphics.Clear(UiPalette.ResolveControlBackground(this, BackColor));
         if (_active || _hovered)
         {
             using var path = UiPalette.RoundedRect(new RectangleF(0, 1, Width - 1, Height - 2), 10);
@@ -348,7 +348,7 @@ internal sealed class SettingsChoiceButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        e.Graphics.Clear(UiPalette.Surface);
+        e.Graphics.Clear(UiPalette.ResolveControlBackground(this, UiPalette.Surface));
         var bounds = new RectangleF(0.5f, 0.5f, Math.Max(1, Width - 1), Math.Max(1, Height - 1));
         using var path = UiPalette.RoundedRect(bounds, 9);
         var fillColor = !Enabled
@@ -582,8 +582,9 @@ internal sealed class SettingsSlider : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.Clear(UiPalette.Surface);
+        e.Graphics.Clear(UiPalette.ResolveControlBackground(this, UiPalette.Surface));
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
         var knobDiameter = Math.Clamp(Height * 0.44f, 12f, 18f);
         var radius = knobDiameter / 2f;
@@ -599,6 +600,8 @@ internal sealed class SettingsSlider : Control
             trackHeight / 2f);
         using var trackBrush = new SolidBrush(UiPalette.Track);
         e.Graphics.FillPath(trackBrush, fullTrack);
+        using var trackBorder = new Pen(UiPalette.Mix(UiPalette.Border, UiPalette.Track, 0.38f), 1f);
+        e.Graphics.DrawPath(trackBorder, fullTrack);
 
         if (knobX > left)
         {
@@ -614,15 +617,22 @@ internal sealed class SettingsSlider : Control
             : _hovered || _dragging
                 ? UiPalette.Mix(UiPalette.Mint, UiPalette.Text, 0.10f)
                 : UiPalette.Mint;
+        using var knobShadow = new SolidBrush(Color.FromArgb(
+            UiPalette.Canvas.GetBrightness() < 0.5f ? 80 : 34,
+            Color.Black));
         using var knobBrush = new SolidBrush(knobColor);
-        using var knobBorder = new Pen(UiPalette.Surface, 2f);
+        using var knobBorder = new Pen(UiPalette.Mix(UiPalette.Surface, UiPalette.Border, 0.18f), 1.5f);
+        e.Graphics.FillEllipse(knobShadow,
+            knobX - radius + 0.8f, centerY - radius + 1.2f, knobDiameter, knobDiameter);
         e.Graphics.FillEllipse(knobBrush, knobX - radius, centerY - radius, knobDiameter, knobDiameter);
         e.Graphics.DrawEllipse(knobBorder, knobX - radius, centerY - radius, knobDiameter, knobDiameter);
 
         if (Focused)
         {
-            using var focus = new Pen(Color.FromArgb(170, UiPalette.Sky)) { DashStyle = DashStyle.Dot };
-            e.Graphics.DrawRectangle(focus, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+            using var focusPath = UiPalette.RoundedRect(
+                new RectangleF(1.5f, 1.5f, Math.Max(1, Width - 3), Math.Max(1, Height - 3)), 6f);
+            using var focus = new Pen(Color.FromArgb(150, UiPalette.Sky)) { DashStyle = DashStyle.Dot };
+            e.Graphics.DrawPath(focus, focusPath);
         }
     }
 
@@ -836,20 +846,30 @@ internal sealed class SettingsToggle : CheckBox
     {
         // Paint the card surface explicitly. A previously selected dark native
         // theme must never leak through the rounded corners in light mode.
-        e.Graphics.Clear(UiPalette.Surface);
+        e.Graphics.Clear(UiPalette.ResolveControlBackground(this, UiPalette.Surface));
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        var trackBounds = new RectangleF(0.5f, 1.5f, Width - 1, Height - 3);
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        var trackBounds = new RectangleF(1f, 2f, Math.Max(1f, Width - 2f), Math.Max(1f, Height - 4f));
         using var track = UiPalette.RoundedRect(trackBounds, trackBounds.Height / 2f);
         var trackColor = Checked
             ? (_hovered ? UiPalette.Mix(UiPalette.Mint, UiPalette.Text, 0.12f) : UiPalette.Mint)
             : (_hovered ? UiPalette.Mix(UiPalette.Track, UiPalette.Text, 0.12f) : UiPalette.Track);
         using var trackBrush = new SolidBrush(trackColor);
         e.Graphics.FillPath(trackBrush, track);
+        using var trackBorder = new Pen(Checked
+            ? UiPalette.Mix(UiPalette.Mint, UiPalette.Border, 0.22f)
+            : UiPalette.Mix(UiPalette.Track, UiPalette.Border, 0.34f), 1f);
+        e.Graphics.DrawPath(trackBorder, track);
 
-        var diameter = Height - 8f;
-        var x = Checked ? Width - diameter - 4f : 4f;
+        var diameter = Math.Max(5f, Height - 10f);
+        var x = Checked ? Width - diameter - 5f : 5f;
+        var y = (Height - diameter) / 2f;
+        using var knobShadow = new SolidBrush(Color.FromArgb(
+            UiPalette.Canvas.GetBrightness() < 0.5f ? 68 : 28,
+            Color.Black));
         using var knob = new SolidBrush(Checked ? UiPalette.Canvas : UiPalette.Muted);
-        e.Graphics.FillEllipse(knob, x, 4f, diameter, diameter);
+        e.Graphics.FillEllipse(knobShadow, x + 0.6f, y + 1f, diameter, diameter);
+        e.Graphics.FillEllipse(knob, x, y, diameter, diameter);
 
         if (Focused)
         {

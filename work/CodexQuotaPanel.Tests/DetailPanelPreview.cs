@@ -37,9 +37,22 @@ internal static class DetailPanelPreview
         form.ShowDetails(animate: false);
         form.Show();
         Application.DoEvents();
+        var trendRow = Descendants(form).OfType<LimitRowControl>().First(row => row.HistorySlot == 0);
+        if (trendRow.ShowTrendHoverForTest(2) is null)
+            throw new InvalidOperationException("The detail trend hover preview did not select a history point.");
+        Application.DoEvents();
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         form.SavePreview(fullPath);
         Console.WriteLine($"PASS detail runway forecast | {fullPath}");
+    }
+
+    private static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var descendant in Descendants(child)) yield return descendant;
+        }
     }
 }

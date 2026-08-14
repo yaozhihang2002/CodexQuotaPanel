@@ -400,4 +400,24 @@ internal static class UiPalette
         path.CloseFigure();
         return path;
     }
+
+    /// <summary>
+    /// Finds the first opaque ancestor surface for an owner-drawn child.
+    /// Explicitly painting that surface prevents a neighbouring control from
+    /// showing through anti-aliased rounded corners when TableLayoutPanel cells
+    /// overlap by a physical pixel after DPI scaling.
+    /// </summary>
+    public static Color ResolveControlBackground(Control control, Color fallback)
+    {
+        for (var parent = control.Parent; parent is not null; parent = parent.Parent)
+        {
+            // SettingsCard deliberately keeps BackColor equal to the outer
+            // canvas so its rounded exterior erases cleanly, while its usable
+            // interior is painted as Surface. Children live in that interior.
+            if (parent is SettingsCard) return Surface;
+            if (parent.BackColor.A == byte.MaxValue) return parent.BackColor;
+        }
+
+        return fallback;
+    }
 }
