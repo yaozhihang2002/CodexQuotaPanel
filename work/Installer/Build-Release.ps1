@@ -18,7 +18,7 @@ $installerDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $installerDirectory '..\..'))
 $applicationProject = Join-Path $repositoryRoot 'work\CodexQuotaPanel\CodexQuotaPanel.csproj'
 $testProject = Join-Path $repositoryRoot 'work\CodexQuotaPanel.Tests\CodexQuotaPanel.Tests.csproj'
-$testExecutable = Join-Path $repositoryRoot 'work\CodexQuotaPanel.Tests\bin\Release\net9.0-windows\win-x64\CodexQuotaPanel.Tests.exe'
+$testExecutable = Join-Path $repositoryRoot 'work\CodexQuotaPanel.Tests\bin\Release\net9.0-windows\CodexQuotaPanel.Tests.exe'
 $stageDirectory = Join-Path $repositoryRoot 'work\installer-stage\win-x64'
 $candidateDirectory = if ([string]::IsNullOrWhiteSpace($OutputDirectory))
 {
