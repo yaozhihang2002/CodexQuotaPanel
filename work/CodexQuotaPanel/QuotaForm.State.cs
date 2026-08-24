@@ -121,6 +121,7 @@ internal sealed partial class QuotaForm
         _primaryRow.SetBucket(_snapshot?.Primary);
         _secondaryRow.SetBucket(_snapshot?.Secondary);
         _dailyTokenUsage.ApplyLanguage();
+        _tokenUsageDetails?.ApplyLanguage();
         ApplyAdaptiveQuotaWindowLayout();
         _ring.ApplyLanguage();
         _orb.ConfigureRings(_ringConfiguration);
@@ -168,6 +169,7 @@ internal sealed partial class QuotaForm
 
         UiPalette.ApplyTheme(this, previousColors);
         UiPalette.ApplyTheme(_hoverPeek, previousColors);
+        _tokenUsageDetails?.ApplyTheme(previousColors);
         if (_snapshot is not null)
             ApplySnapshot(_snapshot);
         else

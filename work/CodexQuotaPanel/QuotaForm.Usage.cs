@@ -2,6 +2,7 @@ namespace CodexQuotaPanel;
 
 internal sealed partial class QuotaForm
 {
+    private TokenUsageDetailsForm? _tokenUsageDetails;
     internal int VisibleQuotaRowCount => _snapshot is null
         ? 1
         : (_snapshot.Primary is null ? 0 : 1) + (_snapshot.Secondary is null ? 0 : 1);
@@ -16,7 +17,29 @@ internal sealed partial class QuotaForm
             return;
         }
         _dailyTokenUsage.SetUsage(usage);
+        if (usage is not null && _tokenUsageDetails is { IsDisposed: false })
+            _tokenUsageDetails.SetUsage(usage);
         MarkTransitionPreviewCacheDirty();
+    }
+
+    internal void ShowTokenUsageDetails()
+    {
+        if (_dailyTokenUsage.Usage is not { } usage) return;
+        if (_tokenUsageDetails is { IsDisposed: false })
+        {
+            _tokenUsageDetails.SetUsage(usage);
+            if (_tokenUsageDetails.WindowState == FormWindowState.Minimized)
+                _tokenUsageDetails.WindowState = FormWindowState.Normal;
+            _tokenUsageDetails.Activate();
+            return;
+        }
+
+        _tokenUsageDetails = new TokenUsageDetailsForm(usage)
+        {
+            TopMost = _alwaysOnTopPreference
+        };
+        _tokenUsageDetails.FormClosed += (_, _) => _tokenUsageDetails = null;
+        _tokenUsageDetails.Show(this);
     }
 
     private void ApplyAdaptiveQuotaWindowLayout()

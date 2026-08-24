@@ -11,6 +11,8 @@ internal sealed class DailyTokenUsageControl : Control
     private TokenCycleUsage? _usage;
     private int _hoveredIndex = -1;
 
+    internal event Action? DetailsRequested;
+
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal TokenCycleUsage? Usage => _usage;
@@ -76,9 +78,13 @@ internal sealed class DailyTokenUsageControl : Control
         using var mutedBrush = new SolidBrush(UiPalette.Muted);
         using var accentBrush = new SolidBrush(UiPalette.Mint);
 
-        var title = L10n.Pick("本周期 Token", "Cycle tokens");
+        var title = L10n.Pick("本周期 API 估算", "Cycle API estimate");
         e.Graphics.DrawString(title, titleFont, textBrush, S(12), S(7));
-        var totalText = _usage is null ? "—" : FormatCompact(_usage.Total.TotalTokens);
+        var totalText = _usage is null
+            ? "—"
+            : _usage.EstimatedUsd > 0
+                ? FormatUsd(_usage.EstimatedUsd)
+                : $"{FormatCompact(_usage.Total.TotalTokens)} raw";
         var totalSize = e.Graphics.MeasureString(totalText, valueFont);
         e.Graphics.DrawString(totalText, valueFont, accentBrush, Width - totalSize.Width - S(12), S(9));
 
@@ -105,14 +111,15 @@ internal sealed class DailyTokenUsageControl : Control
         var count = _usage.Days.Count;
         var slotWidth = chart.Width / count;
         var barWidth = Math.Max(S(5), Math.Min(S(22), slotWidth - gap));
-        var maximum = Math.Max(1L, _usage.Days.Max(day => day.Usage.TotalTokens));
+        var maximum = Math.Max(1m, _usage.Days.Max(ChartValue));
         var today = DateOnly.FromDateTime(DateTime.Now);
 
         for (var index = 0; index < count; index++)
         {
             var day = _usage.Days[index];
-            var ratio = day.Usage.TotalTokens / (double)maximum;
-            var height = day.Usage.TotalTokens == 0 ? S(2) : Math.Max(S(4), chart.Height * (float)ratio);
+            var value = ChartValue(day);
+            var ratio = (double)(value / maximum);
+            var height = value == 0 ? S(2) : Math.Max(S(4), chart.Height * (float)ratio);
             var centerX = chart.Left + slotWidth * (index + 0.5f);
             var bar = new RectangleF(centerX - barWidth / 2f, chart.Bottom - height, barWidth, height);
             var hit = new RectangleF(centerX - slotWidth / 2f, chart.Top, slotWidth, chart.Height + S(18));
@@ -138,7 +145,7 @@ internal sealed class DailyTokenUsageControl : Control
             }
         }
 
-        var hint = L10n.Pick("悬停查看每日明细 · 仅本机", "Hover for daily details · local only");
+        var hint = L10n.Pick("悬停查看数值 · 点击打开明细", "Hover for values · click for details");
         using var hintFont = UiPalette.Body(5.9f);
         var hintSize = e.Graphics.MeasureString(hint, hintFont);
         e.Graphics.DrawString(hint, hintFont, mutedBrush,
@@ -156,6 +163,13 @@ internal sealed class DailyTokenUsageControl : Control
     {
         SelectDay(-1, Point.Empty);
         base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (e.Button == MouseButtons.Left && _usage is not null)
+            DetailsRequested?.Invoke();
     }
 
     protected override void OnGotFocus(EventArgs e)
@@ -205,9 +219,15 @@ internal sealed class DailyTokenUsageControl : Control
     internal static string FormatDayDetails(DailyTokenUsage day)
     {
         var usage = day.Usage;
+        var estimate = day.EstimatedUsd > 0
+            ? FormatUsd(day.EstimatedUsd)
+            : NoPublicRateLabel;
+        var unpriced = day.UnpricedTokens > 0
+            ? L10n.Pick($"\n未公开计价 {day.UnpricedTokens:N0} raw token", $"\nNo public rate for {day.UnpricedTokens:N0} raw tokens")
+            : string.Empty;
         return L10n.Pick(
-            $"{day.LocalDate.Month}月{day.LocalDate.Day}日\n总计 {usage.TotalTokens:N0} token\n输入 {usage.InputTokens:N0}（缓存 {usage.CachedInputTokens:N0}）\n输出 {usage.OutputTokens:N0}（推理 {usage.ReasoningOutputTokens:N0}）",
-            $"{day.LocalDate:MMM d}\nTotal {usage.TotalTokens:N0} tokens\nInput {usage.InputTokens:N0} (cached {usage.CachedInputTokens:N0})\nOutput {usage.OutputTokens:N0} (reasoning {usage.ReasoningOutputTokens:N0})");
+            $"{day.LocalDate.Month}月{day.LocalDate.Day}日\nAPI 估算 {estimate}\n原始 {usage.TotalTokens:N0} token\n输入 {usage.InputTokens:N0}（缓存 {usage.CachedInputTokens:N0}）\n输出 {usage.OutputTokens:N0}（推理 {usage.ReasoningOutputTokens:N0}）{unpriced}",
+            $"{day.LocalDate:MMM d}\nAPI estimate {estimate}\nRaw {usage.TotalTokens:N0} tokens\nInput {usage.InputTokens:N0} (cached {usage.CachedInputTokens:N0})\nOutput {usage.OutputTokens:N0} (reasoning {usage.ReasoningOutputTokens:N0}){unpriced}");
     }
 
     internal static string FormatCompact(long tokens) => tokens switch
@@ -216,6 +236,21 @@ internal sealed class DailyTokenUsageControl : Control
         >= 1_000 => $"{tokens / 1_000d:0.#}K",
         _ => tokens.ToString("N0", CultureInfo.CurrentCulture)
     };
+
+    internal static string NoPublicRateLabel => L10n.Pick("未公开计价", "No public rate");
+
+    internal static string FormatUsd(decimal usd) => usd switch
+    {
+        >= 100m => $"${usd:N0}",
+        >= 1m => $"${usd:0.00}",
+        >= 0.01m => $"${usd:0.000}",
+        _ => $"${usd:0.0000}"
+    };
+
+    // Bar height remains raw local token volume so priced and unpriced records
+    // are never mixed on one monetary axis. The exact API estimate is shown in
+    // the headline and hover details.
+    private static decimal ChartValue(DailyTokenUsage day) => day.Usage.TotalTokens;
 
     private void SelectDay(int index, Point location)
     {
@@ -235,10 +270,10 @@ internal sealed class DailyTokenUsageControl : Control
     private void UpdateAccessibility()
     {
         AccessibleName = _usage is null
-            ? L10n.Pick("本周期 Token，等待重置周期", "Cycle tokens, waiting for reset cycle")
+            ? L10n.Pick("本周期 API 估算，等待重置周期", "Cycle API estimate, waiting for reset cycle")
             : L10n.Pick(
-                $"本周期 Token，共 {_usage.Total.TotalTokens:N0}",
-                $"Cycle tokens, {_usage.Total.TotalTokens:N0} total");
+                $"本周期 API 估算，共 {FormatUsd(_usage.EstimatedUsd)}",
+                $"Cycle API estimate, {FormatUsd(_usage.EstimatedUsd)}");
     }
 
     protected override void Dispose(bool disposing)

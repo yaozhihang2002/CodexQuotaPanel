@@ -282,6 +282,7 @@ internal sealed partial class QuotaForm : Form
             Width = 332,
             Height = 96
         };
+        _dailyTokenUsage.DetailsRequested += ShowTokenUsageDetails;
         Controls.Add(_dailyTokenUsage);
 
         _creditsLabel = MakeLabel($"{L10n.Credits} · —", new Point(19, 406), new Size(331, 19),

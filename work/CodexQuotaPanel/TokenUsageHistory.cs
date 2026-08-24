@@ -20,7 +20,30 @@ internal sealed record TokenUsageBreakdown(
         checked(ReasoningOutputTokens + other.ReasoningOutputTokens));
 }
 
-internal sealed record DailyTokenUsage(DateOnly LocalDate, TokenUsageBreakdown Usage);
+internal sealed record TokenUsageSlice(
+    string Model,
+    string Speed,
+    TokenUsageBreakdown Usage,
+    decimal EstimatedUsd,
+    bool IsPriced)
+{
+    public string ModelDisplay => ApiCostEstimator.DisplayModel(Model);
+    public string SpeedDisplay => ApiCostEstimator.DisplaySpeed(Speed);
+}
+
+internal sealed record DailyTokenUsage(
+    DateOnly LocalDate,
+    TokenUsageBreakdown Usage,
+    IReadOnlyList<TokenUsageSlice> Slices)
+{
+    public DailyTokenUsage(DateOnly localDate, TokenUsageBreakdown usage)
+        : this(localDate, usage, [])
+    {
+    }
+
+    public decimal EstimatedUsd => Slices.Where(slice => slice.IsPriced).Sum(slice => slice.EstimatedUsd);
+    public long UnpricedTokens => Slices.Where(slice => !slice.IsPriced).Sum(slice => slice.Usage.TotalTokens);
+}
 
 internal sealed record TokenCycleUsage(
     DateTimeOffset StartsAt,
@@ -33,6 +56,22 @@ internal sealed record TokenCycleUsage(
     public TokenUsageBreakdown Total => Days.Aggregate(
         TokenUsageBreakdown.Empty,
         (sum, day) => sum.Add(day.Usage));
+
+    public decimal EstimatedUsd => Days.Sum(day => day.EstimatedUsd);
+    public long UnpricedTokens => Days.Sum(day => day.UnpricedTokens);
+
+    public IReadOnlyList<TokenUsageSlice> Slices => Days
+        .SelectMany(day => day.Slices)
+        .GroupBy(slice => (slice.Model, slice.Speed, slice.IsPriced))
+        .Select(group => new TokenUsageSlice(
+            group.Key.Model,
+            group.Key.Speed,
+            group.Aggregate(TokenUsageBreakdown.Empty, (sum, slice) => sum.Add(slice.Usage)),
+            group.Sum(slice => slice.EstimatedUsd),
+            group.Key.IsPriced))
+        .OrderByDescending(slice => slice.EstimatedUsd)
+        .ThenByDescending(slice => slice.Usage.TotalTokens)
+        .ToArray();
 }
 
 internal sealed record TokenCountSample(
@@ -179,19 +218,47 @@ internal sealed class TokenUsageHistory
 
         var effectiveEnd = now < resetsAt ? now : resetsAt;
         if (effectiveEnd < startsAt) effectiveEnd = startsAt;
-        var usageByDay = events
+        var eventsByDay = events
             .Where(item => item.Timestamp >= startsAt && item.Timestamp < resetsAt && item.Timestamp <= effectiveEnd)
             .GroupBy(item => DateOnly.FromDateTime(item.Timestamp.ToLocalTime().DateTime))
-            .ToDictionary(
-                group => group.Key,
-                group => group.Aggregate(TokenUsageBreakdown.Empty, (sum, item) => sum.Add(item.Usage)));
+            .ToDictionary(group => group.Key, group => group.ToArray());
 
         var firstDay = DateOnly.FromDateTime(startsAt.ToLocalTime().DateTime);
         var lastDay = DateOnly.FromDateTime(effectiveEnd.ToLocalTime().DateTime);
         var days = new List<DailyTokenUsage>();
         for (var day = firstDay; day <= lastDay; day = day.AddDays(1))
-            days.Add(new DailyTokenUsage(day,
-                usageByDay.TryGetValue(day, out var usage) ? usage : TokenUsageBreakdown.Empty));
+        {
+            if (!eventsByDay.TryGetValue(day, out var dayEvents))
+            {
+                days.Add(new DailyTokenUsage(day, TokenUsageBreakdown.Empty, []));
+                continue;
+            }
+
+            var slices = dayEvents
+                .GroupBy(item => (item.Model, item.Speed))
+                .Select(group =>
+                {
+                    var aggregate = group.Aggregate(
+                        TokenUsageBreakdown.Empty,
+                        (sum, item) => sum.Add(item.Usage));
+                    var estimates = group
+                        .Select(item => ApiCostEstimator.Estimate(item.Model, item.Speed, item.Usage))
+                        .ToArray();
+                    return new TokenUsageSlice(
+                        group.Key.Model,
+                        group.Key.Speed,
+                        aggregate,
+                        estimates.Where(value => value.IsPriced).Sum(value => value.Usd),
+                        estimates.All(value => value.IsPriced));
+                })
+                .OrderByDescending(slice => slice.EstimatedUsd)
+                .ThenByDescending(slice => slice.Usage.TotalTokens)
+                .ToArray();
+            var aggregate = dayEvents.Aggregate(
+                TokenUsageBreakdown.Empty,
+                (sum, item) => sum.Add(item.Usage));
+            days.Add(new DailyTokenUsage(day, aggregate, slices));
+        }
 
         return new TokenCycleUsage(
             startsAt,
@@ -254,10 +321,22 @@ internal sealed class TokenUsageHistory
                 FileOptions.SequentialScan);
             using var reader = new StreamReader(stream);
             long? previousCumulative = null;
+            var model = "unknown";
+            var speed = "unknown";
+            var hasExplicitSpeed = false;
+            string? firstExplicitSpeed = null;
             var lineNumber = 0;
             while (reader.ReadLine() is { } line)
             {
                 if ((++lineNumber & 127) == 0) cancellationToken.ThrowIfCancellationRequested();
+                TokenLogContextParser.Apply(line, ref model, ref speed, out var speedSpecified);
+                if (speedSpecified)
+                {
+                    hasExplicitSpeed = true;
+                    if (firstExplicitSpeed is null &&
+                        ApiCostEstimator.NormalizeSpeed(speed) is TokenSpeed.Default or TokenSpeed.Fast)
+                        firstExplicitSpeed = ApiCostEstimator.DisplaySpeed(speed);
+                }
                 var sample = TokenCountParser.ParseLine(line);
                 if (sample is null) continue;
 
@@ -275,8 +354,28 @@ internal sealed class TokenUsageHistory
                 previousCumulative = sample.CumulativeTotalTokens;
                 if (delta <= 0) continue;
 
-                events.Add(new TokenUsageEvent(sample.Timestamp,
-                    sample.LastUsage with { TotalTokens = delta }));
+                events.Add(new TokenUsageEvent(
+                    sample.Timestamp,
+                    sample.LastUsage with { TotalTokens = delta },
+                    ApiCostEstimator.NormalizeModel(model),
+                    ApiCostEstimator.DisplaySpeed(speed),
+                    hasExplicitSpeed));
+            }
+
+            // Older and helper-agent logs often omit service_tier until after
+            // their first token event, or omit it for the whole file. Backfill
+            // only those genuinely unspecified events: use the first supported
+            // explicit tier when one exists, otherwise Codex's normal tier.
+            // An explicitly unsupported future tier remains Unknown.
+            var missingSpeedFallback = firstExplicitSpeed ?? "Default";
+            for (var index = 0; index < events.Count; index++)
+            {
+                if (!events[index].HasExplicitSpeed)
+                    events[index] = events[index] with
+                    {
+                        Speed = missingSpeedFallback,
+                        HasExplicitSpeed = true
+                    };
             }
 
             file.Refresh();
@@ -295,6 +394,60 @@ internal sealed class TokenUsageHistory
         return events;
     }
 
-    private sealed record TokenUsageEvent(DateTimeOffset Timestamp, TokenUsageBreakdown Usage);
+    private sealed record TokenUsageEvent(
+        DateTimeOffset Timestamp,
+        TokenUsageBreakdown Usage,
+        string Model,
+        string Speed,
+        bool HasExplicitSpeed);
     private sealed record CachedTokenFile(long Length, DateTime LastWriteTimeUtc, IReadOnlyList<TokenUsageEvent> Events);
+}
+
+internal static class TokenLogContextParser
+{
+    internal static void Apply(
+        string line,
+        ref string model,
+        ref string speed,
+        out bool speedSpecified)
+    {
+        speedSpecified = false;
+        if (string.IsNullOrWhiteSpace(line) ||
+            (!line.Contains("\"turn_context\"", StringComparison.Ordinal) &&
+             !line.Contains("\"thread_settings_applied\"", StringComparison.Ordinal)))
+            return;
+
+        try
+        {
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var rootType) ||
+                !root.TryGetProperty("payload", out var payload))
+                return;
+
+            JsonElement settings = payload;
+            if (rootType.GetString() == "event_msg" &&
+                payload.TryGetProperty("type", out var payloadType) &&
+                payloadType.GetString() == "thread_settings_applied" &&
+                payload.TryGetProperty("thread_settings", out var threadSettings))
+                settings = threadSettings;
+            else if (rootType.GetString() != "turn_context")
+                return;
+
+            if (settings.TryGetProperty("model", out var modelValue) &&
+                modelValue.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(modelValue.GetString()))
+                model = modelValue.GetString()!;
+            if (settings.TryGetProperty("service_tier", out var speedValue) &&
+                speedValue.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(speedValue.GetString()))
+            {
+                speed = speedValue.GetString()!;
+                speedSpecified = true;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+    }
 }

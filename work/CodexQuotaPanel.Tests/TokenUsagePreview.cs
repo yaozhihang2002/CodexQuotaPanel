@@ -13,7 +13,7 @@ internal static class TokenUsagePreview
             reset,
             10080,
             [
-                Day(start, 46_820, 41_200, 18_200, 5_620, 2_140),
+                Day(start, 46_820, 41_200, 18_200, 5_620, 2_140, includeReviewer: true),
                 Day(start.AddDays(1), 128_430, 116_000, 62_400, 12_430, 5_280),
                 Day(start.AddDays(2), 0, 0, 0, 0, 0),
                 Day(start.AddDays(3), 79_610, 72_100, 31_600, 7_510, 3_020)
@@ -39,13 +39,23 @@ internal static class TokenUsagePreview
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         form.SavePreview(fullPath);
+        using (var details = new TokenUsageDetailsForm(usage))
+        {
+            details.Show();
+            Application.DoEvents();
+            using var detailsBitmap = details.CaptureContentForTest();
+            var detailsPath = Path.Combine(
+                Path.GetDirectoryName(fullPath)!,
+                Path.GetFileNameWithoutExtension(fullPath) + "-details" + Path.GetExtension(fullPath));
+            detailsBitmap.Save(detailsPath);
+        }
         form.ShowOrb(animate: false);
         Application.DoEvents();
         var orbPath = Path.Combine(
             Path.GetDirectoryName(fullPath)!,
             Path.GetFileNameWithoutExtension(fullPath) + "-orb" + Path.GetExtension(fullPath));
         form.SavePreview(orbPath);
-        Console.WriteLine($"PASS single-window daily token preview | {fullPath} | {orbPath}");
+        Console.WriteLine($"PASS single-window daily token preview | {fullPath} | details | {orbPath}");
     }
 
     private static DailyTokenUsage Day(
@@ -54,7 +64,32 @@ internal static class TokenUsagePreview
         long input,
         long cached,
         long output,
-        long reasoning) => new(
+        long reasoning,
+        bool includeReviewer = false)
+    {
+        var usage = new TokenUsageBreakdown(total, input, cached, output, reasoning);
+        if (total == 0)
+            return new DailyTokenUsage(
+                DateOnly.FromDateTime(timestamp.ToLocalTime().DateTime),
+                usage,
+                []);
+        var model = timestamp.Day % 2 == 0 ? "gpt-5.6-sol" : "gpt-5.6-terra";
+        var speed = timestamp.Day % 3 == 0 ? "Fast" : "Default";
+        var estimate = ApiCostEstimator.Estimate(model, speed, usage);
+        if (includeReviewer)
+        {
+            var reviewerUsage = new TokenUsageBreakdown(18_000, 16_000, 12_000, 2_000, 600);
+            return new DailyTokenUsage(
+                DateOnly.FromDateTime(timestamp.ToLocalTime().DateTime),
+                usage.Add(reviewerUsage),
+                [
+                    new TokenUsageSlice(model, speed, usage, estimate.Usd, estimate.IsPriced),
+                    new TokenUsageSlice("codex-auto-review", "Default", reviewerUsage, 0m, false)
+                ]);
+        }
+        return new DailyTokenUsage(
             DateOnly.FromDateTime(timestamp.ToLocalTime().DateTime),
-            new TokenUsageBreakdown(total, input, cached, output, reasoning));
+            usage,
+            [new TokenUsageSlice(model, speed, usage, estimate.Usd, estimate.IsPriced)]);
+    }
 }

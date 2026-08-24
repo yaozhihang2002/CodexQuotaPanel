@@ -6,6 +6,17 @@ using System.Text.Json;
 
 TestProcessGuard.Install();
 
+if (args.Length == 1 && args[0] == "--token-cost-check")
+{
+    Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+    Application.EnableVisualStyles();
+    Application.SetCompatibleTextRenderingDefault(false);
+    L10n.SetLanguage(AppLanguage.SimplifiedChinese);
+    TokenUsageChecks.Run();
+    Console.WriteLine("PASS token attribution and API cost estimate checks");
+    return;
+}
+
 if (args.Length == 1 && args[0] == "--forecast-check")
 {
     var now = DateTimeOffset.UtcNow;
