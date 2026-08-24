@@ -24,12 +24,15 @@ internal sealed partial class QuotaOrbControl : Control
     private FlameActivityLevel _flameActivity = FlameActivityLevel.Frozen;
     private Color? _backgroundColor;
 
-    internal string OuterLabel => RingWindowCatalog.FormatShort(_configuration.Outer.WindowMinutes);
-    internal string InnerLabel => RingWindowCatalog.FormatShort(_configuration.Inner.WindowMinutes);
+    internal string OuterLabel => RingWindowCatalog.FormatShort(
+        _outerBucket?.WindowMinutes ?? _configuration.Outer.WindowMinutes);
+    internal string InnerLabel => RingWindowCatalog.FormatShort(
+        _innerBucket?.WindowMinutes ?? _configuration.Inner.WindowMinutes);
     internal Color OuterColor => _configuration.OuterColor;
     internal Color InnerColor => _configuration.InnerColor;
     internal bool OuterAvailable => _outerBucket is not null;
     internal bool InnerAvailable => _innerBucket is not null;
+    internal int AvailableRingCount => (_outerBucket is null ? 0 : 1) + (_innerBucket is null ? 0 : 1);
     internal double ConsumptionIntensity => _targetFlameIntensity;
     internal bool FlameAnimationEnabled => _flameAnimationEnabled;
     internal int FlameStyle => _flameStyle;
@@ -91,17 +94,35 @@ internal sealed partial class QuotaOrbControl : Control
 
     private void UpdateBuckets()
     {
-        _outerBucket = RingWindowCatalog.FindBucket(_snapshot, _configuration.Outer);
-        _innerBucket = RingWindowCatalog.FindBucket(_snapshot, _configuration.Inner);
+        (_outerBucket, _innerBucket) = RingWindowCatalog.ResolveBuckets(_snapshot, _configuration);
+        if (_outerBucket is null && _innerBucket is null)
+        {
+            AccessibleName = L10n.Pick(
+                "Codex 额度悬浮球，等待额度窗口，单击展开详情",
+                "Codex quota orb, waiting for a quota window, click to open details");
+            Invalidate();
+            return;
+        }
         var outerText = _outerBucket is null ? L10n.TemporarilyUnavailable :
             L10n.Pick($"剩余 {Math.Round(_outerBucket.RemainingPercent):0}%", $"{Math.Round(_outerBucket.RemainingPercent):0}% remaining");
         var innerText = _innerBucket is null ? L10n.TemporarilyUnavailable :
             L10n.Pick($"剩余 {Math.Round(_innerBucket.RemainingPercent):0}%", $"{Math.Round(_innerBucket.RemainingPercent):0}% remaining");
-        AccessibleName = L10n.Pick(
-            $"Codex 额度悬浮球，{RingWindowCatalog.FormatLong(_configuration.Outer.WindowMinutes)}{outerText}，" +
-            $"{RingWindowCatalog.FormatLong(_configuration.Inner.WindowMinutes)}{innerText}，单击展开详情",
-            $"Codex quota orb, {RingWindowCatalog.FormatLong(_configuration.Outer.WindowMinutes)} {outerText}, " +
-            $"{RingWindowCatalog.FormatLong(_configuration.Inner.WindowMinutes)} {innerText}, click to open details");
+        if (AvailableRingCount == 1)
+        {
+            var bucket = _outerBucket ?? _innerBucket!;
+            var text = _outerBucket is not null ? outerText : innerText;
+            AccessibleName = L10n.Pick(
+                $"Codex 额度悬浮球，{RingWindowCatalog.FormatLong(bucket.WindowMinutes ?? 0)}{text}，单击展开详情",
+                $"Codex quota orb, {RingWindowCatalog.FormatLong(bucket.WindowMinutes ?? 0)} {text}, click to open details");
+        }
+        else
+        {
+            AccessibleName = L10n.Pick(
+                $"Codex 额度悬浮球，{RingWindowCatalog.FormatLong(_outerBucket?.WindowMinutes ?? _configuration.Outer.WindowMinutes)}{outerText}，" +
+                $"{RingWindowCatalog.FormatLong(_innerBucket?.WindowMinutes ?? _configuration.Inner.WindowMinutes)}{innerText}，单击展开详情",
+                $"Codex quota orb, {RingWindowCatalog.FormatLong(_outerBucket?.WindowMinutes ?? _configuration.Outer.WindowMinutes)} {outerText}, " +
+                $"{RingWindowCatalog.FormatLong(_innerBucket?.WindowMinutes ?? _configuration.Inner.WindowMinutes)} {innerText}, click to open details");
+        }
         Invalidate();
     }
 
@@ -225,18 +246,42 @@ internal sealed partial class QuotaOrbControl : Control
         }
 
         var outerBounds = new RectangleF(8 * scale, 8 * scale, Width - 16 * scale, Height - 16 * scale);
-        DrawArc(graphics, outerBounds, 7 * scale,
-            _outerBucket?.RemainingPercent, _configuration.OuterColor, trackColor);
-        DrawArc(graphics, new RectangleF(19 * scale, 19 * scale, Width - 38 * scale, Height - 38 * scale), 4.5f * scale,
-            _innerBucket?.RemainingPercent, _configuration.InnerColor, trackColor);
-
+        var statusBounds = outerBounds;
+        double? statusRemaining;
         using var labelFont = UiPalette.MonoPixels(LabelPixelSize(scale), FontStyle.Bold);
-        var outerText = $"{OuterLabel} {FormatPercent(_outerBucket)}";
-        var innerText = $"{InnerLabel} {FormatPercent(_innerBucket)}";
-        TextRenderer.DrawText(graphics, outerText, labelFont, ScaleRectangle(new RectangleF(22, 29, 44, 14), scale), _configuration.OuterColor,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(graphics, innerText, labelFont, ScaleRectangle(new RectangleF(22, 43, 44, 14), scale), _configuration.InnerColor,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        if (AvailableRingCount >= 2)
+        {
+            DrawArc(graphics, outerBounds, 7 * scale,
+                _outerBucket?.RemainingPercent, _configuration.OuterColor, trackColor);
+            DrawArc(graphics, new RectangleF(19 * scale, 19 * scale, Width - 38 * scale, Height - 38 * scale), 4.5f * scale,
+                _innerBucket?.RemainingPercent, _configuration.InnerColor, trackColor);
+            var outerText = $"{OuterLabel} {FormatPercent(_outerBucket)}";
+            var innerText = $"{InnerLabel} {FormatPercent(_innerBucket)}";
+            TextRenderer.DrawText(graphics, outerText, labelFont, ScaleRectangle(new RectangleF(22, 29, 44, 14), scale), _configuration.OuterColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(graphics, innerText, labelFont, ScaleRectangle(new RectangleF(22, 43, 44, 14), scale), _configuration.InnerColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            statusRemaining = _outerBucket?.RemainingPercent;
+        }
+        else
+        {
+            var bucket = _outerBucket ?? _innerBucket;
+            var color = _outerBucket is not null ? _configuration.OuterColor :
+                _innerBucket is not null ? _configuration.InnerColor : UiPalette.Muted;
+            var bounds = new RectangleF(10 * scale, 10 * scale, Width - 20 * scale, Height - 20 * scale);
+            DrawArc(graphics, bounds, 7 * scale, bucket?.RemainingPercent, color, trackColor);
+            statusBounds = bounds;
+            statusRemaining = bucket?.RemainingPercent;
+            var label = bucket?.WindowMinutes is > 0
+                ? RingWindowCatalog.FormatShort(bucket.WindowMinutes.Value)
+                : "—";
+            TextRenderer.DrawText(graphics, label, labelFont,
+                ScaleRectangle(new RectangleF(22, 28, 44, 14), scale), color,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(graphics, FormatPercent(bucket), labelFont,
+                ScaleRectangle(new RectangleF(22, 43, 44, 14), scale), color,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
 
         if (_flameAnimationEnabled)
         {
@@ -255,7 +300,7 @@ internal sealed partial class QuotaOrbControl : Control
             }
         }
 
-        var statusCenter = ArcEndpoint(outerBounds, _outerBucket?.RemainingPercent);
+        var statusCenter = ArcEndpoint(statusBounds, statusRemaining);
         var statusDiameter = 5f * scale;
         using var statusBorder = new SolidBrush(surfaceEnd);
         graphics.FillEllipse(statusBorder,

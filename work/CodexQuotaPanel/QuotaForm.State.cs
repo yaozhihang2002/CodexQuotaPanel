@@ -29,6 +29,7 @@ internal sealed partial class QuotaForm
 
         _primaryRow.SetBucket(snapshot.Primary);
         _secondaryRow.SetBucket(snapshot.Secondary);
+        ApplyAdaptiveQuotaWindowLayout();
         UpdateHistoryRows();
         UpdateCredits(snapshot.Credits);
 
@@ -77,10 +78,8 @@ internal sealed partial class QuotaForm
 
     public void SetTopMostPreference(bool value)
     {
-        TopMost = value;
-        _hoverPeek.TopMost = value;
-        _pinButton.ForeColor = value ? UiPalette.Mint : UiPalette.Muted;
-        _pinButton.Text = value ? PinGlyph : UnpinGlyph;
+        _alwaysOnTopPreference = value;
+        ReassertTopMostPreference();
     }
 
     public void ApplyLanguage()
@@ -121,6 +120,8 @@ internal sealed partial class QuotaForm
         }
         _primaryRow.SetBucket(_snapshot?.Primary);
         _secondaryRow.SetBucket(_snapshot?.Secondary);
+        _dailyTokenUsage.ApplyLanguage();
+        ApplyAdaptiveQuotaWindowLayout();
         _ring.ApplyLanguage();
         _orb.ConfigureRings(_ringConfiguration);
         _hoverPeek.ApplyLanguage();

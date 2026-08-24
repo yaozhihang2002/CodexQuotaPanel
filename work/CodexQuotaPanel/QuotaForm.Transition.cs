@@ -174,6 +174,7 @@ internal sealed partial class QuotaForm
                 _expandedBounds = Bounds;
                 ApplyDetailLayoutForCurrentDpi();
                 _orb.Visible = false;
+                ApplyAdaptiveQuotaWindowLayout();
                 SetDetailControlsVisible(true);
             }
             else
@@ -202,6 +203,7 @@ internal sealed partial class QuotaForm
             BringToFront();
         }
         DisposeTransitionOverlay();
+        ReassertTopMostPreference();
         _transitionPreview?.Dispose();
         _transitionPreview = null;
         _transitionOrbPreview?.Dispose();
@@ -255,6 +257,7 @@ internal sealed partial class QuotaForm
         _animating = false;
         _collapsed = true;
         NormalizeCollapsedGeometry(location);
+        ApplyAdaptiveQuotaWindowLayout();
         ApplyOrbPresentation();
         SetDetailControlsVisible(false);
         _orb.Visible = true;
@@ -280,6 +283,7 @@ internal sealed partial class QuotaForm
         _collapsed = false;
         _expandedBounds = Bounds;
         ApplyDetailLayoutForCurrentDpi();
+        ApplyAdaptiveQuotaWindowLayout();
         ApplyOrbPresentation();
         _orb.Visible = false;
         SetDetailControlsVisible(true);
@@ -292,6 +296,7 @@ internal sealed partial class QuotaForm
     {
         foreach (Control control in Controls)
             if (!ReferenceEquals(control, _orb)) control.Visible = visible;
+        if (visible) ApplyAdaptiveQuotaRowVisibility(true);
     }
 
     private void NormalizeCollapsedGeometry(Point location)
@@ -483,6 +488,7 @@ internal sealed partial class QuotaForm
         renderer.CreateControl();
         renderer.ConfigureRings(_ringConfiguration);
         renderer.SetHistory(_history);
+        renderer.SetTokenCycleUsage(_dailyTokenUsage.Usage);
         if (_snapshot is not null) renderer.ApplySnapshot(_snapshot);
         if (_lastStatus is not null) renderer.SetStatus(_lastStatus);
         renderer.SetExpandedInstant(fullBounds);

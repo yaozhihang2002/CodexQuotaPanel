@@ -8,7 +8,8 @@ namespace CodexQuotaPanel;
 
 internal sealed partial class QuotaForm : Form
 {
-    private static readonly Size ExpandedPanelSize = new(368, 500);
+    private static readonly Size SingleWindowPanelSize = new(368, 518);
+    private static readonly Size DualWindowPanelSize = new(368, 596);
     private const int DefaultOrbLogicalSize = PanelPreferenceManager.DefaultOrbSize;
     private const int SnapThresholdLogicalPixels = 12;
     private const int TransitionDurationMs = 300;
@@ -48,6 +49,7 @@ internal sealed partial class QuotaForm : Form
     private readonly QuotaRingControl _ring;
     private readonly LimitRowControl _primaryRow;
     private readonly LimitRowControl _secondaryRow;
+    private readonly DailyTokenUsageControl _dailyTokenUsage;
     private readonly Button _pinButton;
     private readonly Button _hideButton;
     private readonly Button _closeButton;
@@ -110,6 +112,12 @@ internal sealed partial class QuotaForm : Form
     private Rectangle _expandedBounds;
     private Point _orbDragStartScreen;
     private int _detailLayoutDpi;
+    private int _availableWindowCount;
+    private bool _alwaysOnTopPreference = true;
+
+    private Size ExpandedPanelSize => _availableWindowCount >= 2
+        ? DualWindowPanelSize
+        : SingleWindowPanelSize;
 
     public event Action? RefreshRequested;
     public event Action<bool>? TopMostChangedByUser;
@@ -175,7 +183,7 @@ internal sealed partial class QuotaForm : Form
         // the expanded window without scaling its absolute-positioned children.
         // Keep this form on one explicit logical-to-device layout path instead.
         AutoScaleMode = AutoScaleMode.None;
-        ClientSize = ExpandedPanelSize;
+        ClientSize = SingleWindowPanelSize;
         FormBorderStyle = FormBorderStyle.None;
         BackColor = UiPalette.Canvas;
         ForeColor = UiPalette.Text;
@@ -218,10 +226,9 @@ internal sealed partial class QuotaForm : Form
         _toolTip.SetToolTip(_pinButton, L10n.AlwaysOnTop);
         _pinButton.Click += (_, _) =>
         {
-            TopMost = !TopMost;
-            _pinButton.ForeColor = TopMost ? UiPalette.Mint : UiPalette.Muted;
-            _pinButton.Text = TopMost ? PinGlyph : UnpinGlyph;
-            TopMostChangedByUser?.Invoke(TopMost);
+            var next = !_alwaysOnTopPreference;
+            SetTopMostPreference(next);
+            TopMostChangedByUser?.Invoke(next);
         };
         Controls.Add(_pinButton);
 
@@ -263,31 +270,39 @@ internal sealed partial class QuotaForm : Form
         Controls.Add(_sectionTitle);
 
         _primaryRow = new LimitRowControl { Location = new Point(18, 224), Width = 332, Height = 70, HistorySlot = 0 };
-        _secondaryRow = new LimitRowControl { Location = new Point(18, 302), Width = 332, Height = 70, HistorySlot = 1 };
+        _secondaryRow = new LimitRowControl { Location = new Point(18, 224), Width = 332, Height = 70, HistorySlot = 1, Visible = false };
         _primaryRow.SetBucket(null);
         _secondaryRow.SetBucket(null);
         Controls.Add(_primaryRow);
         Controls.Add(_secondaryRow);
 
-        _creditsLabel = MakeLabel($"{L10n.Credits} · —", new Point(19, 380), new Size(331, 19),
+        _dailyTokenUsage = new DailyTokenUsageControl
+        {
+            Location = new Point(18, 302),
+            Width = 332,
+            Height = 96
+        };
+        Controls.Add(_dailyTokenUsage);
+
+        _creditsLabel = MakeLabel($"{L10n.Credits} · —", new Point(19, 406), new Size(331, 19),
             UiPalette.Mono(8f, FontStyle.Bold), UiPalette.Muted);
         Controls.Add(_creditsLabel);
 
-        _statusLabel = MakeLabel(L10n.Connecting, new Point(19, 404), new Size(331, 18),
+        _statusLabel = MakeLabel(L10n.Connecting, new Point(19, 430), new Size(331, 18),
             UiPalette.Body(8.3f), UiPalette.Muted);
         Controls.Add(_statusLabel);
 
-        _freshnessLabel = MakeLabel(L10n.NoSnapshot, new Point(19, 426), new Size(331, 17),
+        _freshnessLabel = MakeLabel(L10n.NoSnapshot, new Point(19, 452), new Size(331, 17),
             UiPalette.Mono(7.2f), UiPalette.Faint);
         Controls.Add(_freshnessLabel);
 
-        _refreshButton = MakeActionButton(L10n.Refresh, new Point(18, 462), new Size(84, 28));
+        _refreshButton = MakeActionButton(L10n.Refresh, new Point(18, 480), new Size(84, 28));
         _refreshButton.Click += (_, _) => RefreshRequested?.Invoke();
         _refreshButton.AccessibleName = L10n.RefreshNow;
         _toolTip.SetToolTip(_refreshButton, L10n.RefreshNow);
         Controls.Add(_refreshButton);
 
-        _hideButton = MakeActionButton(L10n.CollapseOrb, new Point(108, 462), new Size(242, 28), true);
+        _hideButton = MakeActionButton(L10n.CollapseOrb, new Point(108, 480), new Size(242, 28), true);
         _hideButton.Click += (_, _) => CollapseToOrb();
         _hideButton.AccessibleName = L10n.CollapseOrb;
         Controls.Add(_hideButton);
@@ -346,6 +361,11 @@ internal sealed partial class QuotaForm : Form
     {
         base.OnHandleCreated(e);
         ApplyDetailLayoutForCurrentDpi(force: true);
+        // Windows can recreate the native handle after DPI, display-session or
+        // remote-desktop changes. TopMost is a native z-order state, so restore
+        // the saved preference after the replacement handle is fully attached.
+        try { BeginInvoke(ReassertTopMostPreference); }
+        catch (InvalidOperationException) { }
     }
 
     protected override void WndProc(ref Message message)
@@ -441,6 +461,11 @@ internal sealed partial class QuotaForm : Form
         base.OnVisibleChanged(e);
         if (_orb is not null)
             _orb.SetFlameAnimationEnabled(_consumptionFlameEnabled && Visible);
+        if (Visible && IsHandleCreated)
+        {
+            try { BeginInvoke(ReassertTopMostPreference); }
+            catch (InvalidOperationException) { }
+        }
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -520,6 +545,10 @@ internal sealed partial class QuotaForm : Form
 
     private Color TrendColorFor(LimitBucket? bucket, RingWindowRole role)
     {
+        if (_ringConfiguration.Outer.Role == role)
+            return _ringConfiguration.OuterColor;
+        if (_ringConfiguration.Inner.Role == role)
+            return _ringConfiguration.InnerColor;
         if (bucket?.WindowMinutes == _ringConfiguration.Outer.WindowMinutes &&
             (_ringConfiguration.Outer.Role == role ||
              _snapshot?.Buckets.Count(item => item.WindowMinutes == bucket.WindowMinutes) == 1))
@@ -557,6 +586,7 @@ internal sealed partial class QuotaForm : Form
             _expandedBounds = Bounds;
         }
         if (_snapshot is not null) QueueTransitionPreviewCacheRefresh();
+        ReassertTopMostPreference();
     }
 
     private void UpdateRegion()

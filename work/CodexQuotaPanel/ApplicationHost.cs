@@ -279,6 +279,7 @@ internal sealed partial class QuotaApplicationContext : ApplicationContext
 
     private void OnSnapshotChanged(QuotaSnapshot snapshot)
     {
+        QueueTokenUsageRefresh(snapshot);
         SafeUi(() =>
         {
             _latestSnapshot = snapshot;

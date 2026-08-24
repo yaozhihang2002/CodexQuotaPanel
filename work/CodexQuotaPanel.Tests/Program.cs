@@ -59,12 +59,14 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
     if (GitHubReleaseUpdateService.CurrentVersionText != "0.4.1")
         throw new InvalidOperationException("The local candidate version is not v0.4.1.");
 
-    var panel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
+    var singlePanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 518), 168);
+    var dualPanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 596), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
     var secondaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 302, 332, 70), 168);
-    var primaryButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 462, 242, 28), 168);
-    if (panel != new Rectangle(0, 0, 644, 875) ||
-        primaryRow.Bottom >= secondaryRow.Top || primaryButton.Bottom >= panel.Bottom)
+    var primaryButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 558, 242, 28), 168);
+    if (singlePanel != new Rectangle(0, 0, 644, 907) ||
+        dualPanel != new Rectangle(0, 0, 644, 1043) ||
+        primaryRow.Bottom >= secondaryRow.Top || primaryButton.Bottom >= dualPanel.Bottom)
         throw new InvalidOperationException("The deterministic 175% DPI layout check failed.");
 
     var negativeArea = new Rectangle(-1920, 0, 1920, 1080);
@@ -75,11 +77,11 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         QuotaForm.IsOrbDragGesture(new Size(2, 2), Size.Empty, new Size(8, 8)))
         throw new InvalidOperationException("The native-drag or DPI-aware monitor placement check failed.");
 
-    Console.WriteLine($"PASS targeted check | RDP-safe pixel labels | restart labels zh/en | 175% panel={panel.Width}x{panel.Height} | DPI-aware negative-screen placement");
+    Console.WriteLine($"PASS targeted check | RDP-safe pixel labels | restart labels zh/en | adaptive 175% panels={singlePanel.Width}x{singlePanel.Height}/{dualPanel.Width}x{dualPanel.Height} | DPI-aware negative-screen placement");
     return;
 }
 
-if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--theme-preview" or "--innovation-preview" or "--menu-preview" or "--remote-dpi-preview" or "--orb-background-preview" or "--animation-preview" or "--collapse-animation-preview") ||
+if ((args.Length >= 2 && args[0] is "--preview" or "--settings-overlap-preview" or "--settings-save-preview" or "--alert-layout-preview" or "--alert-editor-preview" or "--reminder-preview" or "--data-about-preview" or "--tray-icon-preview" or "--settings-header-preview" or "--flame-style-preview" or "--flame-state-preview" or "--flame-motion-preview" or "--motion-performance-preview" or "--layered-runtime-preview" or "--startup-orb-preview" or "--hover-preview" or "--detail-preview" or "--token-usage-preview" or "--theme-preview" or "--innovation-preview" or "--menu-preview" or "--remote-dpi-preview" or "--orb-background-preview" or "--animation-preview" or "--collapse-animation-preview") ||
     args.Contains("--stability", StringComparer.OrdinalIgnoreCase))
 {
     Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -120,6 +122,12 @@ if (args.Length >= 2 && args[0] == "--settings-save-preview")
 if (args.Length >= 2 && args[0] == "--data-about-preview")
 {
     DataAboutPreview.Run(args[1]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--token-usage-preview")
+{
+    TokenUsagePreview.Run(args[1]);
     return;
 }
 
@@ -296,6 +304,7 @@ Assert(rpc.AdditionalLimitCount == 1, "RPC additional limit count mismatch.");
 Assert(rpc.Credits?.Balance == "125.5", "RPC credits mismatch.");
 Assert(rpc.ResetCredits?.AvailableCount == 4, "RPC reset-credit count mismatch.");
 Assert(rpc.ResetCredits?.SoonestExpiring?.Id == "reset-1", "RPC parser did not select the earliest expiring reset credit.");
+TokenUsageChecks.Run();
 Assert(PanelPreferenceManager.NormalizeOpacity(83) == 83, "Exact opacity preference was not preserved.");
 Assert(PanelPreferenceManager.NormalizeOpacity(1) == 30, "Opacity minimum clamp mismatch.");
 Assert(PanelPreferenceManager.NormalizeOpacity(120) == 100, "Opacity maximum clamp mismatch.");
@@ -390,11 +399,11 @@ using (var orb = new QuotaOrbControl())
 {
     orb.ConfigureRings(customConfiguration);
     orb.SetSnapshot(rpc, live: true);
-    Assert(orb.OuterLabel == "1H" && orb.InnerLabel == "30D", "Custom ring labels are incorrect.");
+    Assert(orb.OuterLabel == "5H" && orb.InnerLabel == "7D", "Ring labels did not follow the actual server windows.");
     Assert(orb.OuterColor.ToArgb() == customConfiguration.OuterColor.ToArgb() &&
            orb.InnerColor.ToArgb() == customConfiguration.InnerColor.ToArgb(),
         "Custom ring colors were not preserved exactly.");
-    Assert(!orb.OuterAvailable && !orb.InnerAvailable, "Unavailable custom ring windows were reported as available.");
+    Assert(orb.OuterAvailable && orb.InnerAvailable, "Actual server windows were hidden by stale custom durations.");
     orb.SetConsumptionIntensity(0.82d);
     Assert(Math.Abs(orb.ConsumptionIntensity - 0.82d) < 0.001d,
         "Consumption-flame intensity was not preserved.");
@@ -661,16 +670,20 @@ finally
     Directory.Delete(historyDirectory, recursive: true);
 }
 
-var highDpiPanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 500), 168);
+var highDpiSinglePanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 518), 168);
+var highDpiDualPanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 596), 168);
 var highDpiPrimaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);
 var highDpiSecondaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 302, 332, 70), 168);
-var highDpiPrimaryButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 462, 242, 28), 168);
-Assert(highDpiPanel == new Rectangle(0, 0, 644, 875),
-    "175% DPI panel size did not scale from the logical layout.");
+var highDpiSingleButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 480, 242, 28), 168);
+var highDpiDualButton = QuotaForm.ScaleLogicalBounds(new Rectangle(108, 558, 242, 28), 168);
+Assert(highDpiSinglePanel == new Rectangle(0, 0, 644, 907) &&
+       highDpiDualPanel == new Rectangle(0, 0, 644, 1043),
+    "175% DPI adaptive panel sizes did not scale from the logical layouts.");
 Assert(highDpiPrimaryRow.Bottom < highDpiSecondaryRow.Top,
     "175% DPI quota rows overlap after scaling.");
-Assert(highDpiPrimaryButton.Bottom < highDpiPanel.Bottom,
-    "175% DPI primary action escaped the detail panel.");
+Assert(highDpiSingleButton.Bottom < highDpiSinglePanel.Bottom &&
+       highDpiDualButton.Bottom < highDpiDualPanel.Bottom,
+    "175% DPI primary action escaped an adaptive detail panel.");
 var negativeMonitorArea = new Rectangle(-1920, 0, 1920, 1080);
 Assert(DisplayPlacement.ClampToArea(new Rectangle(-2100, 1000, 132, 132), negativeMonitorArea) ==
        new Rectangle(-1920, 948, 132, 132),
@@ -752,6 +765,25 @@ Assert(real is not null, "No real local quota snapshot was found.");
 Assert(real!.Buckets.All(bucket => bucket.UsedPercent is >= 0 and <= 100), "Real usage is out of range.");
 Console.WriteLine($"PASS synthetic + local | plan={real.PlanType} | primary={real.Primary?.UsedPercent:0}% | secondary={real.Secondary?.UsedPercent:0}%");
 
+if (args.Contains("--token-live-check", StringComparer.OrdinalIgnoreCase))
+{
+    var liveTokenHistory = new TokenUsageHistory();
+    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    var cycleUsage = await liveTokenHistory.ReadCurrentCycleAsync(real);
+    stopwatch.Stop();
+    var coldMilliseconds = stopwatch.ElapsedMilliseconds;
+    stopwatch.Restart();
+    var cachedUsage = await liveTokenHistory.ReadCurrentCycleAsync(real);
+    stopwatch.Stop();
+    if (TokenCycleSelector.Select(real) is not null && cycleUsage is null)
+        throw new InvalidOperationException("The live reset cycle did not produce token usage data.");
+    if (cycleUsage?.Total != cachedUsage?.Total)
+        throw new InvalidOperationException("The cached token scan changed the aggregate.");
+    Console.WriteLine(cycleUsage is null
+        ? "SKIP live token cycle | reset timestamp unavailable"
+        : $"PASS live token cycle | window={cycleUsage.WindowMinutes}m | days={cycleUsage.Days.Count} | tokens={cycleUsage.Total.TotalTokens} | files={cycleUsage.SourceFileCount} | cold={coldMilliseconds}ms | warm={stopwatch.ElapsedMilliseconds}ms");
+}
+
 if (args.Contains("--integration", StringComparer.OrdinalIgnoreCase) ||
     args.Contains("--live-rpc", StringComparer.OrdinalIgnoreCase))
 {
@@ -801,7 +833,7 @@ if (args.Length >= 2 && args[0] == "--preview")
         "Recent fast consumption did not reach the orb flame.");
     Assert(form.IsCollapsed && form.ClientSize == new Size(88, 88), "Form did not start in compact orb mode.");
     form.ShowDetails(animate: false);
-    Assert(!form.IsCollapsed && !form.IsAnimating && form.ClientSize == new Size(368, 500),
+    Assert(!form.IsCollapsed && !form.IsAnimating && form.ClientSize == form.ExpandedLogicalSize,
         "Form did not expand to the detail card.");
     form.Show();
     Application.DoEvents();
@@ -1042,8 +1074,8 @@ if (args.Length >= 2 && args[0] == "--preview")
     form.CollapseToOrb(animate: false);
     Assert(form.Location == originalOrbLocation, "Orb did not return to its original dragged location.");
 
-    var collapsedFrame = new Rectangle(280, 412, 88, 88);
-    var expandedFrame = new Rectangle(0, 0, 368, 500);
+    var expandedFrame = new Rectangle(Point.Empty, form.ExpandedLogicalSize);
+    var collapsedFrame = new Rectangle(expandedFrame.Right - 88, expandedFrame.Bottom - 88, 88, 88);
     var lampQuarter = QuotaForm.InterpolateLampTransition(collapsedFrame, expandedFrame, 0.25d, expanding: true);
     var widthProgress = (lampQuarter.Width - collapsedFrame.Width) / (double)(expandedFrame.Width - collapsedFrame.Width);
     var heightProgress = (lampQuarter.Height - collapsedFrame.Height) / (double)(expandedFrame.Height - collapsedFrame.Height);

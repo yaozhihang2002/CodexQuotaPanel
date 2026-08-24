@@ -59,6 +59,12 @@ internal sealed class HoverPeekForm : Form
     {
         _snapshot = snapshot;
         _configuration = configuration;
+        var availableCount = (snapshot.Primary is null ? 0 : 1) + (snapshot.Secondary is null ? 0 : 1);
+        var logicalHeight = availableCount >= 2 ? 124 : 96;
+        var targetHeight = Math.Max(1, (int)Math.Round(logicalHeight * DeviceDpi / 96d));
+        if (ClientSize.Height != targetHeight)
+            ClientSize = new Size(ClientSize.Width, targetHeight);
+        UpdateRegion();
         Invalidate();
     }
 
@@ -121,17 +127,27 @@ internal sealed class HoverPeekForm : Form
             return;
         }
 
-        DrawLine(e.Graphics, 12, _configuration.Outer,
-            RingWindowCatalog.FindBucket(_snapshot, _configuration.Outer), _configuration.OuterColor, scale);
-        DrawLine(e.Graphics, 47, _configuration.Inner,
-            RingWindowCatalog.FindBucket(_snapshot, _configuration.Inner), _configuration.InnerColor, scale);
+        var (outer, inner) = RingWindowCatalog.ResolveBuckets(_snapshot, _configuration);
+        var availableCount = (outer is null ? 0 : 1) + (inner is null ? 0 : 1);
+        if (availableCount >= 2)
+        {
+            DrawLine(e.Graphics, 12, _configuration.Outer, outer, _configuration.OuterColor, scale);
+            DrawLine(e.Graphics, 47, _configuration.Inner, inner, _configuration.InnerColor, scale);
+        }
+        else
+        {
+            var bucket = outer ?? inner;
+            var selection = outer is not null ? _configuration.Outer : _configuration.Inner;
+            var color = outer is not null ? _configuration.OuterColor : _configuration.InnerColor;
+            DrawLine(e.Graphics, 20, selection, bucket, color, scale);
+        }
 
         var age = DateTimeOffset.Now - _snapshot.ObservedAt;
         var ageText = L10n.FormatAge(_snapshot.ObservedAt);
         var source = string.Equals(_snapshot.Source, "App Server", StringComparison.Ordinal) ? L10n.LiveRpc : L10n.LocalShort;
         using var footerFont = UiPalette.Mono(7.6f, FontStyle.Bold);
         TextRenderer.DrawText(e.Graphics, L10n.Pick($"更新 {ageText} · {source}", $"Updated {ageText} · {source}"), footerFont,
-            ScaleRectangle(14, 97, 308, 18, scale), age.TotalMinutes > 15 ? UiPalette.Amber : UiPalette.Faint,
+            ScaleRectangle(14, availableCount >= 2 ? 97 : 68, 308, 18, scale), age.TotalMinutes > 15 ? UiPalette.Amber : UiPalette.Faint,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
             TextFormatFlags.EndEllipsis);
     }
@@ -152,7 +168,7 @@ internal sealed class HoverPeekForm : Form
     {
         using var labelFont = UiPalette.Mono(9.2f, FontStyle.Bold);
         using var detailFont = UiPalette.Body(10.2f, FontStyle.Bold);
-        var label = RingWindowCatalog.FormatShort(selection.WindowMinutes);
+        var label = RingWindowCatalog.FormatShort(bucket?.WindowMinutes ?? selection.WindowMinutes);
         TextRenderer.DrawText(graphics, label, labelFont, ScaleRectangle(14, y, 48, 24, scale), color,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         var detail = bucket is null

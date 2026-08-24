@@ -72,12 +72,53 @@ internal static class RingWindowCatalog
     {
         if (snapshot is null) return null;
         var preferred = selection.Role == RingWindowRole.Primary ? snapshot.Primary : snapshot.Secondary;
-        if (preferred?.WindowMinutes == selection.WindowMinutes) return preferred;
+        // Keep the chosen source role stable while allowing the server to add,
+        // remove or change window durations without leaving a stale 5H/7D ring.
+        if (preferred is not null) return preferred;
 
         var matches = snapshot.Buckets
             .Where(bucket => bucket.WindowMinutes == selection.WindowMinutes)
             .ToArray();
         return matches.Length == 1 ? matches[0] : null;
+    }
+
+    public static (LimitBucket? Outer, LimitBucket? Inner) ResolveBuckets(
+        QuotaSnapshot? snapshot,
+        RingDisplayConfiguration configuration)
+    {
+        if (snapshot is null) return (null, null);
+
+        if (snapshot.Primary is { } primary && snapshot.Secondary is null)
+            return configuration.Outer.Role == RingWindowRole.Primary ||
+                   configuration.Inner.Role != RingWindowRole.Primary
+                ? (primary, null)
+                : (null, primary);
+
+        if (snapshot.Secondary is { } secondary && snapshot.Primary is null)
+            return configuration.Outer.Role == RingWindowRole.Secondary ||
+                   configuration.Inner.Role != RingWindowRole.Secondary
+                ? (secondary, null)
+                : (null, secondary);
+
+        if (snapshot.Primary is null && snapshot.Secondary is null)
+            return (null, null);
+
+        // Two server windows should remain two visible rings even if an older
+        // imported configuration selected the same role for both ring slots.
+        if (configuration.Outer.Role == configuration.Inner.Role)
+        {
+            var outer = configuration.Outer.Role == RingWindowRole.Primary
+                ? snapshot.Primary
+                : snapshot.Secondary;
+            var inner = configuration.Outer.Role == RingWindowRole.Primary
+                ? snapshot.Secondary
+                : snapshot.Primary;
+            return (outer, inner);
+        }
+
+        return (
+            FindBucket(snapshot, configuration.Outer),
+            FindBucket(snapshot, configuration.Inner));
     }
 
     public static string FormatShort(int minutes)

@@ -92,6 +92,7 @@ internal sealed partial class QuotaForm
         _orb.Invalidate();
         UpdateRegion();
         Invalidate(true);
+        ReassertTopMostPreference();
     }
 
     public void MoveOrbToCurrentDisplay()
@@ -192,6 +193,7 @@ internal sealed partial class QuotaForm
         WindowState = FormWindowState.Normal;
         Activate();
         BringToFront();
+        ReassertTopMostPreference();
         if (!_animating) SetViewState(DetailsViewState);
     }
 
@@ -214,6 +216,7 @@ internal sealed partial class QuotaForm
             CollapseToOrb(animate);
         }
         BringToFront();
+        ReassertTopMostPreference();
         if (!_animating) SetViewState(OrbViewState);
     }
 
