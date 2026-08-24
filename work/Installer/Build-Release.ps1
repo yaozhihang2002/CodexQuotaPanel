@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.4.1',
+    [string]$Version = '0.5.0',
     [string]$DevenvPath,
     [string]$OutputDirectory,
     [switch]$PublishToGitHub,
@@ -20,6 +20,8 @@ $applicationProject = Join-Path $repositoryRoot 'work\CodexQuotaPanel\CodexQuota
 $testProject = Join-Path $repositoryRoot 'work\CodexQuotaPanel.Tests\CodexQuotaPanel.Tests.csproj'
 $testExecutable = Join-Path $repositoryRoot 'work\CodexQuotaPanel.Tests\bin\Release\net9.0-windows\win-x64\CodexQuotaPanel.Tests.exe'
 $stageDirectory = Join-Path $repositoryRoot 'work\installer-stage\win-x64'
+$offlineStageDirectory = Join-Path $repositoryRoot 'work\installer-stage\win-x64-offline'
+$liteStageDirectory = Join-Path $repositoryRoot 'work\installer-stage\win-x64-lite'
 $candidateDirectory = if ([string]::IsNullOrWhiteSpace($OutputDirectory))
 {
     Join-Path $repositoryRoot "outputs\release-v$Version"
@@ -31,6 +33,8 @@ else
 $localizedInstallerScript = Join-Path $installerDirectory 'Build-LocalizedInstaller.ps1'
 $launcherScript = Join-Path $installerDirectory 'Build-LanguageSetupLauncher.ps1'
 $installerProject = Join-Path $installerDirectory 'CodexQuotaPanelSetup.vdproj'
+$runtimeDownloadUrl = 'https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/9.0.19/windowsdesktop-runtime-9.0.19-win-x64.exe'
+$runtimeSha512 = '47d82ec79834d1cc032292411960bcc42a3955947e999c2afd02a93ffa9c2928ff62ffbb4e7dc4572e3fbce5bbfd6ae9ec5c3ebf99979f8bd07fd375b71a6a53'
 $timings = [ordered]@{}
 $totalStopwatch = [Diagnostics.Stopwatch]::StartNew()
 
@@ -70,6 +74,13 @@ function Reset-RepositoryDirectory {
         Remove-Item -LiteralPath $fullPath -Recurse -Force
     }
     New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
+}
+
+function Set-ActiveInstallerPayload {
+    param([Parameter(Mandatory = $true)][string]$SourceDirectory)
+
+    Reset-RepositoryDirectory $stageDirectory
+    Copy-Item -Path (Join-Path $SourceDirectory '*') -Destination $stageDirectory -Recurse -Force
 }
 
 function Resolve-Devenv {
@@ -131,6 +142,8 @@ try
     Assert-VersionSynchronization
     $resolvedDevenv = Resolve-Devenv
     Reset-RepositoryDirectory $stageDirectory
+    Reset-RepositoryDirectory $offlineStageDirectory
+    Reset-RepositoryDirectory $liteStageDirectory
     Reset-RepositoryDirectory $candidateDirectory
 
     Invoke-CheckedCommand 'Restore once' {
@@ -145,56 +158,97 @@ try
     Invoke-CheckedCommand 'Run targeted release checks' {
         & $testExecutable --targeted-check
     }
-    Invoke-CheckedCommand 'Publish from the existing build' {
+    Invoke-CheckedCommand 'Publish offline payload from the existing build' {
         & dotnet publish $applicationProject `
             -c $Configuration `
             -r win-x64 `
             --self-contained true `
             --no-build `
             --no-restore `
-            -o $stageDirectory
+            -o $offlineStageDirectory
     }
-
-    $applicationBinary = Join-Path $stageDirectory 'CodexQuotaPanel.exe'
-    if (-not (Test-Path -LiteralPath $applicationBinary))
+    Invoke-CheckedCommand 'Publish lite framework-dependent payload' {
+        & dotnet publish $applicationProject `
+            -c $Configuration `
+            -r win-x64 `
+            --self-contained false `
+            --no-restore `
+            -p:EnableCompressionInSingleFile=false `
+            -o $liteStageDirectory
+    }
+    $offlineBinary = Join-Path $offlineStageDirectory 'CodexQuotaPanel.exe'
+    $liteBinary = Join-Path $liteStageDirectory 'CodexQuotaPanel.exe'
+    foreach ($applicationBinary in @($offlineBinary, $liteBinary))
     {
-        throw "Published application was not found: $applicationBinary"
+        if (-not (Test-Path -LiteralPath $applicationBinary))
+        {
+            throw "Published application was not found: $applicationBinary"
+        }
+        $publishedVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($applicationBinary).FileVersion
+        if ($publishedVersion -cne "$Version.0")
+        {
+            throw "Published application version is $publishedVersion instead of $Version.0."
+        }
     }
-    $publishedVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($applicationBinary).FileVersion
-    if ($publishedVersion -cne "$Version.0")
+    if ((Get-Item -LiteralPath $offlineBinary).Length -lt 20MB -or
+        (Get-Item -LiteralPath $liteBinary).Length -gt 5MB)
     {
-        throw "Published application version is $publishedVersion instead of $Version.0."
+        throw 'Unexpected payload sizes: offline must contain the runtime and lite must remain below 5 MB.'
     }
-    $payloadHashBeforePackaging = (Get-FileHash -LiteralPath $applicationBinary -Algorithm SHA256).Hash
+    $offlinePayloadHash = (Get-FileHash -LiteralPath $offlineBinary -Algorithm SHA256).Hash
+    $litePayloadHash = (Get-FileHash -LiteralPath $liteBinary -Algorithm SHA256).Hash
 
-    Invoke-CheckedCommand 'Build bilingual installer from staged payload' {
+    Set-ActiveInstallerPayload $offlineStageDirectory
+    Invoke-CheckedCommand 'Build bilingual offline installer' {
         & $localizedInstallerScript `
             -DevenvPath $resolvedDevenv `
             -Configuration $Configuration `
             -Version $Version
     }
 
-    $portable = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-portable-x64.zip"
-    $setup = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-Setup.exe"
+    $offlinePortable = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-portable-offline-x64.zip"
+    $litePortable = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-portable-lite-x64.zip"
+    $offlineSetup = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-Setup-Offline.exe"
+    $webSetup = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-Setup-Web.exe"
     $source = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-source.zip"
     $msi = Join-Path $candidateDirectory "CodexQuotaPanel-$Version-x64.msi"
     $builtMsi = Join-Path $installerDirectory "$Configuration\CodexQuotaPanel-$Version-x64.msi"
     $transform = Join-Path $installerDirectory "$Configuration\CodexQuotaPanel-$Version-en-us.mst"
 
-    Invoke-CheckedCommand 'Assemble attachments from reused payload' {
-        Compress-Archive -Path (Join-Path $stageDirectory '*') -DestinationPath $portable -CompressionLevel Optimal
+    Invoke-CheckedCommand 'Assemble offline attachments' {
+        Compress-Archive -Path (Join-Path $offlineStageDirectory '*') -DestinationPath $offlinePortable -CompressionLevel Optimal
         Copy-Item -LiteralPath $builtMsi -Destination $msi
         & $launcherScript `
             -MsiPath $builtMsi `
             -EnglishTransformPath $transform `
-            -OutputPath $setup `
+            -OutputPath $offlineSetup `
             -Version $Version
-        if ($LASTEXITCODE -ne 0) { throw "Setup launcher failed with exit code $LASTEXITCODE." }
+        if ($LASTEXITCODE -ne 0) { throw "Offline setup launcher failed with exit code $LASTEXITCODE." }
+    }
+
+    Set-ActiveInstallerPayload $liteStageDirectory
+    Invoke-CheckedCommand 'Build bilingual lite installer' {
+        & $localizedInstallerScript `
+            -DevenvPath $resolvedDevenv `
+            -Configuration $Configuration `
+            -Version $Version
+    }
+    Invoke-CheckedCommand 'Assemble web and lite attachments' {
+        Compress-Archive -Path (Join-Path $liteStageDirectory '*') -DestinationPath $litePortable -CompressionLevel Optimal
+        & $launcherScript `
+            -MsiPath $builtMsi `
+            -EnglishTransformPath $transform `
+            -OutputPath $webSetup `
+            -Version $Version `
+            -RequiresDesktopRuntime `
+            -RuntimeDownloadUrl $runtimeDownloadUrl `
+            -RuntimeSha512 $runtimeSha512
+        if ($LASTEXITCODE -ne 0) { throw "Web setup launcher failed with exit code $LASTEXITCODE." }
         & git archive --format=zip --output=$source HEAD
         if ($LASTEXITCODE -ne 0) { throw "git archive failed with exit code $LASTEXITCODE." }
     }
 
-    $attachments = @($setup, $portable, $source, $msi)
+    $attachments = @($webSetup, $offlineSetup, $litePortable, $offlinePortable, $source, $msi)
     foreach ($attachment in $attachments)
     {
         if (-not (Test-Path -LiteralPath $attachment))
@@ -202,9 +256,14 @@ try
             throw "Expected release attachment was not created: $attachment"
         }
     }
-    if ((Get-FileHash -LiteralPath $applicationBinary -Algorithm SHA256).Hash -cne $payloadHashBeforePackaging)
+    if ((Get-FileHash -LiteralPath $offlineBinary -Algorithm SHA256).Hash -cne $offlinePayloadHash -or
+        (Get-FileHash -LiteralPath $liteBinary -Algorithm SHA256).Hash -cne $litePayloadHash)
     {
-        throw 'The staged application payload changed while installer and portable attachments were assembled.'
+        throw 'A published application payload changed while release attachments were assembled.'
+    }
+    if ((Get-Item -LiteralPath $webSetup).Length -gt 8MB)
+    {
+        throw 'The web installer exceeded the 8 MB size gate.'
     }
 
     $checksumPath = Join-Path $candidateDirectory "SHA256SUMS-v$Version.txt"
@@ -221,8 +280,10 @@ try
         Sort-Object Name |
         Select-Object -ExpandProperty Name
     $expectedNames = @(
-        "CodexQuotaPanel-$Version-Setup.exe",
-        "CodexQuotaPanel-$Version-portable-x64.zip",
+        "CodexQuotaPanel-$Version-Setup-Web.exe",
+        "CodexQuotaPanel-$Version-Setup-Offline.exe",
+        "CodexQuotaPanel-$Version-portable-lite-x64.zip",
+        "CodexQuotaPanel-$Version-portable-offline-x64.zip",
         "CodexQuotaPanel-$Version-source.zip",
         "CodexQuotaPanel-$Version-x64.msi",
         "SHA256SUMS-v$Version.txt"
@@ -262,7 +323,7 @@ try
     }
 
     $totalStopwatch.Stop()
-    Write-Output "PASS local release v$Version | application-builds=1 | reused-payload-sha256=$($payloadHashBeforePackaging.ToLowerInvariant())"
+    Write-Output "PASS local release v$Version | application-builds=offline+lite-host | payloads=offline+lite | offline-sha256=$($offlinePayloadHash.ToLowerInvariant()) | lite-sha256=$($litePayloadHash.ToLowerInvariant())"
     Write-Output "OUTPUT $candidateDirectory"
     $timingsJson = $timings | ConvertTo-Json -Compress
     Write-Output "TIMINGS $timingsJson total=$([math]::Round($totalStopwatch.Elapsed.TotalSeconds, 2))s"

@@ -1,10 +1,21 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 — Pre-release
 
 - 新增当前重置周期的每日 Token 汇总：悬停可查看精确输入、缓存输入、输出与推理用量，点击可展开每日及周期汇总。
 - 本地日志按模型与 `Default` / `Fast` 分类；缺失 `service_tier` 的会话会使用首个明确速率回填，否则按 `Default` 处理，显式 `priority` 仍归入 `Fast`。依据 2026-08-24 的 OpenAI 公开 API 价格估算美元成本；Auto-review 等无公开费率的记录标记为“未公开计价”，不会被当作免费或猜测定价。
 - 当服务端仅返回一个额度窗口时自动使用单环和单额度卡；第二个窗口恢复后自动恢复双环与双卡，并在显示器、远程桌面和窗口句柄变化后重新确认置顶状态。
+- 发布包拆分为轻量联网安装、完整离线安装、轻量便携和完整离线便携四种入口；联网安装器仅在缺少 .NET 9 Desktop Runtime 时从微软官方下载，并用发布元数据中的 SHA-512 校验下载内容。
+
+下载文件：
+
+- 推荐安装：`CodexQuotaPanel-0.5.0-Setup-Web.exe`
+- 完整离线安装：`CodexQuotaPanel-0.5.0-Setup-Offline.exe`
+- 轻量便携：`CodexQuotaPanel-0.5.0-portable-lite-x64.zip`
+- 完整离线便携：`CodexQuotaPanel-0.5.0-portable-offline-x64.zip`
+- 中文离线 MSI：`CodexQuotaPanel-0.5.0-x64.msi`
+- 完整源码：`CodexQuotaPanel-0.5.0-source.zip`
+- SHA-256：`SHA256SUMS-v0.5.0.txt`
 
 ## v0.4.1 — Pre-release
 

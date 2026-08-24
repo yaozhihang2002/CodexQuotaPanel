@@ -6,7 +6,10 @@
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.4.1'
+    [string]$Version = '0.5.0',
+    [switch]$RequiresDesktopRuntime,
+    [string]$RuntimeDownloadUrl = '',
+    [string]$RuntimeSha512 = ''
 )
 
 Set-StrictMode -Version Latest
@@ -31,6 +34,26 @@ $expectedAssemblyVersion = "$Version.0"
 if (-not $sourceText.Contains("[assembly: AssemblyVersion(`"$expectedAssemblyVersion`")]"))
 {
     throw "Setup launcher source version does not match requested version $Version."
+}
+if (-not $sourceText.Contains('__REQUIRES_DESKTOP_RUNTIME__') -or
+    -not $sourceText.Contains('__RUNTIME_DOWNLOAD_URL__') -or
+    -not $sourceText.Contains('__RUNTIME_SHA512__'))
+{
+    throw 'Setup launcher source is missing runtime bootstrap placeholders.'
+}
+if ($RequiresDesktopRuntime)
+{
+    if ($RuntimeDownloadUrl -notmatch '^https://builds\.dotnet\.microsoft\.com/' -or
+        $RuntimeSha512 -notmatch '^[0-9A-Fa-f]{128}$')
+    {
+        throw 'Web setup requires an official Microsoft runtime URL and a SHA-512 digest.'
+    }
+}
+
+function ConvertTo-CSharpStringLiteral {
+    param([AllowEmptyString()][string]$Value)
+
+    return $Value.Replace('\', '\\').Replace('"', '\"')
 }
 
 function Invoke-ComMethod {
@@ -107,8 +130,17 @@ if (-not $sourceText.Contains('__MSI_PRODUCT_CODE__'))
 }
 $generatedSource = Join-Path ([IO.Path]::GetTempPath()) (
     'CodexQuotaPanelSetupLauncher-' + [Guid]::NewGuid().ToString('N') + '.cs')
-$sourceText.Replace('__MSI_PRODUCT_CODE__', $productCode) |
-    Set-Content -LiteralPath $generatedSource -Encoding UTF8
+$sourceText = $sourceText.Replace('__MSI_PRODUCT_CODE__', $productCode)
+$sourceText = $sourceText.Replace(
+    '__REQUIRES_DESKTOP_RUNTIME__',
+    $(if ($RequiresDesktopRuntime) { 'true' } else { 'false' }))
+$sourceText = $sourceText.Replace(
+    '__RUNTIME_DOWNLOAD_URL__',
+    (ConvertTo-CSharpStringLiteral $RuntimeDownloadUrl))
+$sourceText = $sourceText.Replace(
+    '__RUNTIME_SHA512__',
+    (ConvertTo-CSharpStringLiteral $RuntimeSha512.ToLowerInvariant()))
+$sourceText | Set-Content -LiteralPath $generatedSource -Encoding UTF8
 
 $fullOutput = [IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = Split-Path -Parent $fullOutput
@@ -148,4 +180,5 @@ if ($assembly.Version.ToString() -ne $expectedAssemblyVersion)
 }
 
 $fileSize = (Get-Item -LiteralPath $fullOutput).Length
-Write-Output "PASS setup launcher v$Version | ProductCode=$productCode | default=zh-CN + en-US option + embedded MSI/MST | bytes=$fileSize | $fullOutput"
+$flavor = if ($RequiresDesktopRuntime) { 'web + runtime bootstrap' } else { 'offline' }
+Write-Output "PASS setup launcher v$Version | flavor=$flavor | ProductCode=$productCode | default=zh-CN + en-US option + embedded MSI/MST | bytes=$fileSize | $fullOutput"

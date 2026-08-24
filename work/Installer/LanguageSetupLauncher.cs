@@ -4,7 +4,9 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Net;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -12,8 +14,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("CodexQuotaPanel")]
 [assembly: AssemblyDescription("Bilingual setup launcher for CodexQuotaPanel")]
 [assembly: AssemblyCompany("CodexQuotaPanel")]
-[assembly: AssemblyVersion("0.4.1.0")]
-[assembly: AssemblyFileVersion("0.4.1.0")]
+[assembly: AssemblyVersion("0.5.0.0")]
+[assembly: AssemblyFileVersion("0.5.0.0")]
 
 namespace CodexQuotaPanelSetup
 {
@@ -64,6 +66,9 @@ namespace CodexQuotaPanelSetup
         private const string ProductCode = "__MSI_PRODUCT_CODE__";
         private const string ChineseMsiResource = "CodexQuotaPanel.Installer.zh-cn.msi";
         private const string EnglishTransformResource = "CodexQuotaPanel.Installer.en-us.mst";
+        private static readonly bool RequiresDesktopRuntime = __REQUIRES_DESKTOP_RUNTIME__;
+        private static readonly string RuntimeDownloadUrl = "__RUNTIME_DOWNLOAD_URL__";
+        private static readonly string RuntimeSha512 = "__RUNTIME_SHA512__";
         private static readonly Color Background = Color.FromArgb(18, 23, 21);
         private static readonly Color Surface = Color.FromArgb(27, 34, 31);
         private static readonly Color Border = Color.FromArgb(50, 62, 57);
@@ -103,7 +108,9 @@ namespace CodexQuotaPanelSetup
             Label eyebrow = new Label
             {
                 AutoSize = true,
-                Text = "CODEX · V0.4.1 PRE-RELEASE",
+                Text = RequiresDesktopRuntime
+                    ? "CODEX · V0.5.0 WEB SETUP"
+                    : "CODEX · V0.5.0 OFFLINE SETUP",
                 ForeColor = Accent,
                 Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
                 Location = new Point(32, 24)
@@ -123,7 +130,9 @@ namespace CodexQuotaPanelSetup
             Label subtitle = new Label
             {
                 AutoSize = true,
-                Text = "Choose the language used by Setup and the app on first launch.",
+                Text = RequiresDesktopRuntime
+                    ? "Small installer · downloads Microsoft .NET only when required."
+                    : "Complete offline installer · no separate runtime download required.",
                 ForeColor = TextMuted,
                 Font = new Font("Segoe UI", 9f, FontStyle.Regular),
                 Location = new Point(31, 88)
@@ -233,6 +242,7 @@ namespace CodexQuotaPanelSetup
             try
             {
                 Directory.CreateDirectory(temporaryDirectory);
+                EnsureDesktopRuntime(temporaryDirectory, english);
                 string msiPath = Path.Combine(temporaryDirectory, "CodexQuotaPanel.msi");
                 string transformPath = Path.Combine(temporaryDirectory, "en-us.mst");
                 ExtractResource(ChineseMsiResource, msiPath);
@@ -290,6 +300,133 @@ namespace CodexQuotaPanelSetup
                 Cursor = Cursors.Default;
                 _continueButton.Enabled = true;
                 TryDeleteDirectory(temporaryDirectory);
+            }
+        }
+
+        private void EnsureDesktopRuntime(string temporaryDirectory, bool english)
+        {
+            if (!RequiresDesktopRuntime || HasDesktopRuntime9()) return;
+
+            string runtimeInstaller = Path.Combine(
+                temporaryDirectory,
+                "windowsdesktop-runtime-9-win-x64.exe");
+            _status.Text = english
+                ? "Downloading Microsoft .NET Desktop Runtime…"
+                : "正在下载 Microsoft .NET 桌面运行库…";
+            Application.DoEvents();
+
+            Exception downloadError = null;
+            using (WebClient client = new WebClient())
+            {
+                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+                client.Headers.Add(HttpRequestHeader.UserAgent, "CodexQuotaPanel-Setup/0.5.0");
+                client.DownloadProgressChanged += delegate(object sender, DownloadProgressChangedEventArgs args)
+                {
+                    _status.Text = english
+                        ? "Downloading Microsoft .NET… " + args.ProgressPercentage + "%"
+                        : "正在下载 Microsoft .NET… " + args.ProgressPercentage + "%";
+                };
+                client.DownloadFileCompleted += delegate(object sender, System.ComponentModel.AsyncCompletedEventArgs args)
+                {
+                    if (args.Error != null) downloadError = args.Error;
+                    else if (args.Cancelled) downloadError = new OperationCanceledException("Runtime download was cancelled.");
+                };
+                client.DownloadFileAsync(new Uri(RuntimeDownloadUrl), runtimeInstaller);
+                while (client.IsBusy)
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(25);
+                }
+            }
+
+            if (downloadError != null)
+            {
+                throw new InvalidOperationException(
+                    english
+                        ? "The Microsoft .NET runtime could not be downloaded. Use the Offline Setup when the network is unavailable."
+                        : "无法下载 Microsoft .NET 运行库。网络不可用时请改用完整离线安装包。",
+                    downloadError);
+            }
+
+            VerifySha512(runtimeInstaller, RuntimeSha512);
+            _status.Text = english
+                ? "Installing Microsoft .NET Desktop Runtime…"
+                : "正在安装 Microsoft .NET 桌面运行库…";
+            Application.DoEvents();
+
+            using (Process process = Process.Start(new ProcessStartInfo
+            {
+                FileName = runtimeInstaller,
+                Arguments = "/install /passive /norestart",
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = temporaryDirectory
+            }))
+            {
+                if (process == null) throw new InvalidOperationException("Unable to start the Microsoft .NET installer.");
+                process.WaitForExit();
+                if (process.ExitCode != 0 && process.ExitCode != 1641 && process.ExitCode != 3010)
+                {
+                    throw new InvalidOperationException("Microsoft .NET installer returned code " + process.ExitCode + ".");
+                }
+            }
+
+            if (!HasDesktopRuntime9())
+            {
+                throw new InvalidOperationException(
+                    english
+                        ? "Microsoft .NET Desktop Runtime 9 was not detected after installation."
+                        : "安装结束后仍未检测到 Microsoft .NET 9 桌面运行库。");
+            }
+        }
+
+        private static bool HasDesktopRuntime9()
+        {
+            string registryLocation = null;
+            try
+            {
+                using (RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                using (RegistryKey key = baseKey.OpenSubKey(@"SOFTWARE\dotnet\Setup\InstalledVersions\x64"))
+                {
+                    if (key != null) registryLocation = key.GetValue("InstallLocation") as string;
+                }
+            }
+            catch (System.Security.SecurityException) { }
+            catch (UnauthorizedAccessException) { }
+
+            string[] roots =
+            {
+                Environment.GetEnvironmentVariable("DOTNET_ROOT_X64"),
+                registryLocation,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet")
+            };
+            foreach (string root in roots)
+            {
+                if (string.IsNullOrWhiteSpace(root)) continue;
+                string sharedFramework = Path.Combine(root, "shared", "Microsoft.WindowsDesktop.App");
+                if (!Directory.Exists(sharedFramework)) continue;
+                try
+                {
+                    if (Directory.GetDirectories(sharedFramework, "9.*").Length > 0) return true;
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return false;
+        }
+
+        private static void VerifySha512(string path, string expectedHash)
+        {
+            byte[] digest;
+            using (SHA512 sha = SHA512.Create())
+            using (FileStream stream = File.OpenRead(path))
+            {
+                digest = sha.ComputeHash(stream);
+            }
+            string actualHash = BitConverter.ToString(digest).Replace("-", "").ToLowerInvariant();
+            if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("Microsoft .NET runtime SHA-512 verification failed.");
             }
         }
 
