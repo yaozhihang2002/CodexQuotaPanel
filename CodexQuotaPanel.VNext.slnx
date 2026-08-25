@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodexQuota.Domain/CodexQuota.Domain.csproj" />
+    <Project Path="src/CodexQuota.Application/CodexQuota.Application.csproj" />
+    <Project Path="src/CodexQuota.Infrastructure/CodexQuota.Infrastructure.csproj" />
+    <Project Path="src/CodexQuota.UI.Avalonia/CodexQuota.UI.Avalonia.csproj" />
+    <Project Path="src/CodexQuota.Platform.Windows/CodexQuota.Platform.Windows.csproj" />
+    <Project Path="src/CodexQuota.Platform.macOS/CodexQuota.Platform.macOS.csproj" />
+    <Project Path="src/CodexQuota.App/CodexQuota.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodexQuota.Domain.Tests/CodexQuota.Domain.Tests.csproj" />
+    <Project Path="tests/CodexQuota.Application.Tests/CodexQuota.Application.Tests.csproj" />
+    <Project Path="tests/CodexQuota.Infrastructure.Tests/CodexQuota.Infrastructure.Tests.csproj" />
+    <Project Path="tests/CodexQuota.UI.Tests/CodexQuota.UI.Tests.csproj" />
+  </Folder>
+</Solution>

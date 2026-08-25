@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../CodexQuota.Domain/CodexQuota.Domain.csproj" />
+    <ProjectReference Include="../CodexQuota.Application/CodexQuota.Application.csproj" />
+  </ItemGroup>
+</Project>

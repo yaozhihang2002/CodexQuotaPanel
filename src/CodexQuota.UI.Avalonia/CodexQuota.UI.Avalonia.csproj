@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <ProjectReference Include="../CodexQuota.Domain/CodexQuota.Domain.csproj" />
+    <ProjectReference Include="../CodexQuota.Application/CodexQuota.Application.csproj" />
+  </ItemGroup>
+</Project>
