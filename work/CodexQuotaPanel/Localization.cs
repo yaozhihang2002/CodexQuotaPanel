@@ -185,8 +185,8 @@ internal static class L10n
     public static string ReleaseNotesTitle => Pick("更新说明", "Release notes");
     public static string PreReleaseLabel => Pick("预发布", "PRE-RELEASE");
     public static string ReleaseNotesSummary => Pick(
-        "分窗口精确保留完整 24 小时趋势并支持曲线悬停；修复滚轮误触和控件白边，继续保留已有设置。",
-        "Preserves exact per-window 24-hour trends with hover details; fixes wheel edits and control edges while retaining existing settings.");
+        "额度趋势新增半透明均匀使用参考线，悬停可同时比较实际额度与规划额度；继续保留已有设置。",
+        "Adds a translucent even-use guide to quota trends with actual-versus-planned hover details while retaining existing settings.");
     public static string GitHubProject => Pick("GitHub 项目", "GitHub project");
     public static string OpenLinkFailed => Pick("无法打开链接，请复制后在浏览器中访问。", "Could not open the link. Copy it and open it in your browser.");
     public static string QuotaAlerts => Pick("额度提醒", "Quota alerts");

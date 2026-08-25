@@ -67,8 +67,8 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         Math.Abs(labelAt200 / labelAt100 - 2f) > 0.001f ||
         dpiSafeFont.Unit != GraphicsUnit.Pixel)
         throw new InvalidOperationException("The orb label font is not using single-pass pixel scaling.");
-    if (GitHubReleaseUpdateService.CurrentVersionText != "0.5.1")
-        throw new InvalidOperationException("The local candidate version is not v0.5.1.");
+    if (GitHubReleaseUpdateService.CurrentVersionText != "0.5.2")
+        throw new InvalidOperationException("The local candidate version is not v0.5.2.");
 
     var guideMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
     var guideReset = DateTimeOffset.FromUnixTimeSeconds((guideMinute + 60) * 60);

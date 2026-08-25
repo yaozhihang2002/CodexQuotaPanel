@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.2 — Pre-release
+
+- 24 小时额度趋势新增“均匀使用参考线”：依据当前额度窗口的周期开始与重置时间，从 100% 线性下降至 0%，用于判断当前使用节奏是否偏快。
+- 参考线仅绘制当前重置周期，周期之外或缺少可靠重置时间时不会显示，避免把上一周期数据误作规划基准。
+- 主曲线与参考线均改为更纤细的抗锯齿绘制；参考线使用独立暖色与半透明叠加，不遮挡真实额度变化。
+- 鼠标悬停趋势时同时显示本地时间、实际剩余额度与均匀使用参考额度，并分别高亮两条曲线的对应点。
+- 保留 v0.5.1 的 Token 统计、单/双环自适应、位置、主题、设置格式和覆盖安装升级兼容性。
+
+下载文件：
+
+- 推荐安装：`CodexQuotaPanel-0.5.2-Setup-Web.exe`
+- 完整离线安装：`CodexQuotaPanel-0.5.2-Setup-Offline.exe`
+- 轻量便携：`CodexQuotaPanel-0.5.2-portable-lite-x64.zip`
+- 完整离线便携：`CodexQuotaPanel-0.5.2-portable-offline-x64.zip`
+- 中文离线 MSI：`CodexQuotaPanel-0.5.2-x64.msi`
+- 完整源码：`CodexQuotaPanel-0.5.2-source.zip`
+- SHA-256：`SHA256SUMS-v0.5.2.txt`
+
 ## v0.5.1 — Pre-release
 
 - 重构 Token 统计为增量优先、累计兜底的统一口径，兼容仅含 `last_token_usage` 或 `total_token_usage` 的记录，并识别累计计数器重置。

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.5.1',
+    [string]$Version = '0.5.2',
     [string]$DevenvPath,
     [string]$OutputDirectory,
     [switch]$PublishToGitHub,
