@@ -23,8 +23,8 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
           cache: true
@@ -44,7 +44,7 @@ jobs:
       - name: UI render check
         run: dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- artifacts/vnext-preview.png
       - name: Upload UI render
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vnext-preview-${{ matrix.os }}
           path: artifacts/vnext-preview.png
