@@ -14,6 +14,10 @@ public sealed class PreviewWindow : Window
     private static readonly IBrush TextMuted = Brush("#9BADA4");
     private static readonly IBrush Mint = Brush("#57D9AA");
 
+    public Grid ContentRegion { get; private set; } = null!;
+    public StackPanel SummaryCards { get; private set; } = null!;
+    public Border OrbPreviewPanel { get; private set; } = null!;
+
     public PreviewWindow()
     {
         Title = "CodexQuota vNext Preview";
@@ -94,6 +98,7 @@ public sealed class PreviewWindow : Window
             RowDefinitions = new RowDefinitions("Auto,*"),
             Margin = new Thickness(30, 24)
         };
+        ContentRegion = content;
         Grid.SetRow(content, 1);
         Grid.SetColumn(content, 1);
 
@@ -118,6 +123,7 @@ public sealed class PreviewWindow : Window
             Margin = new Thickness(0, 24, 20, 0),
             Spacing = 12
         };
+        SummaryCards = cards;
         Grid.SetRow(cards, 1);
         cards.Children.Add(Card("CURRENT WINDOW", "62% remaining", "5d 16h until reset", Mint));
         cards.Children.Add(Card("PACE", "0.4% / hour", "Safely inside the 0.5% / hour guide", Brush("#7EC4FF")));
@@ -148,6 +154,7 @@ public sealed class PreviewWindow : Window
                 }
             }
         };
+        OrbPreviewPanel = orbPanel;
         Grid.SetRow(orbPanel, 1);
         Grid.SetColumn(orbPanel, 1);
         content.Children.Add(orbPanel);
