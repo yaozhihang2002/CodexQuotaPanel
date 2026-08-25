@@ -39,6 +39,8 @@ internal sealed partial class QuotaForm
             TopMost = _alwaysOnTopPreference
         };
         _tokenUsageDetails.FormClosed += (_, _) => _tokenUsageDetails = null;
+        var targetScreen = DisplayPlacement.SelectScreen(Bounds);
+        _tokenUsageDetails.CenterOnWorkingArea(targetScreen.WorkingArea);
         _tokenUsageDetails.Show(this);
     }
 

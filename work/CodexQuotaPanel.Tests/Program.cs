@@ -67,8 +67,8 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
         Math.Abs(labelAt200 / labelAt100 - 2f) > 0.001f ||
         dpiSafeFont.Unit != GraphicsUnit.Pixel)
         throw new InvalidOperationException("The orb label font is not using single-pass pixel scaling.");
-    if (GitHubReleaseUpdateService.CurrentVersionText != "0.6.0")
-        throw new InvalidOperationException("The local candidate version is not v0.6.0.");
+    if (GitHubReleaseUpdateService.CurrentVersionText != "0.5.1")
+        throw new InvalidOperationException("The local candidate version is not v0.5.1.");
 
     var singlePanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 518), 168);
     var dualPanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 596), 168);
@@ -82,7 +82,9 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
 
     var negativeArea = new Rectangle(-1920, 0, 1920, 1080);
     var clamped = DisplayPlacement.ClampToArea(new Rectangle(-2100, 1000, 132, 132), negativeArea);
+    var centered = DisplayPlacement.CenterInArea(new Size(620, 590), negativeArea);
     if (clamped != new Rectangle(-1920, 948, 132, 132) ||
+        centered != new Point(-1270, 245) ||
         DisplayPlacement.ScaleLogicalPixels(88, 144) != 132 ||
         !QuotaForm.IsOrbDragGesture(new Size(5, 0), Size.Empty, new Size(8, 8)) ||
         QuotaForm.IsOrbDragGesture(new Size(2, 2), Size.Empty, new Size(8, 8)))

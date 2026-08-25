@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.0--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.5.1--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-f0c674"></a>
@@ -16,7 +16,7 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.6.0 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.5.1 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
 ## 一眼了解
 
@@ -59,7 +59,7 @@
   <img src="docs/images/tray-status.png" width="640" alt="CodexQuotaPanel 动态托盘额度图标">
 </p>
 
-## v0.6.0 Pre-release 功能
+## v0.5.1 Pre-release 功能
 
 ### 额度与显示
 
@@ -91,7 +91,7 @@
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.0` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.5.1` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
 
 推荐下载 `Setup-Web.exe`：文件本身约 1–3 MB，只有电脑缺少 .NET 9 Desktop Runtime 时才从微软官方下载并校验运行库。无法联网时使用 `Setup-Offline.exe`；它包含完整运行环境。便携包也分为轻量版与完整离线版，所有附件均提供 SHA-256 校验文件。预发布版仍可能存在特定显卡、DPI 组合或系统环境下的兼容性问题。
 
@@ -113,10 +113,10 @@ dotnet run --project work\CodexQuotaPanel.Tests\CodexQuotaPanel.Tests.csproj -c 
 在装有 Visual Studio Installer Projects 的开发机上，可使用一次构建、多产物复用的本地发布脚本：
 
 ```powershell
-work\Installer\Build-Release.ps1 -Version 0.6.0
+work\Installer\Build-Release.ps1 -Version 0.5.1
 ```
 
-脚本默认只生成并验证本地产物；确认版本无误并已经创建对应 Git 标签后，可显式添加 `-PublishToGitHub -PublishConfirmation "PUBLISH v0.6.0"`，直接复用同一批产物上传，不会重新构建。脚本分别生成自包含载荷与体积很小的 framework-dependent 主机，随后由中英文安装器和便携包共同复用，不会为每个附件重复构建应用。
+脚本默认只生成并验证本地产物；确认版本无误并已经创建对应 Git 标签后，可显式添加 `-PublishToGitHub -PublishConfirmation "PUBLISH v0.5.1"`，直接复用同一批产物上传，不会重新构建。脚本分别生成自包含载荷与体积很小的 framework-dependent 主机，随后由中英文安装器和便携包共同复用，不会为每个附件重复构建应用。
 
 项目结构：
 

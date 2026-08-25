@@ -147,6 +147,7 @@ internal sealed partial class QuotaForm
             Math.Max(area.Top, area.Bottom - orbSize.Height - margin));
         orbLocation = ClampOrbLocation(orbLocation);
         _collapsedBounds = new Rectangle(orbLocation, orbSize);
+        _orbReturnLocation = orbLocation;
 
         if (_collapsed)
         {
@@ -178,6 +179,7 @@ internal sealed partial class QuotaForm
         else if (_collapsed)
         {
             _collapsedBounds = Bounds;
+            _orbReturnLocation = Bounds.Location;
             var expandedSize = ScaledSize(ExpandedPanelSize);
             var target = ClampToWorkingArea(new Rectangle(
                 Bounds.Right - expandedSize.Width,
@@ -248,10 +250,11 @@ internal sealed partial class QuotaForm
 
         _expandedBounds = Bounds;
         var orbSize = ScaledOrbSize();
-        var target = _collapsedBounds.IsEmpty
-            ? new Rectangle(Bounds.Right - orbSize.Width, Bounds.Bottom - orbSize.Height, orbSize.Width, orbSize.Height)
-            : new Rectangle(_collapsedBounds.Location, orbSize);
-        target = ClampToWorkingArea(target);
+        var returnLocation = _orbReturnLocation ??
+                             (_collapsedBounds.IsEmpty
+                                 ? new Point(Bounds.Right - orbSize.Width, Bounds.Bottom - orbSize.Height)
+                                 : _collapsedBounds.Location);
+        var target = ResolveOrbReturnBounds(returnLocation);
         _collapsedBounds = target;
         if (animate) BeginTransition(target, expanding: false);
         else

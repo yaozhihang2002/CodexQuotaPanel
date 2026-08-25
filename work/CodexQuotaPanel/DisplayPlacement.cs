@@ -44,6 +44,10 @@ internal static class DisplayPlacement
         return bounds;
     }
 
+    internal static Point CenterInArea(Size size, Rectangle area) => new(
+        area.Left + Math.Max(0, (area.Width - size.Width) / 2),
+        area.Top + Math.Max(0, (area.Height - size.Height) / 2));
+
     internal static int ScaleLogicalPixels(int logicalPixels, int dpi) =>
         Math.Max(1, (int)Math.Round(logicalPixels * Math.Max(96, dpi) / 96d));
 

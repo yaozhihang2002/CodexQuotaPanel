@@ -110,6 +110,7 @@ internal sealed partial class QuotaForm : Form
     private Rectangle _orbResizePreviewTo;
     private Rectangle _collapsedBounds;
     private Rectangle _expandedBounds;
+    private Point? _orbReturnLocation;
     private Point _orbDragStartScreen;
     private int _detailLayoutDpi;
     private int _availableWindowCount;
@@ -811,6 +812,7 @@ internal sealed partial class QuotaForm : Form
                 Bounds.Bottom - orbSize.Height,
                 orbSize.Width,
                 orbSize.Height));
+            _orbReturnLocation = _collapsedBounds.Location;
             if (previousOrbLocation != _collapsedBounds.Location)
                 OrbPositionChanged?.Invoke(_collapsedBounds.Location);
         }

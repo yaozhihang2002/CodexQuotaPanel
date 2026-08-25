@@ -181,6 +181,7 @@ internal sealed partial class QuotaForm
             {
                 _collapsed = true;
                 NormalizeCollapsedGeometry(_transitionTo.Location);
+                _orbReturnLocation = null;
                 SetDetailControlsVisible(false);
                 _orb.Visible = true;
                 _orb.Bounds = ClientRectangle;
@@ -257,6 +258,7 @@ internal sealed partial class QuotaForm
         _animating = false;
         _collapsed = true;
         NormalizeCollapsedGeometry(location);
+        _orbReturnLocation = null;
         ApplyAdaptiveQuotaWindowLayout();
         ApplyOrbPresentation();
         SetDetailControlsVisible(false);
@@ -394,6 +396,19 @@ internal sealed partial class QuotaForm
         return new Point(
             Math.Clamp(location.X, area.Left, Math.Max(area.Left, area.Right - side)),
             Math.Clamp(location.Y, area.Top, Math.Max(area.Top, area.Bottom - side)));
+    }
+
+    private Rectangle ResolveOrbReturnBounds(Point location)
+    {
+        var storedSize = _collapsedBounds.IsEmpty ? ScaledOrbSize() : _collapsedBounds.Size;
+        var storedBounds = new Rectangle(location, storedSize);
+        var screen = DisplayPlacement.SelectScreen(storedBounds);
+        var targetDpi = DisplayPlacement.GetEffectiveDpi(screen, DeviceDpi);
+        var side = DisplayPlacement.ScaleLogicalPixels(_orbLogicalSize, targetDpi);
+        var candidate = new Rectangle(location, new Size(side, side));
+        return screen.WorkingArea.Contains(candidate)
+            ? candidate
+            : DisplayPlacement.ClampToArea(candidate, screen.WorkingArea);
     }
 
     private Point SnapOrbLocationToNearbyEdge(Point location)

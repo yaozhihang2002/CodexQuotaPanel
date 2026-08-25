@@ -227,6 +227,7 @@ internal sealed partial class QuotaForm
         else
         {
             _collapsedBounds = new Rectangle(nextLocation, orbSize);
+            _orbReturnLocation = nextLocation;
             _orb.Size = orbSize;
             _orb.Location = new Point(
                 Math.Max(0, ClientSize.Width - orbSize.Width),

@@ -16,7 +16,7 @@ internal sealed class TokenUsageDetailsForm : Form
         ClientSize = new Size(620, 590);
         MinimumSize = new Size(520, 440);
         MaximumSize = new Size(900, 900);
-        StartPosition = FormStartPosition.CenterParent;
+        StartPosition = FormStartPosition.Manual;
         FormBorderStyle = FormBorderStyle.Sizable;
         BackColor = UiPalette.Canvas;
         ForeColor = UiPalette.Text;
@@ -51,6 +51,16 @@ internal sealed class TokenUsageDetailsForm : Form
     {
         _view.SetUsage(usage);
         ResizeContent();
+    }
+
+    internal void CenterOnWorkingArea(Rectangle workingArea)
+    {
+        // Create the hidden native handle first so PerMonitorV2 can settle the
+        // target DPI before the final center point is calculated. Doing the
+        // calculation twice accounts for a hidden WM_DPICHANGED size update.
+        _ = Handle;
+        Location = DisplayPlacement.CenterInArea(Size, workingArea);
+        Location = DisplayPlacement.CenterInArea(Size, workingArea);
     }
 
     internal void ApplyLanguage()

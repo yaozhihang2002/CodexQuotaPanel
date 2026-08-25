@@ -133,6 +133,22 @@ internal static class TokenUsageChecks
             form.ReassertTopMostPreference();
             Assert(form.AlwaysOnTopPreference && form.TopMost,
                 "The saved top-most preference was not reasserted after native state loss.");
+
+            var orbHome = Screen.PrimaryScreen?.WorkingArea.Location ?? new Point(80, 80);
+            orbHome.Offset(40, 40);
+            form.ShowOrb(animate: false);
+            form.RestoreOrbLocation(orbHome.X, orbHome.Y);
+            var beforeRoundTrip = form.Location;
+            form.ShowDetails(animate: false);
+            form.CollapseToOrb(animate: false);
+            Assert(form.Location == beforeRoundTrip,
+                "Expanding and collapsing an unmoved panel changed the orb location.");
+
+            using var centeredDetails = new TokenUsageDetailsForm(usage);
+            var workingArea = DisplayPlacement.SelectScreen(form.Bounds).WorkingArea;
+            centeredDetails.CenterOnWorkingArea(workingArea);
+            Assert(centeredDetails.Location == DisplayPlacement.CenterInArea(centeredDetails.Size, workingArea),
+                "The token usage details window was not centered on the active monitor.");
         }
         finally
         {
