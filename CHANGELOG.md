@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.6.0 — Pre-release
+
+- 重构 Token 统计为增量优先、累计兜底的统一口径，兼容仅含 `last_token_usage` 或 `total_token_usage` 的记录，并识别累计计数器重置。
+- 新增缓存写入 Token 解析与 API 等价美元估算；缓存写入按公开价格口径单独计算，不再混入普通未缓存输入。
+- 对重复快照、归档副本及分叉日志复制前缀进行事件指纹去重，避免同一段使用记录被重复累计。
+- 新增版本化本地持久缓存和安全的追加读取：未变化文件跨重启直接复用，增长中的 JSONL 只读取新增部分；文件被改写时自动回退为完整重建。
+- 使用明细页新增数据质量摘要，展示归因覆盖率、缓存命中、增量读取和去重数量；悬浮球与主详情面板保持原有简洁布局。
+- 保留单/双环自适应、24 小时逐分钟趋势、主题、动画、位置、安装升级和旧版设置兼容性。
+
+下载文件：
+
+- 推荐安装：`CodexQuotaPanel-0.6.0-Setup-Web.exe`
+- 完整离线安装：`CodexQuotaPanel-0.6.0-Setup-Offline.exe`
+- 轻量便携：`CodexQuotaPanel-0.6.0-portable-lite-x64.zip`
+- 完整离线便携：`CodexQuotaPanel-0.6.0-portable-offline-x64.zip`
+- 中文离线 MSI：`CodexQuotaPanel-0.6.0-x64.msi`
+- 完整源码：`CodexQuotaPanel-0.6.0-source.zip`
+- SHA-256：`SHA256SUMS-v0.6.0.txt`
+
 ## v0.5.0 — Pre-release
 
 - 新增当前重置周期的每日 Token 汇总：悬停可查看精确输入、缓存输入、输出与推理用量，点击可展开每日及周期汇总。

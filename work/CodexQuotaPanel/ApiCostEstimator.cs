@@ -12,6 +12,7 @@ internal static class ApiCostEstimator
     internal const string FastSourceUrl = "https://openai.com/api-fast-mode/";
     private const decimal TokensPerMillion = 1_000_000m;
     private const long LongContextThreshold = 272_000;
+    private const decimal CacheWriteInputMultiplier = 1.25m;
 
     private static readonly IReadOnlyDictionary<string, Price> DefaultPrices =
         new Dictionary<string, Price>(StringComparer.OrdinalIgnoreCase)
@@ -38,9 +39,11 @@ internal static class ApiCostEstimator
         var inputMultiplier = usage.InputTokens > LongContextThreshold ? 2m : 1m;
         var outputMultiplier = usage.InputTokens > LongContextThreshold ? 1.5m : 1m;
         var cached = Math.Min(usage.CachedInputTokens, usage.InputTokens);
-        var uncached = Math.Max(0, usage.InputTokens - cached);
+        var cacheWrite = Math.Min(usage.CacheWriteInputTokens, Math.Max(0, usage.InputTokens - cached));
+        var uncached = Math.Max(0, usage.InputTokens - cached - cacheWrite);
         var usdPerMillion =
             uncached * price.Input * speedMultiplier * inputMultiplier +
+            cacheWrite * price.Input * CacheWriteInputMultiplier * speedMultiplier * inputMultiplier +
             cached * price.CachedInput * speedMultiplier * inputMultiplier +
             usage.OutputTokens * price.Output * speedMultiplier * outputMultiplier;
         return new ApiCostEstimate(usdPerMillion / TokensPerMillion, true);

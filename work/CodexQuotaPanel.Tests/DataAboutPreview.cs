@@ -13,7 +13,7 @@ internal static class DataAboutPreview
             SettingsFontScalePercent = PanelPreferenceManager.MaximumSettingsFontScale
         };
         using var settings = new SettingsForm(preferences, startupEnabled: false, snapshot: null,
-            diagnostics: "CodexQuotaPanel v0.5.0 Pre-release");
+            diagnostics: "CodexQuotaPanel v0.6.0 Pre-release");
         settings.Show();
         Application.DoEvents();
         settings.SelectPageForTest(4);
@@ -70,7 +70,7 @@ internal static class DataAboutPreview
         Application.DoEvents();
         CaptureClient(settings, outputPath);
         settings.Hide();
-        Console.WriteLine($"PASS data & about preview | maximum typography + v0.5.0 Pre-release | {Path.GetFullPath(outputPath)}");
+        Console.WriteLine($"PASS data & about preview | maximum typography + v0.6.0 Pre-release | {Path.GetFullPath(outputPath)}");
     }
 
     private static string AddSuffix(string path, string suffix)

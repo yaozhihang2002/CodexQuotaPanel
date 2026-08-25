@@ -19,7 +19,8 @@ internal static class TokenUsagePreview
                 Day(start.AddDays(3), 79_610, 72_100, 31_600, 7_510, 3_020)
             ],
             now,
-            12);
+            12,
+            new TokenUsageDiagnostics(12, 9, 2, 184, 0, 6, 11, 272_860, 272_860));
         var snapshot = new QuotaSnapshot(
             "codex", null, null,
             new LimitBucket(37, 10080, reset),

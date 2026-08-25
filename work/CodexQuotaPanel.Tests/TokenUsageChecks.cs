@@ -63,14 +63,18 @@ internal static class TokenUsageChecks
                 "gpt-5.6-luna", "default", new TokenUsageBreakdown(130, 100, 20, 30, 0));
             var longContext = ApiCostEstimator.Estimate(
                 "gpt-5.6-luna", "default", new TokenUsageBreakdown(272_101, 272_001, 0, 100, 40));
+            var cacheWrite = ApiCostEstimator.Estimate(
+                "gpt-5.6-luna", "default", new TokenUsageBreakdown(130, 100, 20, 30, 12, 10));
             Assert(baseline == new ApiCostEstimate(0.0000524m, true) &&
                    fast == new ApiCostEstimate(0.0001048m, true) &&
                    withoutReasoningDetail == baseline &&
                    longContext == new ApiCostEstimate(0.1089804m, true) &&
+                   cacheWrite == new ApiCostEstimate(0.0000529m, true) &&
                    !unknown.IsPriced,
-                "The API estimate, Fast/long-context multiplier, reasoning subset, or unknown-model boundary is wrong.");
+                "The API estimate, cache-write/Fast/long-context multiplier, reasoning subset, or unknown-model boundary is wrong.");
 
             VerifyMissingTierFallback(root, startsAt, resetsAt);
+            VerifyFlexibleRecordsAndPersistentCache(root, startsAt, resetsAt);
 
             var snapshot = new QuotaSnapshot("codex", null, null,
                 new LimitBucket(38, 10080, resetsAt), null, "pro", null,
@@ -143,7 +147,8 @@ internal static class TokenUsageChecks
         long input,
         long cached,
         long output,
-        long reasoning) => System.Text.Json.JsonSerializer.Serialize(new
+        long reasoning,
+        long cacheWrite = 0) => System.Text.Json.JsonSerializer.Serialize(new
         {
             timestamp = timestamp.UtcDateTime.ToString("O"),
             type = "event_msg",
@@ -166,6 +171,7 @@ internal static class TokenUsageChecks
                         cached_input_tokens = cached,
                         output_tokens = output,
                         reasoning_output_tokens = reasoning,
+                        cache_write_input_tokens = cacheWrite,
                         total_tokens = total
                     },
                     model_context_window = 200000
@@ -243,6 +249,112 @@ internal static class TokenUsageChecks
             L10n.SetLanguage(originalLanguage);
         }
     }
+
+    private static void VerifyFlexibleRecordsAndPersistentCache(
+        string root,
+        DateTimeOffset startsAt,
+        DateTimeOffset resetsAt)
+    {
+        var flexibleRoot = Path.Combine(root, "flexible-records");
+        var sessions = Path.Combine(flexibleRoot, "sessions", "2026", "08", "01");
+        Directory.CreateDirectory(sessions);
+        var lastOnly = LastOnlyEvent(startsAt.AddMinutes(1), "turn-last", 120, 100, 30, 20, 7, 10);
+        File.WriteAllLines(Path.Combine(sessions, "rollout-last.jsonl"),
+        [
+            TurnContext(startsAt, "gpt-5.6-luna"),
+            lastOnly,
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":"
+        ]);
+        File.WriteAllLines(Path.Combine(sessions, "rollout-cumulative.jsonl"),
+        [
+            TurnContext(startsAt, "gpt-5.6-terra"),
+            CumulativeOnlyEvent(startsAt.AddMinutes(2), 100, 80, 20),
+            CumulativeOnlyEvent(startsAt.AddMinutes(3), 150, 120, 30)
+        ]);
+        // A fork/copy can replay an identical token event under another file name.
+        File.WriteAllLines(Path.Combine(sessions, "rollout-fork.jsonl"),
+        [
+            TurnContext(startsAt, "gpt-5.6-luna"),
+            lastOnly
+        ]);
+
+        var cachePath = Path.Combine(flexibleRoot, "cache", "tokens.json");
+        var first = new TokenUsageHistory(flexibleRoot, cachePath)
+            .ReadCycle(startsAt, resetsAt, 10080, startsAt.AddHours(1));
+        Assert(first.Total.TotalTokens == 270 && first.Total.CacheWriteInputTokens == 10,
+            "Last-only, cumulative-only, or cache-write token records were normalized incorrectly.");
+        Assert(first.Health.MalformedTokenLineCount == 1 && first.Health.DuplicateEventCount >= 1,
+            "Malformed input or copied-prefix deduplication was not reported.");
+        Assert(File.Exists(cachePath), "The versioned persistent token cache was not saved.");
+
+        var warm = new TokenUsageHistory(flexibleRoot, cachePath)
+            .ReadCycle(startsAt, resetsAt, 10080, startsAt.AddHours(1));
+        Assert(warm.Total.TotalTokens == first.Total.TotalTokens && warm.Health.CachedFileCount == 3,
+            "A warm restart did not reuse the persistent token cache exactly.");
+
+        File.AppendAllLines(Path.Combine(sessions, "rollout-last.jsonl"),
+        [LastOnlyEvent(startsAt.AddMinutes(4), "turn-appended", 50, 40, 8, 10, 3, 2)]);
+        var appended = new TokenUsageHistory(flexibleRoot, cachePath)
+            .ReadCycle(startsAt, resetsAt, 10080, startsAt.AddHours(1));
+        Assert(appended.Total.TotalTokens == 320 && appended.Health.IncrementalFileCount == 1,
+            "An append-only session update was not read incrementally or changed earlier totals.");
+    }
+
+    private static string LastOnlyEvent(
+        DateTimeOffset timestamp,
+        string turnId,
+        long total,
+        long input,
+        long cached,
+        long output,
+        long reasoning,
+        long cacheWrite) => System.Text.Json.JsonSerializer.Serialize(new
+        {
+            timestamp = timestamp.UtcDateTime.ToString("O"),
+            type = "event_msg",
+            payload = new
+            {
+                type = "token_count",
+                turn_id = turnId,
+                info = new
+                {
+                    last_token_usage = new
+                    {
+                        input_tokens = input,
+                        cached_input_tokens = cached,
+                        cache_write_input_tokens = cacheWrite,
+                        output_tokens = output,
+                        reasoning_output_tokens = reasoning,
+                        total_tokens = total
+                    }
+                }
+            }
+        });
+
+    private static string CumulativeOnlyEvent(
+        DateTimeOffset timestamp,
+        long total,
+        long input,
+        long output) => System.Text.Json.JsonSerializer.Serialize(new
+        {
+            timestamp = timestamp.UtcDateTime.ToString("O"),
+            type = "event_msg",
+            payload = new
+            {
+                type = "token_count",
+                info = new
+                {
+                    total_token_usage = new
+                    {
+                        input_tokens = input,
+                        cached_input_tokens = 0,
+                        output_tokens = output,
+                        reasoning_output_tokens = 0,
+                        total_tokens = total
+                    }
+                }
+            }
+        });
 
     private static void Assert(bool condition, string message)
     {

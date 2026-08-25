@@ -225,9 +225,15 @@ internal sealed class DailyTokenUsageControl : Control
         var unpriced = day.UnpricedTokens > 0
             ? L10n.Pick($"\n未公开计价 {day.UnpricedTokens:N0} raw token", $"\nNo public rate for {day.UnpricedTokens:N0} raw tokens")
             : string.Empty;
+        var cacheWriteZh = usage.CacheWriteInputTokens > 0
+            ? $"，写入 {usage.CacheWriteInputTokens:N0}"
+            : string.Empty;
+        var cacheWriteEn = usage.CacheWriteInputTokens > 0
+            ? $", write {usage.CacheWriteInputTokens:N0}"
+            : string.Empty;
         return L10n.Pick(
-            $"{day.LocalDate.Month}月{day.LocalDate.Day}日\nAPI 估算 {estimate}\n原始 {usage.TotalTokens:N0} token\n输入 {usage.InputTokens:N0}（缓存 {usage.CachedInputTokens:N0}）\n输出 {usage.OutputTokens:N0}（推理 {usage.ReasoningOutputTokens:N0}）{unpriced}",
-            $"{day.LocalDate:MMM d}\nAPI estimate {estimate}\nRaw {usage.TotalTokens:N0} tokens\nInput {usage.InputTokens:N0} (cached {usage.CachedInputTokens:N0})\nOutput {usage.OutputTokens:N0} (reasoning {usage.ReasoningOutputTokens:N0}){unpriced}");
+            $"{day.LocalDate.Month}月{day.LocalDate.Day}日\nAPI 估算 {estimate}\n原始 {usage.TotalTokens:N0} token\n输入 {usage.InputTokens:N0}（缓存 {usage.CachedInputTokens:N0}{cacheWriteZh}）\n输出 {usage.OutputTokens:N0}（推理 {usage.ReasoningOutputTokens:N0}）{unpriced}",
+            $"{day.LocalDate:MMM d}\nAPI estimate {estimate}\nRaw {usage.TotalTokens:N0} tokens\nInput {usage.InputTokens:N0} (cached {usage.CachedInputTokens:N0}{cacheWriteEn})\nOutput {usage.OutputTokens:N0} (reasoning {usage.ReasoningOutputTokens:N0}){unpriced}");
     }
 
     internal static string FormatCompact(long tokens) => tokens switch

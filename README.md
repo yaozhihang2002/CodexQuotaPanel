@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.5.0--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.0--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-f0c674"></a>
@@ -16,7 +16,7 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.5.0 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.6.0 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
 ## 一眼了解
 
@@ -59,14 +59,15 @@
   <img src="docs/images/tray-status.png" width="640" alt="CodexQuotaPanel 动态托盘额度图标">
 </p>
 
-## v0.5.0 Pre-release 功能
+## v0.6.0 Pre-release 功能
 
 ### 额度与显示
 
 - 五小时与一周额度双环，可选择窗口、内外环角色及自定义颜色。
 - 点击悬浮球展开详情，支持分窗口、逐分钟原始精度的完整 24 小时趋势；鼠标悬停曲线可查看对应时间与剩余额度。
 - 智能续航估算会计入空闲区间，并融合 90 分钟短期速度、6 小时长期速度与样本置信度；样本不足时保持原有显示，不读取对话内容。
-- 本周期每日 Token 图支持悬停查看精确输入、缓存输入、输出与推理用量；点击可展开模型和 `Default` / `Fast` 速率明细，以及按公开 API 价格计算的本地美元估算。日志未写明速率时会在会话内安全回填，Auto-review 与无法识别的旧模型会保留原始 Token 并标记为“未公开计价”，不会被当作免费或猜测定价。
+- 本周期每日 Token 图支持悬停查看精确输入、缓存输入、缓存写入、输出与推理用量；点击可展开模型和 `Default` / `Fast` 速率明细，以及按公开 API 价格计算的本地美元估算。日志未写明速率时会在会话内安全回填，Auto-review 与无法识别的旧模型会保留原始 Token 并标记为“未公开计价”，不会被当作免费或猜测定价。
+- Token 统计 2.0 同时兼容单次增量与累计记录，识别计数器重置，并对重复快照、归档副本和分叉日志的复制前缀去重；跨重启持久缓存与追加读取减少重复扫描，详情页会显示缓存命中、去重和归因覆盖率。
 - 深色、浅色、跟随系统三种主题，以及简体中文 / English 界面。
 - 多显示器与 DPI 保护：跨屏拖动时依据目标显示器缩放，处理负坐标与可见区域边界；远程桌面与 150% / 200% 缩放下，悬浮球及设置内预览也会按目标显示器完整绘制。
 - 悬浮球位置、大小、字体比例、透明度、置顶和交互偏好会在重启后恢复。
@@ -90,7 +91,7 @@
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.5.0` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.0` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
 
 推荐下载 `Setup-Web.exe`：文件本身约 1–3 MB，只有电脑缺少 .NET 9 Desktop Runtime 时才从微软官方下载并校验运行库。无法联网时使用 `Setup-Offline.exe`；它包含完整运行环境。便携包也分为轻量版与完整离线版，所有附件均提供 SHA-256 校验文件。预发布版仍可能存在特定显卡、DPI 组合或系统环境下的兼容性问题。
 
@@ -98,7 +99,7 @@
 
 ## 隐私与数据
 
-程序在本机读取 Codex 客户端产生的可用额度与结构化 Token 计数事件，不读取 `auth.json` 或对话正文，不额外保存原始 Token 事件，也不上传额度数据、账号或会话内容。美元金额只是按界面标注日期的公开 API 价格作出的等价估算，不是订阅账单，也不是官方额度百分比换算。额度是否可显示仍取决于当前电脑上 Codex 客户端产生的数据是否可用。
+程序在本机读取 Codex 客户端产生的可用额度与结构化 Token 计数事件，不读取 `auth.json` 或对话正文。为减少重复扫描，只在本机保存版本化的聚合计数缓存，不保存对话文本，也不上传额度数据、账号或会话内容。美元金额只是按界面标注日期的公开 API 价格作出的等价估算，不是订阅账单，也不是官方额度百分比换算。额度是否可显示仍取决于当前电脑上 Codex 客户端产生的数据是否可用。
 
 ## 从源码构建
 
@@ -112,10 +113,10 @@ dotnet run --project work\CodexQuotaPanel.Tests\CodexQuotaPanel.Tests.csproj -c 
 在装有 Visual Studio Installer Projects 的开发机上，可使用一次构建、多产物复用的本地发布脚本：
 
 ```powershell
-work\Installer\Build-Release.ps1 -Version 0.5.0
+work\Installer\Build-Release.ps1 -Version 0.6.0
 ```
 
-脚本默认只生成并验证本地产物；确认版本无误并已经创建对应 Git 标签后，可显式添加 `-PublishToGitHub -PublishConfirmation "PUBLISH v0.5.0"`，直接复用同一批产物上传，不会重新构建。脚本分别生成自包含载荷与体积很小的 framework-dependent 主机，随后由中英文安装器和便携包共同复用，不会为每个附件重复构建应用。
+脚本默认只生成并验证本地产物；确认版本无误并已经创建对应 Git 标签后，可显式添加 `-PublishToGitHub -PublishConfirmation "PUBLISH v0.6.0"`，直接复用同一批产物上传，不会重新构建。脚本分别生成自包含载荷与体积很小的 framework-dependent 主机，随后由中英文安装器和便携包共同复用，不会为每个附件重复构建应用。
 
 项目结构：
 

@@ -1,154 +1,7 @@
-using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace CodexQuotaPanel;
-
-internal sealed record TokenUsageBreakdown(
-    long TotalTokens,
-    long InputTokens,
-    long CachedInputTokens,
-    long OutputTokens,
-    long ReasoningOutputTokens)
-{
-    public static TokenUsageBreakdown Empty { get; } = new(0, 0, 0, 0, 0);
-
-    public TokenUsageBreakdown Add(TokenUsageBreakdown other) => new(
-        checked(TotalTokens + other.TotalTokens),
-        checked(InputTokens + other.InputTokens),
-        checked(CachedInputTokens + other.CachedInputTokens),
-        checked(OutputTokens + other.OutputTokens),
-        checked(ReasoningOutputTokens + other.ReasoningOutputTokens));
-}
-
-internal sealed record TokenUsageSlice(
-    string Model,
-    string Speed,
-    TokenUsageBreakdown Usage,
-    decimal EstimatedUsd,
-    bool IsPriced)
-{
-    public string ModelDisplay => ApiCostEstimator.DisplayModel(Model);
-    public string SpeedDisplay => ApiCostEstimator.DisplaySpeed(Speed);
-}
-
-internal sealed record DailyTokenUsage(
-    DateOnly LocalDate,
-    TokenUsageBreakdown Usage,
-    IReadOnlyList<TokenUsageSlice> Slices)
-{
-    public DailyTokenUsage(DateOnly localDate, TokenUsageBreakdown usage)
-        : this(localDate, usage, [])
-    {
-    }
-
-    public decimal EstimatedUsd => Slices.Where(slice => slice.IsPriced).Sum(slice => slice.EstimatedUsd);
-    public long UnpricedTokens => Slices.Where(slice => !slice.IsPriced).Sum(slice => slice.Usage.TotalTokens);
-}
-
-internal sealed record TokenCycleUsage(
-    DateTimeOffset StartsAt,
-    DateTimeOffset ResetsAt,
-    int WindowMinutes,
-    IReadOnlyList<DailyTokenUsage> Days,
-    DateTimeOffset ScannedAt,
-    int SourceFileCount)
-{
-    public TokenUsageBreakdown Total => Days.Aggregate(
-        TokenUsageBreakdown.Empty,
-        (sum, day) => sum.Add(day.Usage));
-
-    public decimal EstimatedUsd => Days.Sum(day => day.EstimatedUsd);
-    public long UnpricedTokens => Days.Sum(day => day.UnpricedTokens);
-
-    public IReadOnlyList<TokenUsageSlice> Slices => Days
-        .SelectMany(day => day.Slices)
-        .GroupBy(slice => (slice.Model, slice.Speed, slice.IsPriced))
-        .Select(group => new TokenUsageSlice(
-            group.Key.Model,
-            group.Key.Speed,
-            group.Aggregate(TokenUsageBreakdown.Empty, (sum, slice) => sum.Add(slice.Usage)),
-            group.Sum(slice => slice.EstimatedUsd),
-            group.Key.IsPriced))
-        .OrderByDescending(slice => slice.EstimatedUsd)
-        .ThenByDescending(slice => slice.Usage.TotalTokens)
-        .ToArray();
-}
-
-internal sealed record TokenCountSample(
-    DateTimeOffset Timestamp,
-    long CumulativeTotalTokens,
-    TokenUsageBreakdown LastUsage);
-
-internal static class TokenCountParser
-{
-    public static TokenCountSample? ParseLine(string line)
-    {
-        if (string.IsNullOrWhiteSpace(line) ||
-            !line.Contains("\"token_count\"", StringComparison.Ordinal) ||
-            !line.Contains("\"total_token_usage\"", StringComparison.Ordinal))
-            return null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(line);
-            var root = document.RootElement;
-            if (!TryGet(root, "payload", out var payload) ||
-                !string.Equals(ReadString(payload, "type"), "token_count", StringComparison.Ordinal) ||
-                !TryGet(payload, "info", out var info) ||
-                !TryGet(info, "total_token_usage", out var totalUsage) ||
-                !TryGet(info, "last_token_usage", out var lastUsage))
-                return null;
-
-            var timestampText = ReadString(root, "timestamp");
-            if (!DateTimeOffset.TryParse(timestampText, CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal, out var timestamp))
-                return null;
-
-            var cumulative = ReadLong(totalUsage, "total_tokens");
-            var lastTotal = ReadLong(lastUsage, "total_tokens");
-            if (cumulative is null || lastTotal is null || cumulative < 0 || lastTotal < 0)
-                return null;
-
-            return new TokenCountSample(
-                timestamp,
-                cumulative.Value,
-                new TokenUsageBreakdown(
-                    lastTotal.Value,
-                    NonNegative(ReadLong(lastUsage, "input_tokens")),
-                    NonNegative(ReadLong(lastUsage, "cached_input_tokens")),
-                    NonNegative(ReadLong(lastUsage, "output_tokens")),
-                    NonNegative(ReadLong(lastUsage, "reasoning_output_tokens"))));
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static long NonNegative(long? value) => Math.Max(0, value ?? 0);
-
-    private static string? ReadString(JsonElement root, string name) =>
-        TryGet(root, name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
-
-    private static long? ReadLong(JsonElement root, string name)
-    {
-        if (!TryGet(root, name, out var value)) return null;
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number)) return number;
-        if (value.ValueKind == JsonValueKind.String &&
-            long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number))
-            return number;
-        return null;
-    }
-
-    private static bool TryGet(JsonElement root, string name, out JsonElement value)
-    {
-        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out value)) return true;
-        value = default;
-        return false;
-    }
-}
 
 internal static class TokenCycleSelector
 {
@@ -165,15 +18,51 @@ internal static class TokenCycleSelector
     }
 }
 
+internal sealed record CachedTokenFile(
+    long Length,
+    long LastWriteTimeUtcTicks,
+    int PrefixLength,
+    string PrefixHash,
+    string Model,
+    string Speed,
+    bool HasExplicitSpeed,
+    string? FirstExplicitSpeed,
+    TokenUsageBreakdown? PreviousCumulative,
+    IReadOnlyList<TokenUsageEvent> Events,
+    int ParsedTokenLineCount,
+    int MalformedTokenLineCount,
+    int DuplicateTokenLineCount);
+
+internal sealed record TokenUsageCacheDocument(
+    string Schema,
+    int SchemaVersion,
+    IReadOnlyDictionary<string, CachedTokenFile> Files);
+
 internal sealed class TokenUsageHistory
 {
+    private const string CacheSchema = "codex-quota-panel.token-usage-cache";
+    private const int CacheSchemaVersion = 2;
+    private static readonly JsonSerializerOptions CacheJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly string _codexHome;
+    private readonly string? _diskCachePath;
     private readonly SemaphoreSlim _scanGate = new(1, 1);
     private readonly Dictionary<string, CachedTokenFile> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private bool _cacheDirty;
+    private bool _diskCacheLoaded;
 
-    public TokenUsageHistory(string? codexHome = null)
+    public TokenUsageHistory(string? codexHome = null, string? cachePath = null)
     {
         _codexHome = codexHome ?? CodexPaths.Home;
+        _diskCachePath = cachePath ?? (codexHome is null
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CodexQuotaPanel",
+                "token-usage-cache-v2.json")
+            : null);
     }
 
     public async Task<TokenCycleUsage?> ReadCurrentCycleAsync(
@@ -204,22 +93,47 @@ internal sealed class TokenUsageHistory
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        LoadDiskCache();
         var files = EnumerateCandidateFiles(startsAt).ToArray();
         var activePaths = files.Select(file => file.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var stale in _cache.Keys.Where(path => !activePaths.Contains(path)).ToArray())
+        {
             _cache.Remove(stale);
+            _cacheDirty = true;
+        }
 
         var events = new List<TokenUsageEvent>();
+        var fingerprints = new HashSet<string>(StringComparer.Ordinal);
+        var cachedFiles = 0;
+        var incrementalFiles = 0;
+        var parsedEvents = 0;
+        var malformedLines = 0;
+        var duplicateEvents = 0;
+        var fallbackEvents = 0;
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            events.AddRange(ReadFile(file, cancellationToken));
+            var result = ReadFile(file, cancellationToken);
+            if (result.FromCache) cachedFiles++;
+            if (result.Incremental) incrementalFiles++;
+            parsedEvents += result.ParsedTokenLineCount;
+            malformedLines += result.MalformedTokenLineCount;
+            duplicateEvents += result.DuplicateTokenLineCount;
+            fallbackEvents += result.Events.Count(item => !item.HasExplicitSpeed);
+            foreach (var item in result.Events)
+            {
+                if (fingerprints.Add(item.Fingerprint)) events.Add(item);
+                else duplicateEvents++;
+            }
         }
+        SaveDiskCache();
 
         var effectiveEnd = now < resetsAt ? now : resetsAt;
         if (effectiveEnd < startsAt) effectiveEnd = startsAt;
-        var eventsByDay = events
+        var eligibleEvents = events
             .Where(item => item.Timestamp >= startsAt && item.Timestamp < resetsAt && item.Timestamp <= effectiveEnd)
+            .ToArray();
+        var eventsByDay = eligibleEvents
             .GroupBy(item => DateOnly.FromDateTime(item.Timestamp.ToLocalTime().DateTime))
             .ToDictionary(group => group.Key, group => group.ToArray());
 
@@ -260,13 +174,29 @@ internal sealed class TokenUsageHistory
             days.Add(new DailyTokenUsage(day, aggregate, slices));
         }
 
+        var totalTokens = eligibleEvents.Sum(item => item.Usage.TotalTokens);
+        var attributedTokens = eligibleEvents
+            .Where(item => item.Model != "unknown" &&
+                           ApiCostEstimator.NormalizeSpeed(item.Speed) != TokenSpeed.Unknown)
+            .Sum(item => item.Usage.TotalTokens);
+        var diagnostics = new TokenUsageDiagnostics(
+            files.Length,
+            cachedFiles,
+            incrementalFiles,
+            parsedEvents,
+            malformedLines,
+            duplicateEvents,
+            fallbackEvents,
+            attributedTokens,
+            totalTokens);
         return new TokenCycleUsage(
             startsAt,
             resetsAt,
             windowMinutes,
             days,
             now,
-            files.Length);
+            files.Length,
+            diagnostics);
     }
 
     private IEnumerable<FileInfo> EnumerateCandidateFiles(DateTimeOffset startsAt)
@@ -300,16 +230,30 @@ internal sealed class TokenUsageHistory
             .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase);
     }
 
-    private IReadOnlyList<TokenUsageEvent> ReadFile(FileInfo file, CancellationToken cancellationToken)
+    private FileReadResult ReadFile(FileInfo file, CancellationToken cancellationToken)
     {
         file.Refresh();
         var startingLength = file.Length;
-        var startingWriteTime = file.LastWriteTimeUtc;
+        var startingWriteTimeTicks = file.LastWriteTimeUtc.Ticks;
         if (_cache.TryGetValue(file.FullName, out var cached) &&
-            cached.Length == startingLength && cached.LastWriteTimeUtc == startingWriteTime)
-            return cached.Events;
+            cached.Length == startingLength && cached.LastWriteTimeUtcTicks == startingWriteTimeTicks)
+            return ToResult(cached, fromCache: true, incremental: false);
 
-        var events = new List<TokenUsageEvent>();
+        var incremental = cached is not null &&
+                          startingLength > cached.Length &&
+                          cached.Length > 0 &&
+                          PrefixMatches(file.FullName, cached);
+        var events = incremental ? cached!.Events.ToList() : [];
+        var previousCumulative = incremental ? cached!.PreviousCumulative : null;
+        var model = incremental ? cached!.Model : "unknown";
+        var speed = incremental ? cached!.Speed : "unknown";
+        var hasExplicitSpeed = incremental && cached!.HasExplicitSpeed;
+        var firstExplicitSpeed = incremental ? cached!.FirstExplicitSpeed : null;
+        var parsedTokenLines = incremental ? cached!.ParsedTokenLineCount : 0;
+        var malformedTokenLines = incremental ? cached!.MalformedTokenLineCount : 0;
+        var duplicateTokenLines = incremental ? cached!.DuplicateTokenLineCount : 0;
+        var seenFingerprints = events.Select(item => item.Fingerprint).ToHashSet(StringComparer.Ordinal);
+
         try
         {
             using var stream = new FileStream(
@@ -319,12 +263,8 @@ internal sealed class TokenUsageHistory
                 FileShare.ReadWrite | FileShare.Delete,
                 64 * 1024,
                 FileOptions.SequentialScan);
+            if (incremental) stream.Seek(cached!.Length, SeekOrigin.Begin);
             using var reader = new StreamReader(stream);
-            long? previousCumulative = null;
-            var model = "unknown";
-            var speed = "unknown";
-            var hasExplicitSpeed = false;
-            string? firstExplicitSpeed = null;
             var lineNumber = 0;
             while (reader.ReadLine() is { } line)
             {
@@ -337,117 +277,179 @@ internal sealed class TokenUsageHistory
                         ApiCostEstimator.NormalizeSpeed(speed) is TokenSpeed.Default or TokenSpeed.Fast)
                         firstExplicitSpeed = ApiCostEstimator.DisplaySpeed(speed);
                 }
+
+                var looksLikeToken = TokenCountParser.LooksLikeTokenLine(line);
                 var sample = TokenCountParser.ParseLine(line);
-                if (sample is null) continue;
+                if (sample is null)
+                {
+                    if (looksLikeToken) malformedTokenLines++;
+                    continue;
+                }
+                parsedTokenLines++;
+                if (!seenFingerprints.Add(sample.Fingerprint))
+                {
+                    duplicateTokenLines++;
+                    continue;
+                }
 
-                long delta;
-                if (previousCumulative is null)
-                    delta = sample.LastUsage.TotalTokens > 0
-                        ? sample.LastUsage.TotalTokens
-                        : sample.CumulativeTotalTokens;
-                else if (sample.CumulativeTotalTokens > previousCumulative.Value)
-                    delta = sample.CumulativeTotalTokens - previousCumulative.Value;
-                else if (sample.CumulativeTotalTokens == previousCumulative.Value)
-                    delta = 0;
-                else
-                    delta = sample.LastUsage.TotalTokens;
-                previousCumulative = sample.CumulativeTotalTokens;
-                if (delta <= 0) continue;
-
+                var delta = TokenUsageNormalizer.Normalize(sample, ref previousCumulative);
+                if (delta is null)
+                {
+                    duplicateTokenLines++;
+                    continue;
+                }
                 events.Add(new TokenUsageEvent(
                     sample.Timestamp,
-                    sample.LastUsage with { TotalTokens = delta },
+                    delta,
                     ApiCostEstimator.NormalizeModel(model),
                     ApiCostEstimator.DisplaySpeed(speed),
-                    hasExplicitSpeed));
-            }
-
-            // Older and helper-agent logs often omit service_tier until after
-            // their first token event, or omit it for the whole file. Backfill
-            // only those genuinely unspecified events: use the first supported
-            // explicit tier when one exists, otherwise Codex's normal tier.
-            // An explicitly unsupported future tier remains Unknown.
-            var missingSpeedFallback = firstExplicitSpeed ?? "Default";
-            for (var index = 0; index < events.Count; index++)
-            {
-                if (!events[index].HasExplicitSpeed)
-                    events[index] = events[index] with
-                    {
-                        Speed = missingSpeedFallback,
-                        HasExplicitSpeed = true
-                    };
+                    hasExplicitSpeed,
+                    sample.Fingerprint));
             }
 
             file.Refresh();
-            // Do not cache an unstable read. The next refresh will parse the
-            // growing session again instead of treating a partial EOF as final.
-            if (file.Length == startingLength && file.LastWriteTimeUtc == startingWriteTime)
-                _cache[file.FullName] = new CachedTokenFile(
-                    file.Length,
-                    file.LastWriteTimeUtc,
-                    events.ToArray());
+            if (file.Length == startingLength &&
+                file.LastWriteTimeUtc.Ticks == startingWriteTimeTicks &&
+                EndsWithNewline(file.FullName, startingLength))
+            {
+                var prefixLength = (int)Math.Min(4096, startingLength);
+                var updated = new CachedTokenFile(
+                    startingLength,
+                    startingWriteTimeTicks,
+                    prefixLength,
+                    ComputePrefixHash(file.FullName, prefixLength),
+                    model,
+                    speed,
+                    hasExplicitSpeed,
+                    firstExplicitSpeed,
+                    previousCumulative,
+                    events.ToArray(),
+                    parsedTokenLines,
+                    malformedTokenLines,
+                    duplicateTokenLines);
+                _cache[file.FullName] = updated;
+                _cacheDirty = true;
+                return ToResult(updated, fromCache: false, incremental);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                                    System.Security.SecurityException or JsonException)
         {
         }
-        return events;
+
+        var fallback = new CachedTokenFile(
+            startingLength,
+            startingWriteTimeTicks,
+            0,
+            string.Empty,
+            model,
+            speed,
+            hasExplicitSpeed,
+            firstExplicitSpeed,
+            previousCumulative,
+            events.ToArray(),
+            parsedTokenLines,
+            malformedTokenLines,
+            duplicateTokenLines);
+        return ToResult(fallback, fromCache: false, incremental);
     }
 
-    private sealed record TokenUsageEvent(
-        DateTimeOffset Timestamp,
-        TokenUsageBreakdown Usage,
-        string Model,
-        string Speed,
-        bool HasExplicitSpeed);
-    private sealed record CachedTokenFile(long Length, DateTime LastWriteTimeUtc, IReadOnlyList<TokenUsageEvent> Events);
-}
-
-internal static class TokenLogContextParser
-{
-    internal static void Apply(
-        string line,
-        ref string model,
-        ref string speed,
-        out bool speedSpecified)
+    private static FileReadResult ToResult(CachedTokenFile cached, bool fromCache, bool incremental)
     {
-        speedSpecified = false;
-        if (string.IsNullOrWhiteSpace(line) ||
-            (!line.Contains("\"turn_context\"", StringComparison.Ordinal) &&
-             !line.Contains("\"thread_settings_applied\"", StringComparison.Ordinal)))
-            return;
+        var fallbackSpeed = cached.FirstExplicitSpeed ?? "Default";
+        var events = cached.Events
+            .Select(item => item.HasExplicitSpeed
+                ? item
+                : item with { Speed = fallbackSpeed })
+            .ToArray();
+        return new FileReadResult(
+            events,
+            fromCache,
+            incremental,
+            cached.ParsedTokenLineCount,
+            cached.MalformedTokenLineCount,
+            cached.DuplicateTokenLineCount);
+    }
 
+    private void LoadDiskCache()
+    {
+        if (_diskCacheLoaded) return;
+        _diskCacheLoaded = true;
+        if (string.IsNullOrWhiteSpace(_diskCachePath)) return;
         try
         {
-            using var document = JsonDocument.Parse(line);
-            var root = document.RootElement;
-            if (!root.TryGetProperty("type", out var rootType) ||
-                !root.TryGetProperty("payload", out var payload))
+            var info = new FileInfo(_diskCachePath);
+            if (!info.Exists || info.Length is <= 0 or > 32 * 1024 * 1024) return;
+            var document = JsonSerializer.Deserialize<TokenUsageCacheDocument>(
+                File.ReadAllText(_diskCachePath), CacheJsonOptions);
+            if (document is null || document.Schema != CacheSchema || document.SchemaVersion != CacheSchemaVersion)
                 return;
-
-            JsonElement settings = payload;
-            if (rootType.GetString() == "event_msg" &&
-                payload.TryGetProperty("type", out var payloadType) &&
-                payloadType.GetString() == "thread_settings_applied" &&
-                payload.TryGetProperty("thread_settings", out var threadSettings))
-                settings = threadSettings;
-            else if (rootType.GetString() != "turn_context")
-                return;
-
-            if (settings.TryGetProperty("model", out var modelValue) &&
-                modelValue.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(modelValue.GetString()))
-                model = modelValue.GetString()!;
-            if (settings.TryGetProperty("service_tier", out var speedValue) &&
-                speedValue.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(speedValue.GetString()))
+            var homePrefix = Path.GetFullPath(_codexHome).TrimEnd(Path.DirectorySeparatorChar) +
+                             Path.DirectorySeparatorChar;
+            foreach (var pair in document.Files)
             {
-                speed = speedValue.GetString()!;
-                speedSpecified = true;
+                var fullPath = Path.GetFullPath(pair.Key);
+                if (fullPath.StartsWith(homePrefix, StringComparison.OrdinalIgnoreCase))
+                    _cache[fullPath] = pair.Value;
             }
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   System.Security.SecurityException or JsonException or
+                                   NotSupportedException or ArgumentException)
         {
+            _cache.Clear();
         }
     }
+
+    private void SaveDiskCache()
+    {
+        if (!_cacheDirty || string.IsNullOrWhiteSpace(_diskCachePath)) return;
+        var document = new TokenUsageCacheDocument(CacheSchema, CacheSchemaVersion, _cache);
+        if (AtomicJsonFile.TryWrite(
+                _diskCachePath,
+                JsonSerializer.Serialize(document, CacheJsonOptions),
+                createBackup: false))
+            _cacheDirty = false;
+    }
+
+    private static bool PrefixMatches(string path, CachedTokenFile cached) =>
+        cached.PrefixLength > 0 &&
+        string.Equals(
+            ComputePrefixHash(path, cached.PrefixLength),
+            cached.PrefixHash,
+            StringComparison.Ordinal);
+
+    private static string ComputePrefixHash(string path, int length)
+    {
+        if (length <= 0) return string.Empty;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        var buffer = new byte[length];
+        var read = 0;
+        while (read < buffer.Length)
+        {
+            var count = stream.Read(buffer, read, buffer.Length - read);
+            if (count <= 0) break;
+            read += count;
+        }
+        return Convert.ToHexString(SHA256.HashData(buffer.AsSpan(0, read)));
+    }
+
+    private static bool EndsWithNewline(string path, long length)
+    {
+        if (length == 0) return true;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        stream.Seek(-1, SeekOrigin.End);
+        var value = stream.ReadByte();
+        return value is '\n' or '\r';
+    }
+
+    private sealed record FileReadResult(
+        IReadOnlyList<TokenUsageEvent> Events,
+        bool FromCache,
+        bool Incremental,
+        int ParsedTokenLineCount,
+        int MalformedTokenLineCount,
+        int DuplicateTokenLineCount);
 }

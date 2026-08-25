@@ -158,9 +158,14 @@ internal sealed class TokenUsageDetailsView : Control
         var totalSize = e.Graphics.MeasureString(totalCost, sectionFont);
         e.Graphics.DrawString(totalCost, sectionFont, accentBrush,
             left + width - totalSize.Width - S(14), y + S(11));
-        e.Graphics.DrawString(
-            L10n.Pick($"原始 Token {_usage.Total.TotalTokens:N0}", $"Raw tokens {_usage.Total.TotalTokens:N0}"),
-            monoFont, mutedBrush, left + S(14), y + S(39));
+        var rawSummary = L10n.Pick(
+            $"原始 Token {_usage.Total.TotalTokens:N0}",
+            $"Raw tokens {_usage.Total.TotalTokens:N0}");
+        if (_usage.Total.CacheWriteInputTokens > 0)
+            rawSummary += L10n.Pick(
+                $" · 缓存写入 {_usage.Total.CacheWriteInputTokens:N0}",
+                $" · cache write {_usage.Total.CacheWriteInputTokens:N0}");
+        e.Graphics.DrawString(rawSummary, monoFont, mutedBrush, left + S(14), y + S(39));
         var basis = L10n.Pick(
             $"公开 API 价格估算 · 基准 {ApiCostEstimator.BasisDate} · 非订阅账单或额度换算",
             $"Published API price estimate · basis {ApiCostEstimator.BasisDate} · not a subscription bill or quota conversion");
@@ -208,6 +213,25 @@ internal sealed class TokenUsageDetailsView : Control
             }
             y += dayHeight + S(10);
         }
+
+        y += S(8);
+        e.Graphics.DrawString(L10n.Pick("数据质量", "Data quality"), sectionFont, textBrush, left, y);
+        y += S(27);
+        var healthHeight = S(58);
+        DrawCard(e.Graphics, new RectangleF(left, y, width, healthHeight), borderPen);
+        var health = _usage.Health;
+        var quality = health.IsPartial
+            ? L10n.Pick("部分记录无法解析", "Some records could not be parsed")
+            : L10n.Pick("记录完整", "Records complete");
+        var healthLine = L10n.Pick(
+            $"{quality} · 归因 {health.AttributionCoverage:P0} · 文件 {health.ParsedFileCount}",
+            $"{quality} · attributed {health.AttributionCoverage:P0} · files {health.ParsedFileCount}");
+        e.Graphics.DrawString(healthLine, bodyFont, health.IsPartial ? mutedBrush : accentBrush,
+            left + S(14), y + S(10));
+        var cacheLine = L10n.Pick(
+            $"缓存命中 {health.CachedFileCount} · 增量读取 {health.IncrementalFileCount} · 去重 {health.DuplicateEventCount}",
+            $"cache hits {health.CachedFileCount} · incremental {health.IncrementalFileCount} · deduplicated {health.DuplicateEventCount}");
+        e.Graphics.DrawString(cacheLine, smallFont, faintBrush, left + S(14), y + S(34));
     }
 
     private float DrawSlices(
@@ -266,6 +290,8 @@ internal sealed class TokenUsageDetailsView : Control
         var name = $"{slice.ModelDisplay} · {slice.SpeedDisplay}";
         graphics.DrawString(name, bodyFont, textBrush, left, top);
         var raw = $"{slice.Usage.TotalTokens:N0} raw";
+        if (slice.Usage.CacheWriteInputTokens > 0)
+            raw += $" · cw {slice.Usage.CacheWriteInputTokens:N0}";
         graphics.DrawString(raw, smallFont, mutedBrush, left, top + S(15));
         var value = slice.IsPriced
             ? DailyTokenUsageControl.FormatUsd(slice.EstimatedUsd)
@@ -286,7 +312,7 @@ internal sealed class TokenUsageDetailsView : Control
     private void UpdateHeight()
     {
         var logical = 18 + 31 + 29 + 82 + 16 + 27 + 18 + Math.Max(1, _usage.Slices.Count) * 31 +
-                      20 + 28 + _usage.Days.Sum(day => DayLogicalHeight(day) + 10) + 18;
+                      20 + 28 + _usage.Days.Sum(day => DayLogicalHeight(day) + 10) + 8 + 27 + 58 + 18;
         Height = Math.Max(420, (int)Math.Ceiling(logical * Math.Max(0.5f, DeviceDpi / 96f)));
     }
 

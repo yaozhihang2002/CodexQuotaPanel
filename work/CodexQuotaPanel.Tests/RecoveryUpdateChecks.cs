@@ -165,7 +165,7 @@ internal static class RecoveryUpdateChecks
 
     private static async Task CheckUpdatesAsync(string directory)
     {
-        Require(GitHubReleaseUpdateService.CurrentVersionText == "0.5.0",
+        Require(GitHubReleaseUpdateService.CurrentVersionText == "0.6.0",
             "Release version metadata is not synchronized with the update checker.");
         Require(SemanticVersion.TryParse("v0.3.0-preview.2", out var preview2) &&
                 SemanticVersion.TryParse("0.3.0-preview.10", out var preview10) &&
