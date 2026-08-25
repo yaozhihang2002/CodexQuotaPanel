@@ -70,6 +70,18 @@ if (args.Length == 1 && args[0] is "--targeted-check" or "--v020-targeted-check"
     if (GitHubReleaseUpdateService.CurrentVersionText != "0.5.1")
         throw new InvalidOperationException("The local candidate version is not v0.5.1.");
 
+    var guideMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+    var guideReset = DateTimeOffset.FromUnixTimeSeconds((guideMinute + 60) * 60);
+    var guideBucket = new LimitBucket(50, 300, guideReset);
+    Assert(LimitRowControl.UniformRemainingPercent(guideMinute - 240, guideBucket) == 100d,
+        "The even-use guide did not begin at 100%.");
+    Assert(LimitRowControl.UniformRemainingPercent(guideMinute - 90, guideBucket) == 50d,
+        "The even-use guide midpoint was not 50%.");
+    Assert(LimitRowControl.UniformRemainingPercent(guideMinute + 60, guideBucket) == 0d,
+        "The even-use guide did not end at 0%.");
+    Assert(LimitRowControl.UniformRemainingPercent(guideMinute - 241, guideBucket) is null,
+        "The even-use guide leaked into the previous reset cycle.");
+
     var singlePanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 518), 168);
     var dualPanel = QuotaForm.ScaleLogicalBounds(new Rectangle(0, 0, 368, 596), 168);
     var primaryRow = QuotaForm.ScaleLogicalBounds(new Rectangle(18, 224, 332, 70), 168);

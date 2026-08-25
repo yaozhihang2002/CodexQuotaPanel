@@ -141,9 +141,10 @@ internal sealed class LimitRowControl : Control
         {
             _trendBounds = new RectangleF(S(12), S(27), Width - S(24), S(16));
             var nowMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
-            DrawTrend(e.Graphics, _trendBounds, trend, _trendColor, scale, nowMinute);
+            DrawTrend(e.Graphics, _trendBounds, trend, _bucket, _trendColor, UiPalette.Amber, scale, nowMinute);
             if (_hoveredTrendPoint is not null)
-                DrawTrendHover(e.Graphics, _trendBounds, _hoveredTrendPoint, _trendColor, scale, nowMinute);
+                DrawTrendHover(e.Graphics, _trendBounds, _hoveredTrendPoint, _bucket,
+                    _trendColor, UiPalette.Amber, scale, nowMinute);
         }
         else
         {
@@ -178,7 +179,9 @@ internal sealed class LimitRowControl : Control
         Graphics graphics,
         RectangleF bounds,
         IReadOnlyList<QuotaHistoryPoint> points,
-        Color color,
+        LimitBucket? bucket,
+        Color actualColor,
+        Color guideColor,
         float scale,
         long nowMinute)
     {
@@ -188,7 +191,8 @@ internal sealed class LimitRowControl : Control
         graphics.DrawLine(baseline, bounds.Left, bounds.Top + bounds.Height / 2f, bounds.Right, bounds.Top + bounds.Height / 2f);
 
         var cutoff = nowMinute - 24 * 60;
-        using var line = new Pen(color, 1.6f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        DrawUniformGuide(graphics, bounds, bucket, guideColor, scale, nowMinute);
+        using var line = new Pen(actualColor, 1.35f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         PointF? previousPoint = null;
         QuotaHistoryPoint? previousSample = null;
         PointF? lastPoint = null;
@@ -208,7 +212,7 @@ internal sealed class LimitRowControl : Control
             lastPoint = current;
         }
         if (lastPoint is null) return;
-        using var dot = new SolidBrush(color);
+        using var dot = new SolidBrush(actualColor);
         graphics.FillEllipse(dot,
             lastPoint.Value.X - 2.2f * scale,
             lastPoint.Value.Y - 2.2f * scale,
@@ -216,30 +220,65 @@ internal sealed class LimitRowControl : Control
             4.4f * scale);
     }
 
-    private static void DrawTrendHover(
+    private static void DrawUniformGuide(
         Graphics graphics,
         RectangleF bounds,
-        QuotaHistoryPoint sample,
+        LimitBucket? bucket,
         Color color,
         float scale,
         long nowMinute)
     {
+        if (!TryGetUniformGuideSegment(bucket, nowMinute, out var startMinute, out var endMinute,
+                out var startPercent, out var endPercent))
+            return;
+
+        var startPoint = TrendPoint(bounds, startMinute, startPercent, nowMinute);
+        var endPoint = TrendPoint(bounds, endMinute, endPercent, nowMinute);
+        using var guide = new Pen(Color.FromArgb(132, color), Math.Max(1f, 1.05f * scale))
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+        graphics.DrawLine(guide, startPoint, endPoint);
+    }
+
+    private static void DrawTrendHover(
+        Graphics graphics,
+        RectangleF bounds,
+        QuotaHistoryPoint sample,
+        LimitBucket? bucket,
+        Color actualColor,
+        Color guideColor,
+        float scale,
+        long nowMinute)
+    {
         var point = TrendPoint(bounds, sample, nowMinute);
-        using var guide = new Pen(Color.FromArgb(105, color), Math.Max(1f, scale * 0.8f))
+        using var guide = new Pen(Color.FromArgb(105, actualColor), Math.Max(1f, scale * 0.8f))
         {
             DashStyle = DashStyle.Dot
         };
         graphics.DrawLine(guide, point.X, bounds.Top - 1f * scale, point.X, bounds.Bottom + 1f * scale);
 
-        using var halo = new SolidBrush(Color.FromArgb(74, color));
-        using var dot = new SolidBrush(color);
+        if (UniformRemainingPercent(sample.UtcMinute, bucket) is { } uniformPercent)
+        {
+            var uniformPoint = TrendPoint(bounds, sample.UtcMinute, uniformPercent, nowMinute);
+            using var uniformHalo = new SolidBrush(Color.FromArgb(52, guideColor));
+            using var uniformDot = new SolidBrush(Color.FromArgb(190, guideColor));
+            graphics.FillEllipse(uniformHalo, uniformPoint.X - 4f * scale, uniformPoint.Y - 4f * scale,
+                8f * scale, 8f * scale);
+            graphics.FillEllipse(uniformDot, uniformPoint.X - 1.8f * scale, uniformPoint.Y - 1.8f * scale,
+                3.6f * scale, 3.6f * scale);
+        }
+
+        using var halo = new SolidBrush(Color.FromArgb(74, actualColor));
+        using var dot = new SolidBrush(actualColor);
         graphics.FillEllipse(halo, point.X - 5f * scale, point.Y - 5f * scale, 10f * scale, 10f * scale);
         graphics.FillEllipse(dot, point.X - 2.5f * scale, point.Y - 2.5f * scale, 5f * scale, 5f * scale);
     }
 
     private void DrawTrendHoverLabel(Graphics graphics, QuotaHistoryPoint sample, Color color, float scale)
     {
-        var text = FormatTrendHoverText(sample);
+        var text = FormatTrendHoverText(sample, _bucket);
         using var font = UiPalette.Body(7.2f, FontStyle.Bold);
         var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
         var measured = TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags);
@@ -271,19 +310,59 @@ internal sealed class LimitRowControl : Control
     }
 
     private static PointF TrendPoint(RectangleF bounds, QuotaHistoryPoint sample, long nowMinute)
+        => TrendPoint(bounds, sample.UtcMinute, sample.RemainingPercent, nowMinute);
+
+    private static PointF TrendPoint(RectangleF bounds, long utcMinute, double remainingPercent, long nowMinute)
     {
         var cutoff = nowMinute - 24 * 60;
-        var x = bounds.Left + (float)Math.Clamp((sample.UtcMinute - cutoff) / (24d * 60d), 0d, 1d) * bounds.Width;
-        var y = bounds.Top + (float)((100d - sample.RemainingPercent) / 100d) * bounds.Height;
+        var x = bounds.Left + (float)Math.Clamp((utcMinute - cutoff) / (24d * 60d), 0d, 1d) * bounds.Width;
+        var y = bounds.Top + (float)((100d - Math.Clamp(remainingPercent, 0d, 100d)) / 100d) * bounds.Height;
         return new PointF(x, y);
     }
 
-    internal static string FormatTrendHoverText(QuotaHistoryPoint sample)
+    internal static double? UniformRemainingPercent(long utcMinute, LimitBucket? bucket)
+    {
+        if (bucket?.WindowMinutes is not > 0 || bucket.ResetsAt is not { } reset) return null;
+        var resetMinute = reset.ToUniversalTime().ToUnixTimeSeconds() / 60;
+        var cycleStartMinute = resetMinute - bucket.WindowMinutes.Value;
+        if (utcMinute < cycleStartMinute || utcMinute > resetMinute) return null;
+        return Math.Clamp((resetMinute - utcMinute) * 100d / bucket.WindowMinutes.Value, 0d, 100d);
+    }
+
+    private static bool TryGetUniformGuideSegment(
+        LimitBucket? bucket,
+        long nowMinute,
+        out long startMinute,
+        out long endMinute,
+        out double startPercent,
+        out double endPercent)
+    {
+        startMinute = endMinute = 0;
+        startPercent = endPercent = 0d;
+        if (bucket?.WindowMinutes is not > 0 || bucket.ResetsAt is not { } reset) return false;
+
+        var resetMinute = reset.ToUniversalTime().ToUnixTimeSeconds() / 60;
+        var cycleStartMinute = resetMinute - bucket.WindowMinutes.Value;
+        startMinute = Math.Max(nowMinute - 24 * 60, cycleStartMinute);
+        endMinute = Math.Min(nowMinute, resetMinute);
+        if (endMinute <= startMinute) return false;
+
+        startPercent = UniformRemainingPercent(startMinute, bucket)!.Value;
+        endPercent = UniformRemainingPercent(endMinute, bucket)!.Value;
+        return true;
+    }
+
+    internal static string FormatTrendHoverText(QuotaHistoryPoint sample, LimitBucket? bucket = null)
     {
         var local = sample.Timestamp.ToLocalTime();
+        var uniform = UniformRemainingPercent(sample.UtcMinute, bucket);
+        if (uniform is null)
+            return L10n.Pick(
+                $"{local.Month}月{local.Day}日 {local:HH:mm}  ·  实际 {sample.RemainingPercent:0.#}%",
+                $"{local:MMM d, HH:mm}  ·  Actual {sample.RemainingPercent:0.#}%");
         return L10n.Pick(
-            $"{local.Month}月{local.Day}日 {local:HH:mm}  ·  剩余 {sample.RemainingPercent:0.#}%",
-            $"{local:MMM d, HH:mm}  ·  {sample.RemainingPercent:0.#}% left");
+            $"{local.Month}月{local.Day}日 {local:HH:mm}  ·  实际 {sample.RemainingPercent:0.#}%  ·  均匀参考 {uniform:0.#}%",
+            $"{local:MMM d, HH:mm}  ·  Actual {sample.RemainingPercent:0.#}%  ·  Even-use {uniform:0.#}%");
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -318,7 +397,7 @@ internal sealed class LimitRowControl : Control
         Cursor = Cursors.Cross;
         if (Equals(_hoveredTrendPoint, nearest)) return;
         _hoveredTrendPoint = nearest;
-        AccessibleDescription = FormatTrendHoverText(nearest);
+        AccessibleDescription = FormatTrendHoverText(nearest, _bucket);
         Invalidate();
     }
 
@@ -350,7 +429,7 @@ internal sealed class LimitRowControl : Control
         var point = TrendPoint(_trendBounds, sample, nowMinute);
         OnMouseMove(new MouseEventArgs(MouseButtons.None, 0,
             (int)Math.Round(point.X), (int)Math.Round(point.Y), 0));
-        return _hoveredTrendPoint is null ? null : FormatTrendHoverText(_hoveredTrendPoint);
+        return _hoveredTrendPoint is null ? null : FormatTrendHoverText(_hoveredTrendPoint, _bucket);
     }
 
     public static string FormatWindow(int? minutes) => L10n.FormatWindow(minutes);

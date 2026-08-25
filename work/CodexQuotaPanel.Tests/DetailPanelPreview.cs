@@ -38,8 +38,12 @@ internal static class DetailPanelPreview
         form.Show();
         Application.DoEvents();
         var trendRow = Descendants(form).OfType<LimitRowControl>().First(row => row.HistorySlot == 0);
-        if (trendRow.ShowTrendHoverForTest(2) is null)
+        var hoverText = trendRow.ShowTrendHoverForTest(2);
+        if (hoverText is null)
             throw new InvalidOperationException("The detail trend hover preview did not select a history point.");
+        if (!hoverText.Contains("实际", StringComparison.Ordinal) ||
+            !hoverText.Contains("均匀参考", StringComparison.Ordinal))
+            throw new InvalidOperationException("The detail trend hover did not expose actual and even-use values.");
         Application.DoEvents();
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
