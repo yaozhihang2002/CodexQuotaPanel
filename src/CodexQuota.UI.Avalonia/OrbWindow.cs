@@ -10,6 +10,8 @@ namespace CodexQuota.UI.Avalonia;
 
 public sealed class OrbWindow : Window
 {
+    private static readonly Cursor DragCursor = new(StandardCursorType.SizeAll);
+    private static readonly Cursor ClickCursor = new(StandardCursorType.Hand);
     private readonly OrbControl _orb;
     private AppSettings _settings = AppSettings.Default;
     private bool _pointerMoved;
@@ -27,6 +29,7 @@ public sealed class OrbWindow : Window
     internal string RenderedSecondaryLabel => _orb.SecondaryLabel;
     internal QuotaConnectionState RenderedConnectionState => _orb.ConnectionState;
     internal bool IsMoveMode => _moveMode;
+    internal bool HasInteractiveCursor => _orb.Cursor is not null;
 
     public OrbWindow()
     {
@@ -64,6 +67,7 @@ public sealed class OrbWindow : Window
         _orb.FeedbackEnabled = _settings.ConsumptionFeedbackEnabled;
         _orb.FeedbackStyle = _settings.ConsumptionFeedbackStyle;
         _orb.AnimateFeedback = !_settings.ReducedMotion;
+        UpdatePointerCursor();
     }
 
     public void ApplyPresentation(QuotaPresentation presentation)
@@ -97,11 +101,22 @@ public sealed class OrbWindow : Window
     {
         _moveMode = enabled;
         _orb.MoveMode = enabled;
+        UpdatePointerCursor();
         ToolTip.SetTip(_orb, enabled
             ? (_settings.Language == AppLanguage.SimplifiedChinese
                 ? "移动模式：拖动后自动恢复原来的穿透与锁定设置"
                 : "Move mode: original click-through and lock settings return after dragging")
             : null);
+    }
+
+    private void UpdatePointerCursor()
+    {
+        if (_settings.ClickThrough && !_moveMode)
+        {
+            _orb.Cursor = null;
+            return;
+        }
+        _orb.Cursor = _moveMode || !_settings.PositionLocked ? DragCursor : ClickCursor;
     }
 
     public void RestorePosition(double? x, double? y)

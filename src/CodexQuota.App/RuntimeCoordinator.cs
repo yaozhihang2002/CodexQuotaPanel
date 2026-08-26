@@ -132,7 +132,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         AddTrayItem(menu, T("显示/隐藏悬浮球", "Show/hide orb"), ToggleOrb);
         _moveOrbTrayItem = AddTrayItem(menu, T("移动悬浮球…", "Move orb…"), BeginOrbMoveMode);
         AddTrayItem(menu, T("立即刷新", "Refresh now"), () => _ = RefreshAsync());
-        _clickThroughTrayItem = AddTrayItem(menu, T("悬浮球鼠标穿透", "Orb click-through"), () => _ = ToggleClickThroughAsync());
+        _clickThroughTrayItem = AddTrayItem(menu, ClickThroughTrayHeader(), () => _ = ToggleClickThroughAsync());
         _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
         menu.Items.Add(new NativeMenuItemSeparator());
         AddTrayItem(menu, T("设置…", "Settings…"), ShowSettings);
@@ -339,12 +339,20 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private void UpdateTrayState()
     {
-        if (_clickThroughTrayItem is not null) _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
+        if (_clickThroughTrayItem is not null)
+        {
+            _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
+            _clickThroughTrayItem.Header = ClickThroughTrayHeader();
+        }
         if (_moveOrbTrayItem is not null)
             _moveOrbTrayItem.Header = _temporaryMoveMode
                 ? T("取消移动模式", "Cancel move mode")
                 : T("移动悬浮球…", "Move orb…");
     }
+
+    private string ClickThroughTrayHeader() => _settings.ClickThrough
+        ? T("悬浮球鼠标穿透 · 已开启", "Orb click-through · ON")
+        : T("悬浮球鼠标穿透 · 已关闭", "Orb click-through · OFF");
 
     private void Restart()
     {

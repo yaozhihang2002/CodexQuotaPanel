@@ -50,6 +50,7 @@ public sealed class DashboardWindow : Window
     internal int SummaryRingCount => double.IsFinite(_summaryOrb.SecondaryRemainingPercent) ? 2 :
         string.IsNullOrWhiteSpace(_summaryOrb.PrimaryLabel) ? 0 : 1;
     internal void EnablePlacementTrackingForTest() => _trackPlacement = true;
+    internal void CommitPlacementForTest() { _placementDirty = true; FlushPlacement(); }
 
     public DashboardWindow(AppSettings settings, bool systemDark = true)
     {
@@ -57,11 +58,14 @@ public sealed class DashboardWindow : Window
         _palette = UiPalette.For(_settings.Theme, systemDark);
         Title = _settings.Language == AppLanguage.SimplifiedChinese ? "Codex 额度详情" : "Codex quota details";
         var scale = _settings.InterfaceScalePercent / 100d;
-        Width = Math.Clamp(452 * (.65 + .35 * scale), 420, 560);
-        Height = Math.Clamp(720 * (.72 + .28 * scale), 640, 810);
+        var englishWidthAllowance = _settings.Language == AppLanguage.English
+            ? Math.Clamp(8 + (_settings.InterfaceScalePercent - 100) * .44, 8, 30)
+            : 0;
+        Width = Math.Clamp(452 * (.65 + .35 * scale) + englishWidthAllowance, 420, 580);
+        Height = Math.Clamp(690 * (.72 + .28 * scale), 620, 780);
         MinWidth = 420;
-        MinHeight = 590;
-        MaxWidth = 560;
+        MinHeight = 570;
+        MaxWidth = 580;
         Background = _palette.Canvas;
         CanResize = true;
         Topmost = _settings.AlwaysOnTop;
@@ -69,7 +73,7 @@ public sealed class DashboardWindow : Window
         RenderTransformOrigin = RelativePoint.Center;
         RenderTransform = new ScaleTransform(1, 1);
 
-        _summaryOrb = new OrbControl { Width = 118, Height = 118, HorizontalAlignment = HorizontalAlignment.Left };
+        _summaryOrb = new OrbControl { Width = 110, Height = 110, HorizontalAlignment = HorizontalAlignment.Left };
         _plan = UiElements.Text("—", 11, FontWeight.Bold, _palette.Mint);
         _headline = UiElements.Text(T("等待数据", "Waiting for data"), 28, FontWeight.Bold, _palette.TextPrimary);
         _forecast = UiElements.Text(T("正在连接 Codex 数据源", "Connecting to Codex data"), 12, FontWeight.Normal, _palette.TextSecondary);
@@ -92,19 +96,20 @@ public sealed class DashboardWindow : Window
             RowSpacing = 8,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        _trend = new TrendChartControl { Height = 62, IsDark = _settings.Theme != AppTheme.Light };
+        _trend = new TrendChartControl { Height = 46, IsDark = _settings.Theme != AppTheme.Light };
+        ToolTip.SetTip(_trend, T("悬停曲线可对照实际与均匀额度", "Hover to compare actual and even-use quota"));
         _dailyUsage = new DailyUsageChartControl
         {
-            Height = 92,
+            Height = 70,
             Language = _settings.Language,
             IsDark = _settings.Theme != AppTheme.Light
         };
-        _creditBadge = UiElements.Text(T("重置卡", "RESET CREDIT"), 9.5, FontWeight.Bold, _palette.TextMuted,
+        _creditBadge = UiElements.Text(T("重置卡", "RESET"), 9.2, FontWeight.Bold, _palette.TextMuted,
             TextWrapping.NoWrap);
-        _credit = UiElements.Text(T("重置卡信息暂不可用", "Reset credit information unavailable"), 13.5,
+        _credit = UiElements.Text(T("重置卡信息暂不可用", "Reset credit information unavailable"), 11.5,
             FontWeight.Bold, _palette.TextSecondary);
         _creditMeta = UiElements.Text(T("等待 Codex 返回可用重置卡", "Waiting for available reset credits from Codex"),
-            9.5, FontWeight.Normal, _palette.TextMuted);
+            9, FontWeight.Normal, _palette.TextMuted);
         _creditCard = BuildResetCreditCard();
         _tokenTotal = UiElements.Text(T("本周期 API 估算：—", "Cycle API estimate: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
         _placementTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(320) };
@@ -214,7 +219,7 @@ public sealed class DashboardWindow : Window
             var availableCount = presentation.Snapshot?.ResetCredits?.Count(credit =>
                 credit.Status.Equals("available", StringComparison.OrdinalIgnoreCase) &&
                 credit.ExpiresAt > reference) ?? 0;
-            _creditBadge.Text = T("重置卡 · 可用", "RESET CREDIT · AVAILABLE");
+            _creditBadge.Text = T("重置卡 · 可用", "RESET · AVAILABLE");
             _creditBadge.Foreground = _palette.Amber;
             _credit.Text = remaining > TimeSpan.Zero
                 ? T($"最早一张将在 {FormatDuration(remaining)} 后到期",
@@ -328,7 +333,7 @@ public sealed class DashboardWindow : Window
     {
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Background = _palette.Canvas };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8,
-            Margin = new Thickness(20, 15, 16, 12) };
+            Margin = new Thickness(18, 12, 14, 8) };
         header.Children.Add(new StackPanel { Spacing = 1, Children =
         {
             UiElements.Text("CODEX · " + T("额度", "QUOTA"), 19, FontWeight.Bold, _palette.TextPrimary),
@@ -343,9 +348,9 @@ public sealed class DashboardWindow : Window
         header.Children.Add(settings);
         root.Children.Add(header);
 
-        var scrollContent = new StackPanel { Spacing = 10, Margin = new Thickness(18, 2, 18, 12),
+        var scrollContent = new StackPanel { Spacing = 7, Margin = new Thickness(18, 0, 18, 8),
             HorizontalAlignment = HorizontalAlignment.Stretch };
-        var hero = new Grid { ColumnDefinitions = new ColumnDefinitions("122,*") };
+        var hero = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*"), ColumnSpacing = 8 };
         hero.Children.Add(_summaryOrb);
         var copy = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center,
             Children = { _plan, _headline, _forecast, _source } };
@@ -353,16 +358,14 @@ public sealed class DashboardWindow : Window
         hero.Children.Add(copy);
         scrollContent.Children.Add(hero);
         scrollContent.Children.Add(_creditCard);
-        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 7, Children =
+        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 5, Children =
         {
             UiElements.Text(T("额度窗口与 24 小时节奏", "QUOTA WINDOWS · 24-HOUR PACE"), 12.5,
                 FontWeight.SemiBold, _palette.TextPrimary),
             _windowCards,
             new Border { Height = 1, Background = _palette.Border, Margin = new Thickness(0, 1) },
-            _trend,
-            UiElements.Text(T("悬停曲线可对照实际与均匀额度", "Hover to compare actual and even-use quota"),
-                9.5, FontWeight.Normal, _palette.TextMuted)
-        }}, _palette, new Thickness(14, 12)));
+            _trend
+        }}, _palette, new Thickness(12, 9)));
         var dailyHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         dailyHeader.Children.Add(UiElements.Text(T("本周期每日消耗", "DAILY USAGE · CURRENT CYCLE"), 12.5,
             FontWeight.SemiBold, _palette.TextPrimary));
@@ -379,12 +382,12 @@ public sealed class DashboardWindow : Window
             9.5, FontWeight.Normal, _palette.TextMuted));
         Grid.SetColumn(usage, 1);
         dailyFooter.Children.Add(usage);
-        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 6, Children =
+        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 5, Children =
         {
             dailyHeader,
             _dailyUsage,
             dailyFooter
-        }}, _palette, new Thickness(14, 12)));
+        }}, _palette, new Thickness(12, 9)));
         var scroll = new ScrollViewer { Content = scrollContent,
             VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
@@ -395,7 +398,7 @@ public sealed class DashboardWindow : Window
         {
             ColumnDefinitions = new ColumnDefinitions("*,*"),
             ColumnSpacing = 10,
-            Margin = new Thickness(18, 10, 18, 16)
+            Margin = new Thickness(18, 7, 18, 11)
         };
         var refresh = UiElements.Button(T("刷新", "Refresh"), _palette);
         refresh.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -422,9 +425,13 @@ public sealed class DashboardWindow : Window
             Width = 3,
             Background = _palette.Amber,
             CornerRadius = new CornerRadius(999),
-            Margin = new Thickness(0, 1, 10, 1)
+            Margin = new Thickness(0, 1, 9, 1)
         };
-        var copy = new StackPanel { Spacing = 2, Children = { _creditBadge, _credit, _creditMeta } };
+        var summary = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 9 };
+        summary.Children.Add(_creditBadge);
+        Grid.SetColumn(_credit, 1);
+        summary.Children.Add(_credit);
+        var copy = new StackPanel { Spacing = 1, Children = { summary, _creditMeta } };
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Children = { accent, copy } };
         Grid.SetColumn(copy, 1);
         return new Border
@@ -433,7 +440,7 @@ public sealed class DashboardWindow : Window
             BorderBrush = _palette.Border,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(12, 9),
+            Padding = new Thickness(11, 7),
             Child = grid
         };
     }
@@ -441,7 +448,7 @@ public sealed class DashboardWindow : Window
     private Control BuildWindowCard(QuotaWindow window)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        header.Children.Add(UiElements.Text(UiElements.WindowLabel(window, _settings.Language), 15, FontWeight.Bold, _palette.TextPrimary));
+        header.Children.Add(UiElements.Text(DashboardWindowLabel(window), 15, FontWeight.Bold, _palette.TextPrimary));
         var percent = UiElements.Text($"{window.ClampedRemainingPercent:0}% {T("剩余", "left")}", 13, FontWeight.Bold, _palette.Mint);
         Grid.SetColumn(percent, 1);
         header.Children.Add(percent);
@@ -451,8 +458,8 @@ public sealed class DashboardWindow : Window
         {
             Background = _palette.SurfaceRaised,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 7),
-            Child = new StackPanel { Spacing = 4, Children =
+            Padding = new Thickness(10, 6),
+            Child = new StackPanel { Spacing = 3, Children =
             {
                 header, bar,
                 UiElements.Text($"{UiElements.RemainingTime(window.ResetsAt, _settings.Language)} · {window.ResetsAt?.ToLocalTime():MM-dd HH:mm}",
@@ -469,8 +476,8 @@ public sealed class DashboardWindow : Window
                 "Forecast: collecting more samples\nEstimated availability: not enough data");
         var state = forecast.State switch
         {
-            ForecastState.Sustainable => T("可持续到重置", "Sustainable until reset"),
-            ForecastState.AtRisk => T("按当前速度可能提前耗尽", "May exhaust before reset"),
+            ForecastState.Sustainable => T("可持续到重置", "On track to reset"),
+            ForecastState.AtRisk => T("按当前速度可能提前耗尽", "At risk before reset"),
             ForecastState.Exhausted => T("额度已耗尽", "Quota exhausted"),
             _ => T("等待更多样本", "Collecting more samples")
         };
@@ -491,18 +498,28 @@ public sealed class DashboardWindow : Window
         else if (forecast.State == ForecastState.Sustainable && resetAt is { } reset && reset > reference)
         {
             availability = T($"预计至少可用 {FormatDuration(reset - reference)}（至本轮重置）",
-                $"Available for at least {FormatDuration(reset - reference)} (until reset)");
+                $"At least {FormatDuration(reset - reference)} available · until reset");
         }
         else if (forecast.ExhaustsAt is { } exhaustsAt && exhaustsAt > reference)
         {
             availability = T($"预计可用 {FormatDuration(exhaustsAt - reference)} · {exhaustsAt.ToLocalTime():MM-dd HH:mm} 见底",
-                $"Estimated availability {FormatDuration(exhaustsAt - reference)} · empty {exhaustsAt.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture)}");
+                $"~{FormatDuration(exhaustsAt - reference)} available · empty {exhaustsAt.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture)}");
         }
         else
         {
             availability = T("预计可用时长：尚无法判断", "Estimated availability: not enough data");
         }
-        return $"{state} · {confidence}\n{availability}\n{T("当前", "Current")} {forecast.PercentPerHour:0.##}%/h · {T("安全", "safe")} {forecast.SustainablePercentPerHour:0.##}%/h";
+        return $"{state} · {confidence}\n{availability}\n{T("当前", "Pace")} {forecast.PercentPerHour:0.##}%/h · {T("安全", "sustainable")} {forecast.SustainablePercentPerHour:0.##}%/h";
+    }
+
+    private string DashboardWindowLabel(QuotaWindow window)
+    {
+        if (_settings.Language != AppLanguage.English)
+            return UiElements.WindowLabel(window, _settings.Language);
+        if (window.WindowMinutes == 300) return "5-hour";
+        if (window.WindowMinutes == 10_080) return "7-day";
+        var span = TimeSpan.FromMinutes(window.WindowMinutes);
+        return span.TotalDays >= 1 ? $"{span.TotalDays:0.#}-day" : $"{span.TotalHours:0.#}-hour";
     }
 
     private string FormatDuration(TimeSpan span)

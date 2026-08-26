@@ -263,7 +263,9 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     using (var frame = largeDashboard.CaptureRenderedFrame() ??
                        throw new InvalidOperationException("dashboard-en-light-font150: no rendered frame"))
     {
-        Check.True(largeDashboard.Bounds.Width >= 520, "large-font dashboard width");
+        Check.True(largeDashboard.Bounds.Width >= 555, "large-font English dashboard adds localization width");
+        Check.True(!largeDashboard.ForecastDisplayText.Contains("Estimated availability", StringComparison.Ordinal),
+            "large-font English forecast uses compact copy");
         await using var output = File.Create(Path.Combine(outputRoot, "dashboard-en-light-font150.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
@@ -284,15 +286,21 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     var openRequests = 0;
     clickableOrb.OpenDetailsRequested += (_, _) => openRequests++;
     clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = false, PositionLocked = false });
+    Check.True(clickableOrb.HasInteractiveCursor,
+        "orb shows an interactive cursor when click-through is disabled");
     clickableOrb.Show();
     clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
     clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
     Check.True(openRequests == 1, "orb click opens details when click-through is disabled");
     clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = true, PositionLocked = false });
+    Check.True(!clickableOrb.HasInteractiveCursor,
+        "orb keeps the default cursor when click-through is enabled");
     clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
     clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
     Check.True(openRequests == 1, "orb ignores clicks when click-through is enabled");
     clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = false, PositionLocked = true });
+    Check.True(clickableOrb.HasInteractiveCursor,
+        "locked clickable orb still shows an interactive cursor");
     clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
     clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
     Check.True(openRequests == 2, "position lock keeps click-to-open available");
@@ -339,6 +347,11 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
                adaptiveDashboard.ResetCreditIsProminent,
         "dashboard promotes the earliest reset credit expiry");
     adaptiveDashboard.Show();
+    adaptiveDashboard.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    var dashboardScroll = adaptiveDashboard.GetVisualDescendants().OfType<ScrollViewer>().Single();
+    Check.True(dashboardScroll.Extent.Height <= dashboardScroll.Viewport.Height + 2,
+        "default dashboard keeps all information visible without scrolling");
     if (adaptiveDashboard.Screens.Primary is { } placementScreen)
     {
         var work = placementScreen.WorkingArea;
@@ -368,8 +381,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         adaptiveDashboard.EnablePlacementTrackingForTest();
         var moved = new PixelPoint(work.X + 68, work.Y + 61);
         adaptiveDashboard.Position = moved;
-        Thread.Sleep(380);
-        Dispatcher.UIThread.RunJobs();
+        adaptiveDashboard.CommitPlacementForTest();
         Check.True(committedPosition == moved, "dashboard commits a manually adjusted position");
     }
     adaptiveDashboard.ClosePermanently();
