@@ -16,10 +16,19 @@ public sealed class OrbWindow : Window
     private bool _pointerMoved;
     private bool _trackPosition;
     private bool _constrainingPosition;
+    private bool _moveMode;
+    private bool _userDragPending;
     private PixelPoint _pressPosition;
 
     public event EventHandler? OpenDetailsRequested;
     public event EventHandler<PixelPoint>? MoveCompleted;
+
+    internal int RenderedRingCount => double.IsFinite(_orb.SecondaryRemainingPercent) ? 2 :
+        string.IsNullOrWhiteSpace(_orb.PrimaryLabel) ? 0 : 1;
+    internal string RenderedPrimaryLabel => _orb.PrimaryLabel;
+    internal string RenderedSecondaryLabel => _orb.SecondaryLabel;
+    internal QuotaConnectionState RenderedConnectionState => _orb.ConnectionState;
+    internal bool IsMoveMode => _moveMode;
 
     public OrbWindow()
     {
@@ -44,10 +53,20 @@ public sealed class OrbWindow : Window
         _positionSaveTimer.Tick += (_, _) =>
         {
             _positionSaveTimer.Stop();
-            if (!_trackPosition || _constrainingPosition) return;
+            if (!_trackPosition || _constrainingPosition || !_userDragPending) return;
+            var moved = Math.Abs(Position.X - _pressPosition.X) + Math.Abs(Position.Y - _pressPosition.Y) > 4;
+            if (!moved) return;
             _constrainingPosition = true;
-            try { MoveCompleted?.Invoke(this, ConstrainPosition(_settings.SnapToEdge).Position); }
-            finally { _constrainingPosition = false; }
+            try
+            {
+                MoveCompleted?.Invoke(this, ConstrainPosition(_settings.SnapToEdge).Position);
+                _userDragPending = false;
+            }
+            finally
+            {
+                _orb.InteractionPaused = false;
+                _constrainingPosition = false;
+            }
         };
         Opened += (_, _) => _trackPosition = true;
         PositionChanged += (_, _) =>
@@ -81,6 +100,8 @@ public sealed class OrbWindow : Window
         {
             _orb.RemainingPercent = 0;
             _orb.SecondaryRemainingPercent = double.NaN;
+            _orb.PrimaryLabel = string.Empty;
+            _orb.SecondaryLabel = string.Empty;
             _orb.Caption = _settings.Language == AppLanguage.SimplifiedChinese ? "等待数据" : "WAITING";
         }
         else
@@ -89,13 +110,25 @@ public sealed class OrbWindow : Window
             var primary = selected.Outer!;
             var secondary = selected.Inner;
             _orb.RemainingPercent = primary.ClampedRemainingPercent;
-            _orb.PrimaryLabel = ShortLabel(primary.WindowMinutes);
+            _orb.PrimaryLabel = UiElements.ShortWindowLabel(primary.WindowMinutes);
             _orb.SecondaryRemainingPercent = secondary?.ClampedRemainingPercent ?? double.NaN;
-            _orb.SecondaryLabel = secondary is null ? string.Empty : ShortLabel(secondary.WindowMinutes);
+            _orb.SecondaryLabel = secondary is null ? string.Empty : UiElements.ShortWindowLabel(secondary.WindowMinutes);
             _orb.Caption = _settings.Language == AppLanguage.SimplifiedChinese ? "剩余" : "REMAINING";
         }
         _orb.FeedbackIntensity = Math.Clamp((presentation.Forecast?.PercentPerHour ?? 0) / 8d, 0, 1);
+        _orb.ConnectionState = presentation.ConnectionState;
         ToolTip.SetTip(_orb, _settings.HoverPreviewEnabled ? BuildToolTip(presentation) : null);
+    }
+
+    public void SetMoveMode(bool enabled)
+    {
+        _moveMode = enabled;
+        _orb.MoveMode = enabled;
+        ToolTip.SetTip(_orb, enabled
+            ? (_settings.Language == AppLanguage.SimplifiedChinese
+                ? "移动模式：拖动后自动恢复原来的穿透与锁定设置"
+                : "Move mode: original click-through and lock settings return after dragging")
+            : null);
     }
 
     public void RestorePosition(double? x, double? y)
@@ -164,7 +197,7 @@ public sealed class OrbWindow : Window
         var palette = UiPalette.For(AppTheme.Dark);
         var stack = new StackPanel { Spacing = 5, Margin = new Thickness(5) };
         foreach (var window in presentation.Snapshot?.VisibleWindows ?? [])
-            stack.Children.Add(UiElements.Text($"{ShortLabel(window.WindowMinutes)}  {window.ClampedRemainingPercent:0}%  ·  " +
+            stack.Children.Add(UiElements.Text($"{UiElements.ShortWindowLabel(window.WindowMinutes)}  {window.ClampedRemainingPercent:0}%  ·  " +
                 UiElements.RemainingTime(window.ResetsAt, _settings.Language), 12, FontWeight.SemiBold, palette.TextPrimary));
         stack.Children.Add(UiElements.Text(presentation.Error ?? presentation.Snapshot?.Source ?? "CodexQuota",
             10.5, FontWeight.Normal, palette.TextMuted));
@@ -176,9 +209,11 @@ public sealed class OrbWindow : Window
     {
         var point = e.GetCurrentPoint(this);
         if (point.Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed) return;
-        if (!point.Properties.IsLeftButtonPressed || _settings.PositionLocked || _settings.ClickThrough) return;
+        if (!point.Properties.IsLeftButtonPressed || !_moveMode && (_settings.PositionLocked || _settings.ClickThrough)) return;
         _pointerMoved = false;
+        _userDragPending = true;
         _pressPosition = Position;
+        _orb.InteractionPaused = true;
         BeginMoveDrag(e);
     }
 
@@ -191,8 +226,12 @@ public sealed class OrbWindow : Window
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         _pointerMoved |= Math.Abs(Position.X - _pressPosition.X) + Math.Abs(Position.Y - _pressPosition.Y) > 4;
-        if (!_pointerMoved && !_settings.ClickThrough) OpenDetailsRequested?.Invoke(this, EventArgs.Empty);
+        if (!_pointerMoved)
+        {
+            _userDragPending = false;
+            _orb.InteractionPaused = false;
+        }
+        if (!_pointerMoved && !_settings.ClickThrough && !_moveMode) OpenDetailsRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private static string ShortLabel(int minutes) => minutes switch { 300 => "5H", 10_080 => "7D", _ => $"{minutes}M" };
 }

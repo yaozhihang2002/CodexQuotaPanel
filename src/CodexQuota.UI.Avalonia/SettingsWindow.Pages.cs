@@ -59,6 +59,13 @@ public sealed partial class SettingsWindow
     private Control BuildInteractionPage()
     {
         var panel = Page(T("交互", "Interaction"), T("置顶、穿透、拖动与恢复入口", "Topmost, click-through, dragging and recovery"));
+        panel.Children.Add(UiElements.Card(new StackPanel { Spacing = 4, Children =
+        {
+            UiElements.Text(T("移动提示", "MOVING THE ORB"), 12.5, FontWeight.Bold, _palette.Mint),
+            UiElements.Text(T("鼠标穿透或锁定位置会阻止直接拖动。需要移动时，可从托盘选择“移动悬浮球…”，原设置会在拖动完成后自动恢复。",
+                    "Click-through or position lock blocks direct dragging. Choose “Move orb…” from the tray; original settings return after the drag."),
+                10.5, FontWeight.Normal, _palette.TextSecondary)
+        }}, _palette));
         panel.Children.Add(ToggleRow(T("始终置顶", "Always on top"), T("定期校正，避免被其他窗口覆盖", "Reasserted periodically"),
             _draft.AlwaysOnTop, value => Change(s => s with { AlwaysOnTop = value })));
         panel.Children.Add(ToggleRow(T("鼠标穿透", "Click-through"), T("启用后用托盘或恢复快捷键关闭", "Use tray or recovery shortcut to disable"),

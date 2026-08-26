@@ -75,16 +75,47 @@ internal sealed partial class RuntimeCoordinator
             await Dispatcher.UIThread.InvokeAsync(() => SetRefreshing(true));
             OfficialQuotaSnapshot? snapshot = null;
             string? error = null;
+            var connectionState = QuotaConnectionState.Connecting;
+            string? connectionDetail = null;
             try
             {
                 var live = await _liveQuota.ReadAsync(_lifetime.Token).ConfigureAwait(false);
-                snapshot = live ?? await _localQuota.ReadAsync(_lifetime.Token).ConfigureAwait(false);
+                if (live is not null)
+                {
+                    snapshot = live;
+                    connectionState = QuotaConnectionState.Live;
+                    connectionDetail = T("已连接 Codex 实时额度服务", "Connected to Codex live quota service");
+                }
+                else
+                {
+                    snapshot = await _localQuota.ReadAsync(_lifetime.Token).ConfigureAwait(false);
+                    if (snapshot is not null)
+                    {
+                        var age = DateTimeOffset.UtcNow - snapshot.ObservedAt;
+                        connectionState = snapshot.IsStale || age > TimeSpan.FromMinutes(3)
+                            ? QuotaConnectionState.Stale
+                            : QuotaConnectionState.LocalFallback;
+                        connectionDetail = connectionState == QuotaConnectionState.Stale
+                            ? T($"实时服务暂不可用；本地快照已过去 {Math.Max(1, (int)age.TotalMinutes)} 分钟",
+                                $"Live service unavailable; local snapshot is {Math.Max(1, (int)age.TotalMinutes)} minutes old")
+                            : T("实时服务暂不可用，正在使用本地 Codex 会话快照",
+                                "Live service unavailable; using a local Codex session snapshot");
+                    }
+                    else
+                    {
+                        connectionState = QuotaConnectionState.Offline;
+                        connectionDetail = T("尚未发现可用的 Codex 实时服务或本地额度快照",
+                            "No Codex live service or local quota snapshot is available");
+                    }
+                }
                 if (snapshot is not null && _settings.TrendRecordingEnabled)
                     await _history.AppendQuotaAsync(snapshot, _lifetime.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
                 error = T("暂时无法读取 Codex 额度数据", "Codex quota data is temporarily unavailable");
+                connectionState = QuotaConnectionState.Offline;
+                connectionDetail = error;
             }
 
             var history = await _history.ReadQuotaAsync(DateTimeOffset.UtcNow.AddHours(-24), _lifetime.Token).ConfigureAwait(false);
@@ -93,7 +124,11 @@ internal sealed partial class RuntimeCoordinator
                 : DateTimeOffset.UtcNow.AddDays(-7);
             var usage = await _history.ReadUsageAsync(usageSince, _lifetime.Token).ConfigureAwait(false);
             var forecast = snapshot is null ? null : QuotaRunwayForecaster.Evaluate(snapshot, history);
-            _presentation = new QuotaPresentation(snapshot, history, usage, forecast, false, error, DateTimeOffset.Now);
+            _presentation = new QuotaPresentation(snapshot, history, usage, forecast, false, error, DateTimeOffset.Now)
+            {
+                ConnectionState = connectionState,
+                ConnectionDetail = connectionDetail
+            };
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 ApplyPresentation();
@@ -105,7 +140,16 @@ internal sealed partial class RuntimeCoordinator
 
     private void SetRefreshing(bool refreshing)
     {
-        _presentation = _presentation with { IsRefreshing = refreshing };
+        _presentation = _presentation with
+        {
+            IsRefreshing = refreshing,
+            ConnectionState = refreshing && _presentation.Snapshot is null
+                ? QuotaConnectionState.Connecting
+                : _presentation.ConnectionState,
+            ConnectionDetail = refreshing && _presentation.Snapshot is null
+                ? T("正在连接 Codex 数据源", "Connecting to Codex data source")
+                : _presentation.ConnectionDetail
+        };
         ApplyPresentation();
     }
 
@@ -116,9 +160,23 @@ internal sealed partial class RuntimeCoordinator
         if (_usageWindow?.IsVisible == true) ShowUsageDetails();
         if (_tray is not null)
         {
-            var minimum = _presentation.Snapshot?.VisibleWindows.Min(window => window.ClampedRemainingPercent);
-            _tray.ToolTipText = minimum is null ? "CodexQuota · waiting" : $"CodexQuota · {minimum:0}%";
-            using var icon = TrayIconFactory.Create(minimum ?? 0);
+            var windows = _presentation.Snapshot?.VisibleWindows ?? [];
+            var minimum = windows.Count == 0 ? (double?)null : windows.Min(window => window.ClampedRemainingPercent);
+            var state = _presentation.ConnectionState switch
+            {
+                QuotaConnectionState.Live => T("实时", "live"),
+                QuotaConnectionState.LocalFallback => T("本地回退", "local fallback"),
+                QuotaConnectionState.Stale => T("数据陈旧", "stale"),
+                QuotaConnectionState.Offline => T("未连接", "offline"),
+                _ => T("连接中", "connecting")
+            };
+            var quota = windows.Count == 0
+                ? T("等待额度", "waiting for quota")
+                : string.Join(" · ", windows.Select(window =>
+                    $"{(window.WindowMinutes == 300 ? "5H" : window.WindowMinutes == 10_080 ? "7D" : $"{window.WindowMinutes}m")} " +
+                    $"{window.ClampedRemainingPercent:0}%"));
+            _tray.ToolTipText = $"CodexQuota · {quota} · {state}";
+            using var icon = TrayIconFactory.Create(minimum ?? 0, _presentation.ConnectionState);
             _tray.Icon = new WindowIcon(icon);
         }
     }

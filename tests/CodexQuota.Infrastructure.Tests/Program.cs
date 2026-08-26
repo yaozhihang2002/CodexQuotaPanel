@@ -23,10 +23,20 @@ Directory.CreateDirectory(sessions);
 try
 {
     var settings = new JsonSettingsStore(settingsPath);
-    await settings.WriteAsync(AppSettings.Default with { OrbSize = 140, Theme = AppTheme.Light }, CancellationToken.None);
+    await settings.WriteAsync(AppSettings.Default with
+    {
+        OrbSize = 140,
+        Theme = AppTheme.Light,
+        OrbX = -640,
+        OrbY = 318,
+        OrbDisplayId = "-1920,0,1920,1080"
+    }, CancellationToken.None);
     var readSettings = await settings.ReadAsync(CancellationToken.None);
     Check.Equal(140, readSettings?.OrbSize, "settings round trip size");
     Check.Equal(AppTheme.Light, readSettings?.Theme, "settings round trip theme");
+    Check.Equal(-640d, readSettings?.OrbX, "settings round trip negative display X");
+    Check.Equal(318d, readSettings?.OrbY, "settings round trip Y");
+    Check.Equal("-1920,0,1920,1080", readSettings?.OrbDisplayId, "settings round trip display identity");
 
     await settings.WriteAsync(readSettings! with { OrbSize = 128 }, CancellationToken.None);
     await File.WriteAllTextAsync(settingsPath, "{broken", CancellationToken.None);
@@ -195,6 +205,8 @@ if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
 {
     var live = await new CodexAppServerQuotaSource().ReadAsync(CancellationToken.None);
     Check.True(live is { VisibleWindows.Count: > 0 }, "live app-server quota snapshot");
+    Console.WriteLine("Live windows: " + string.Join(", ", live!.VisibleWindows.Select(window =>
+        $"{window.WindowMinutes}m={window.ClampedRemainingPercent:0.##}%")));
     Console.WriteLine("Live app-server check passed");
 }
 else

@@ -89,16 +89,21 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         now.AddHours(index - 24), "7d", 10_080, 68 - index)).ToArray();
     var usage = new[]
     {
-        new ObservedUsage(now.AddHours(-3), "GPT-5.6 Sol", "Default",
+        new ObservedUsage(now.AddHours(-3), "gpt-5.6-sol", "Default",
             new TokenUsageBreakdown(12_000, 7_000, 2_000, 3_000, 1_000), "a", true),
-        new ObservedUsage(now.AddDays(-1), "GPT-5.6 Terra", "Fast",
+        new ObservedUsage(now.AddDays(-1), "gpt-5.6-terra", "Fast",
             new TokenUsageBreakdown(8_000, 5_000, 1_000, 2_000, 500), "b", true)
     };
     var presentation = new QuotaPresentation(snapshot, history, usage,
-        QuotaRunwayForecaster.Evaluate(snapshot, history), false, null, now);
+        QuotaRunwayForecaster.Evaluate(snapshot, history), false, null, now)
+    {
+        ConnectionState = QuotaConnectionState.Live,
+        ConnectionDetail = "Connected to Codex live quota service"
+    };
     var formal = new (string Name, Window Window)[]
     {
         ("dashboard-zh-dark", new DashboardWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese })),
+        ("dashboard-zh-dark-single", new DashboardWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese })),
         ("dashboard-en-light", new DashboardWindow(new AppSettings { Theme = AppTheme.Light, Language = AppLanguage.English })),
         ("settings-zh-dark-general", CreateSettings(AppLanguage.SimplifiedChinese, AppTheme.Dark, 0)),
         ("settings-zh-dark-appearance", CreateSettings(AppLanguage.SimplifiedChinese, AppTheme.Dark, 1)),
@@ -114,6 +119,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         ("usage-en-light", new UsageDetailsWindow(new AppSettings { Theme = AppTheme.Light, Language = AppLanguage.English })),
         ("orb-single", new OrbWindow()),
         ("orb-dual", new OrbWindow()),
+        ("orb-offline", new OrbWindow()),
         ("alert-zh-dark", new AlertWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese },
             "额度提醒", "7 天窗口 · 18% 剩余", false)),
         ("clickthrough-en-light", new ClickThroughReminderWindow(new AppSettings
@@ -121,14 +127,23 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     };
     foreach (var (name, window) in formal)
     {
-        if (window is DashboardWindow dashboard) dashboard.ApplyPresentation(presentation);
+        if (window is DashboardWindow dashboard)
+            dashboard.ApplyPresentation(name.EndsWith("single", StringComparison.Ordinal)
+                ? presentation with { Snapshot = snapshot with { Windows = [snapshot.VisibleWindows[1]] } }
+                : presentation);
         if (window is UsageDetailsWindow details) details.ApplyUsage(usage, now.AddDays(-7), now.AddDays(1));
         if (window is OrbWindow orb)
         {
             orb.ApplySettings(new AppSettings { OrbSize = 120, Theme = AppTheme.Dark });
             orb.ApplyPresentation(name.EndsWith("dual", StringComparison.Ordinal)
                 ? presentation
-                : presentation with { Snapshot = new OfficialQuotaSnapshot(now, [snapshot.VisibleWindows[1]]) });
+                : name.EndsWith("offline", StringComparison.Ordinal)
+                    ? QuotaPresentation.Empty with
+                    {
+                        ConnectionState = QuotaConnectionState.Offline,
+                        ConnectionDetail = "No quota source available"
+                    }
+                    : presentation with { Snapshot = snapshot with { Windows = [snapshot.VisibleWindows[1]] } });
         }
         window.Show();
         window.UpdateLayout();
@@ -167,6 +182,15 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         .Where(box => box is not null).Cast<TextBox>().ToArray();
     Check.True(numericTextBoxes.Length == numericEditors.Length && numericTextBoxes.All(box => box.Bounds.Width >= 45),
         "settings numeric editor text area remains readable");
+    Check.True(settingsInteraction.GetVisualDescendants().OfType<ValueSliderControl>().Count() == 3 &&
+               !settingsInteraction.GetVisualDescendants().OfType<Slider>().Any(),
+        "settings uses themed sliders instead of system accent sliders");
+    settingsInteraction.NavigateToPage(0);
+    var localizedChoices = settingsInteraction.GetVisualDescendants().OfType<ComboBox>()
+        .SelectMany(combo => (combo.ItemsSource as System.Collections.IEnumerable)?.Cast<object>() ?? [])
+        .Select(item => item.ToString()).Where(text => text is not null).Cast<string>().ToArray();
+    Check.True(localizedChoices.Contains("恢复上次状态") && localizedChoices.Contains("跟随系统") &&
+               localizedChoices.Contains("简体中文"), "settings enum choices are localized");
     settingsInteraction.NavigateToPage(4);
     Check.True(settingsInteraction.CachedPageCount == 5, "settings caches five pages");
     Check.True(settingsInteraction.SelectedPageIndex == 4 && settingsInteraction.VisiblePageCount == 1,
@@ -243,9 +267,96 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Check.True(lifecycleOrb.Position == positionBeforeTransition, "orb transition preserves position");
     Check.True(lifecycleOrb.Opacity > .99, "orb transition restores opacity");
     lifecycleOrb.Close();
+
+    var adaptiveOrb = new OrbWindow();
+    adaptiveOrb.ApplySettings(new AppSettings { OrbSize = 120, Theme = AppTheme.Dark });
+    adaptiveOrb.ApplyPresentation(presentation with
+    {
+        Snapshot = new OfficialQuotaSnapshot(now, [new QuotaWindow("7d", 10_080, 62, now.AddDays(4))])
+    });
+    Check.True(adaptiveOrb.RenderedRingCount == 1 && adaptiveOrb.RenderedPrimaryLabel == "7D",
+        "adaptive orb detects 7D-only single ring");
+    adaptiveOrb.ApplyPresentation(presentation);
+    Check.True(adaptiveOrb.RenderedRingCount == 2 && adaptiveOrb.RenderedPrimaryLabel == "5H" &&
+               adaptiveOrb.RenderedSecondaryLabel == "7D", "adaptive orb restores dual ring");
+    adaptiveOrb.ApplyPresentation(presentation with
+    {
+        Snapshot = new OfficialQuotaSnapshot(now, [new QuotaWindow("5h", 300, 81, now.AddHours(4))]),
+        ConnectionState = QuotaConnectionState.LocalFallback
+    });
+    Check.True(adaptiveOrb.RenderedRingCount == 1 && adaptiveOrb.RenderedPrimaryLabel == "5H" &&
+               adaptiveOrb.RenderedConnectionState == QuotaConnectionState.LocalFallback,
+        "adaptive orb detects 5H-only and connection transition");
+    adaptiveOrb.SetMoveMode(true);
+    Check.True(adaptiveOrb.IsMoveMode, "orb temporary move mode overrides interaction block");
+    adaptiveOrb.SetMoveMode(false);
+
+    var adaptiveDashboard = new DashboardWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
+    adaptiveDashboard.ApplyPresentation(presentation with
+    {
+        Snapshot = new OfficialQuotaSnapshot(now, [new QuotaWindow("7d", 10_080, 62, now.AddDays(4))])
+    });
+    Check.True(adaptiveDashboard.WindowCardCount == 1 && adaptiveDashboard.SummaryRingCount == 1 &&
+               adaptiveDashboard.ConnectionBadgeText == "实时", "dashboard 7D-only adaptive layout");
+    adaptiveDashboard.ApplyPresentation(presentation);
+    Check.True(adaptiveDashboard.WindowCardCount == 2 && adaptiveDashboard.SummaryRingCount == 2,
+        "dashboard dynamic dual-window restore");
+
+    var usageCycle = new UsageDetailsWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
+    usageCycle.ApplyUsage(usage, now.Date.AddDays(-6), now.Date.AddDays(1));
+    Check.True(usageCycle.DailyChartDayCount == 7, "daily chart retains full seven-day cycle including zero days");
+    usageCycle.Show();
+    usageCycle.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    var dailyChart = usageCycle.GetVisualDescendants().OfType<DailyUsageChartControl>().Single();
+    dailyChart.SetHoverIndexForTest(6);
+    Check.True(dailyChart.HoveredDayIndex == 6, "daily chart hover selects the exact day");
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    Dispatcher.UIThread.RunJobs();
+    using (var frame = usageCycle.CaptureRenderedFrame() ?? throw new InvalidOperationException("usage hover: no rendered frame"))
+    {
+        await using var output = File.Create(Path.Combine(outputRoot, "usage-zh-dark-hover.png"));
+        frame.Save(output, PngBitmapEncoderOptions.Default);
+    }
+    usageCycle.Close();
+
+    var feedbackGrid = new Grid
+    {
+        RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
+        ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,Auto"),
+        RowSpacing = 12,
+        ColumnSpacing = 12,
+        Margin = new Thickness(20)
+    };
+    var styles = Enum.GetValues<ConsumptionFeedbackStyle>();
+    var intensities = new[] { 0d, .17d, .42d, .68d, .94d };
+    for (var row = 0; row < styles.Length; row++)
+    for (var column = 0; column < intensities.Length; column++)
+    {
+        var control = new OrbControl
+        {
+            Width = 118, Height = 118, RemainingPercent = 68, SecondaryRemainingPercent = 29,
+            FeedbackStyle = styles[row], FeedbackIntensity = intensities[column], AnimateFeedback = false,
+            ConnectionState = QuotaConnectionState.Live
+        };
+        Grid.SetRow(control, row);
+        Grid.SetColumn(control, column);
+        feedbackGrid.Children.Add(control);
+    }
+    var feedbackWindow = new Window { Width = 700, Height = 420, Background = UiPalette.B("#0D1210"), Content = feedbackGrid };
+    feedbackWindow.Show();
+    feedbackWindow.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    using (var frame = feedbackWindow.CaptureRenderedFrame() ?? throw new InvalidOperationException("feedback matrix: no rendered frame"))
+    {
+        await using var output = File.Create(Path.Combine(outputRoot, "feedback-matrix.png"));
+        frame.Save(output, PngBitmapEncoderOptions.Default);
+    }
+    feedbackWindow.Close();
 }
 
-Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 20 : 0)} scenarios -> {outputRoot}");
+Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 29 : 0)} scenarios -> {outputRoot}");
 Environment.Exit(0);
 
 static SettingsWindow CreateSettings(AppLanguage language, AppTheme theme, int page)

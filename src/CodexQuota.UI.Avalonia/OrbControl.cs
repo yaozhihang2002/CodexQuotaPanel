@@ -22,6 +22,9 @@ public sealed class OrbControl : Control
     public static readonly StyledProperty<bool> FeedbackEnabledProperty = AvaloniaProperty.Register<OrbControl, bool>(nameof(FeedbackEnabled), true);
     public static readonly StyledProperty<ConsumptionFeedbackStyle> FeedbackStyleProperty = AvaloniaProperty.Register<OrbControl, ConsumptionFeedbackStyle>(nameof(FeedbackStyle), ConsumptionFeedbackStyle.Fluid);
     public static readonly StyledProperty<bool> AnimateFeedbackProperty = AvaloniaProperty.Register<OrbControl, bool>(nameof(AnimateFeedback), true);
+    public static readonly StyledProperty<QuotaConnectionState> ConnectionStateProperty = AvaloniaProperty.Register<OrbControl, QuotaConnectionState>(nameof(ConnectionState), QuotaConnectionState.Connecting);
+    public static readonly StyledProperty<bool> MoveModeProperty = AvaloniaProperty.Register<OrbControl, bool>(nameof(MoveMode));
+    public static readonly StyledProperty<bool> InteractionPausedProperty = AvaloniaProperty.Register<OrbControl, bool>(nameof(InteractionPaused));
     private readonly DispatcherTimer _animationTimer;
     private double _displayIntensity;
     private double _phase;
@@ -38,18 +41,21 @@ public sealed class OrbControl : Control
     public bool FeedbackEnabled { get => GetValue(FeedbackEnabledProperty); set => SetValue(FeedbackEnabledProperty, value); }
     public ConsumptionFeedbackStyle FeedbackStyle { get => GetValue(FeedbackStyleProperty); set => SetValue(FeedbackStyleProperty, value); }
     public bool AnimateFeedback { get => GetValue(AnimateFeedbackProperty); set => SetValue(AnimateFeedbackProperty, value); }
+    public QuotaConnectionState ConnectionState { get => GetValue(ConnectionStateProperty); set => SetValue(ConnectionStateProperty, value); }
+    public bool MoveMode { get => GetValue(MoveModeProperty); set => SetValue(MoveModeProperty, value); }
+    public bool InteractionPaused { get => GetValue(InteractionPausedProperty); set => SetValue(InteractionPausedProperty, value); }
 
     static OrbControl() => AffectsRender<OrbControl>(RemainingPercentProperty, SecondaryRemainingPercentProperty,
         CaptionProperty, PrimaryLabelProperty, SecondaryLabelProperty, OrbBackgroundProperty, OuterRingColorProperty,
         InnerRingColorProperty, FeedbackIntensityProperty, FeedbackEnabledProperty, FeedbackStyleProperty,
-        AnimateFeedbackProperty);
+        AnimateFeedbackProperty, ConnectionStateProperty, MoveModeProperty, InteractionPausedProperty);
 
     public OrbControl()
     {
         _animationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _animationTimer.Tick += (_, _) =>
         {
-            if (!IsEffectivelyVisible || !FeedbackEnabled || !AnimateFeedback)
+            if (!IsEffectivelyVisible || !FeedbackEnabled || !AnimateFeedback || InteractionPaused)
             {
                 _animationTimer.Stop();
                 _displayIntensity = Math.Clamp(FeedbackIntensity, 0d, 1d);
@@ -60,7 +66,8 @@ public sealed class OrbControl : Control
             _phase = (_phase + .16 + _displayIntensity * .12) % (Math.PI * 2);
             if (Math.Abs(target - _displayIntensity) < .002) _displayIntensity = target;
             InvalidateVisual();
-            if (target < .08 && _displayIntensity < .08) _animationTimer.Stop();
+            if (target < .08 && _displayIntensity < .08 && ConnectionState != QuotaConnectionState.Connecting)
+                _animationTimer.Stop();
         };
     }
 
@@ -68,21 +75,24 @@ public sealed class OrbControl : Control
     {
         base.OnPropertyChanged(change);
         if (change.Property != FeedbackIntensityProperty && change.Property != FeedbackEnabledProperty &&
-            change.Property != AnimateFeedbackProperty) return;
+            change.Property != AnimateFeedbackProperty && change.Property != ConnectionStateProperty &&
+            change.Property != InteractionPausedProperty) return;
         var target = Math.Clamp(FeedbackIntensity, 0d, 1d);
-        if (VisualRoot is null || !AnimateFeedback)
+        if (VisualRoot is null || !AnimateFeedback || InteractionPaused)
         {
             _displayIntensity = target;
             _animationTimer.Stop();
         }
-        else if (FeedbackEnabled) _animationTimer.Start();
+        else if (FeedbackEnabled || ConnectionState == QuotaConnectionState.Connecting) _animationTimer.Start();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         _displayIntensity = Math.Clamp(FeedbackIntensity, 0d, 1d);
-        if (FeedbackEnabled && AnimateFeedback && _displayIntensity >= .08) _animationTimer.Start();
+        if (!InteractionPaused && AnimateFeedback &&
+            (FeedbackEnabled && _displayIntensity >= .08 || ConnectionState == QuotaConnectionState.Connecting))
+            _animationTimer.Start();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -108,6 +118,7 @@ public sealed class OrbControl : Control
         if (hasSecondary)
             DrawRing(context, outer.Deflate(size * 0.13d), SecondaryRemainingPercent, width,
                 B("#2C393E"), new SolidColorBrush(InnerRingColor));
+        DrawConnectionEndpoint(context, outer, RemainingPercent, size);
 
         if (hasSecondary)
         {
@@ -118,70 +129,177 @@ public sealed class OrbControl : Control
         }
         else
         {
-            DrawCentered(context, $"{Math.Round(Math.Clamp(RemainingPercent, 0, 100)):0}%", center.Y - size * 0.04,
-                size * 0.205, Brushes.White, FontWeight.Bold);
-            DrawCentered(context, Caption, center.Y + size * 0.135, size * 0.055, B("#AFC0B8"), FontWeight.SemiBold);
+            if (string.IsNullOrWhiteSpace(PrimaryLabel))
+            {
+                DrawCentered(context, "—", center.Y - size * .015, size * .19, B("#AFC0B8"), FontWeight.Bold);
+                DrawCentered(context, Caption, center.Y + size * .14, size * .055, B("#AFC0B8"), FontWeight.SemiBold);
+            }
+            else
+            {
+                DrawCentered(context, PrimaryLabel, center.Y - size * .145, size * .061,
+                    new SolidColorBrush(OuterRingColor), FontWeight.Bold);
+                DrawCentered(context, $"{Math.Round(Math.Clamp(RemainingPercent, 0, 100)):0}%", center.Y - size * .01,
+                    size * .19, Brushes.White, FontWeight.Bold);
+                DrawCentered(context, Caption, center.Y + size * .145, size * .052, B("#AFC0B8"), FontWeight.SemiBold);
+            }
         }
         if (FeedbackEnabled) DrawFeedback(context, center, size);
+        if (MoveMode) DrawMoveMode(context, rect, center, size);
     }
 
     private void DrawFeedback(DrawingContext context, Point center, double size)
     {
         var intensity = Math.Clamp(_displayIntensity, 0d, 1d);
-        var y = center.Y + size * 0.255;
-        if (intensity < 0.08)
+        var level = intensity switch { < .08 => 0, < .28 => 1, < .55 => 2, < .78 => 3, _ => 4 };
+        var y = center.Y + size * .285;
+        if (level == 0) { DrawIceCrystal(context, center.X, y, size); return; }
+        switch (FeedbackStyle)
         {
-            var ice = B("#8DDCFF");
-            var r = Math.Max(2, size * 0.027);
-            var pen = new Pen(ice, Math.Max(1, size * 0.01));
-            context.DrawLine(pen, new Point(center.X - r, y), new Point(center.X + r, y));
-            context.DrawLine(pen, new Point(center.X, y - r), new Point(center.X, y + r));
-            context.DrawLine(pen, new Point(center.X - r * .7, y - r * .7), new Point(center.X + r * .7, y + r * .7));
-            context.DrawLine(pen, new Point(center.X + r * .7, y - r * .7), new Point(center.X - r * .7, y + r * .7));
-            return;
+            case ConsumptionFeedbackStyle.Ember:
+                DrawEmber(context, center.X, y, size, intensity, level);
+                break;
+            case ConsumptionFeedbackStyle.Pixel:
+                DrawPixelFeedback(context, center.X, y, size, intensity, level);
+                break;
+            default:
+                DrawFluidFeedback(context, center.X, y, size, intensity, level);
+                break;
         }
+    }
+
+    private void DrawConnectionEndpoint(DrawingContext context, Rect outer, double remaining, double size)
+    {
+        var progress = Math.Clamp(remaining, 0d, 100d) / 100d;
+        var point = PointOnEllipse(outer, 135 + 270 * progress);
+        var pulse = ConnectionState == QuotaConnectionState.Connecting && AnimateFeedback
+            ? .5 + .5 * Math.Sin(_phase * 1.35) : 0d;
+        var color = ConnectionState switch
+        {
+            QuotaConnectionState.Live => "#57D9AA",
+            QuotaConnectionState.LocalFallback => "#72BFF2",
+            QuotaConnectionState.Stale => "#E9B94F",
+            QuotaConnectionState.Offline => "#7E8B85",
+            _ => "#E9B94F"
+        };
+        var radius = Math.Max(2.5, size * (.027 + pulse * .006));
+        context.DrawEllipse(B("#D9000000"), null, new Rect(point.X - radius - 1.4, point.Y - radius - 1.4,
+            radius * 2 + 2.8, radius * 2 + 2.8));
+        context.DrawEllipse(B(color), new Pen(B("#B8000000"), Math.Max(1, size * .007)),
+            new Rect(point.X - radius, point.Y - radius, radius * 2, radius * 2));
+    }
+
+    private static void DrawIceCrystal(DrawingContext context, double x, double y, double size)
+    {
+        var radius = Math.Max(3.2, size * .036);
+        var fill = B("#B9EDFF");
+        var edge = new Pen(B("#66C9F3"), Math.Max(1, size * .008), lineCap: PenLineCap.Round);
+        var crystal = new StreamGeometry();
+        using (var stream = crystal.Open())
+        {
+            stream.BeginFigure(new Point(x, y - radius), true);
+            stream.LineTo(new Point(x + radius * .72, y - radius * .24));
+            stream.LineTo(new Point(x + radius * .62, y + radius * .68));
+            stream.LineTo(new Point(x, y + radius));
+            stream.LineTo(new Point(x - radius * .62, y + radius * .68));
+            stream.LineTo(new Point(x - radius * .72, y - radius * .24));
+            stream.EndFigure(true);
+        }
+        context.DrawGeometry(fill, edge, crystal);
+        context.DrawLine(edge, new Point(x, y - radius * .72), new Point(x, y + radius * .68));
+        context.DrawLine(edge, new Point(x - radius * .5, y - radius * .12), new Point(x + radius * .45, y + radius * .35));
+    }
+
+    private void DrawFluidFeedback(DrawingContext context, double x, double y, double size, double intensity, int level)
+    {
         var motion = AnimateFeedback ? Math.Sin(_phase) : 0d;
-        var h = size * (0.035 + intensity * 0.09) * (1d + motion * .035);
-        var w = h * (FeedbackStyle == ConsumptionFeedbackStyle.Pixel ? .82 : .62);
-        var color = intensity < .35 ? "#79CBFF" : intensity < .65 ? "#F2BE5C" : intensity < .85 ? "#FF895C" : "#FF5E55";
-        if (FeedbackStyle == ConsumptionFeedbackStyle.Pixel)
+        var h = size * (.075 + intensity * .075) * (1 + motion * .025);
+        var w = h * (.48 + level * .018);
+        var palette = level switch
         {
-            var unit = Math.Max(2d, size * .018);
-            var rows = 2 + (int)Math.Round(intensity * 3);
-            var flicker = AnimateFeedback && Math.Sin(_phase * 1.7) > .35 ? 1 : 0;
-            for (var row = 0; row < rows; row++)
+            1 => (Outer: "#69CFFF", Inner: "#C4F2FF", Glow: "#3569CFFF"),
+            2 => (Outer: "#F0B34E", Inner: "#FFE3A0", Glow: "#35F0B34E"),
+            3 => (Outer: "#FF7A4D", Inner: "#FFD17A", Glow: "#45FF7A4D"),
+            _ => (Outer: "#FF4E45", Inner: "#FFE071", Glow: "#58FF4E45")
+        };
+        context.DrawEllipse(B(palette.Glow), null, new Rect(x - w * 1.25, y - h * .42, w * 2.5, h * .85));
+        var outer = FlameGeometry(x, y, w, h, motion, level >= 4);
+        context.DrawGeometry(B(palette.Outer), null, outer);
+        var inner = FlameGeometry(x, y + h * .06, w * .48, h * .55, -motion * .55, false);
+        context.DrawGeometry(B(palette.Inner), null, inner);
+        if (level >= 4)
+        {
+            var side = FlameGeometry(x + w * .62, y + h * .16, w * .34, h * .55, -motion, false);
+            context.DrawGeometry(B("#FF8454"), null, side);
+        }
+    }
+
+    private void DrawEmber(DrawingContext context, double x, double y, double size, double intensity, int level)
+    {
+        var motion = AnimateFeedback ? Math.Sin(_phase * .82) : 0d;
+        var radius = size * (.034 + intensity * .02);
+        var color = level switch { 1 => "#69CFFF", 2 => "#E9A946", 3 => "#FF754B", _ => "#FF4D43" };
+        var parsed = Color.Parse(color);
+        context.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(55 + level * 16), parsed.R, parsed.G, parsed.B)), null,
+            new Rect(x - radius * 2.15, y - radius * .72, radius * 4.3, radius * 1.45));
+        context.DrawEllipse(B(color), new Pen(B("#8A000000"), 1),
+            new Rect(x - radius, y - radius * .58, radius * 2, radius * 1.16));
+        context.DrawEllipse(B(level >= 3 ? "#FFE4A0" : "#DDF6FF"), null,
+            new Rect(x - radius * .34, y - radius * .3, radius * .68, radius * .52));
+        var wisps = Math.Max(1, level - 1);
+        for (var i = 0; i < wisps; i++)
+        {
+            var offset = (i - (wisps - 1) / 2d) * radius * .65;
+            var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)(75 + level * 16), parsed.R, parsed.G, parsed.B)),
+                Math.Max(1, size * .009), lineCap: PenLineCap.Round);
+            context.DrawLine(pen, new Point(x + offset, y - radius * .72),
+                new Point(x + offset + motion * radius * .35, y - radius * (1.25 + i * .28)));
+        }
+    }
+
+    private void DrawPixelFeedback(DrawingContext context, double x, double y, double size, double intensity, int level)
+    {
+        var unit = Math.Max(2.4, Math.Round(size * .022, 1));
+        var color = level switch { 1 => "#72D5FF", 2 => "#F1B64F", 3 => "#FF7B4C", _ => "#FF5047" };
+        var core = level >= 2 ? "#FFE09A" : "#C8F3FF";
+        var rows = level + 2;
+        for (var row = 0; row < rows; row++)
+        {
+            var half = Math.Max(0, Math.Min(level, rows - row - 1));
+            var shift = AnimateFeedback && row == rows - 1 && Math.Sin(_phase * 1.45) > .55 ? unit : 0;
+            for (var column = -half; column <= half; column++)
             {
-                var cells = Math.Max(1, rows - row - (row == rows - 1 ? flicker : 0));
-                for (var cell = 0; cell < cells; cell++)
-                    context.DrawRectangle(B(color), null, new Rect(center.X + (cell - (cells - 1) / 2d) * unit,
-                        y - row * unit, unit, unit));
+                if (row == rows - 1 && Math.Abs(column) == half && level < 4) continue;
+                var brush = row < 2 && Math.Abs(column) == 0 ? B(core) : B(color);
+                context.DrawRectangle(brush, null, new Rect(x + column * unit - unit / 2 + shift,
+                    y - (row + .5) * unit, unit, unit));
             }
-            return;
         }
-        if (FeedbackStyle == ConsumptionFeedbackStyle.Ember)
+        if (level >= 4)
         {
-            var glow = Color.Parse(color);
-            var alpha = (byte)Math.Clamp(35 + intensity * 65, 0, 120);
-            context.DrawEllipse(new SolidColorBrush(Color.FromArgb(alpha, glow.R, glow.G, glow.B)), null,
-                new Rect(center.X - w * 1.1, y - h * .35, w * 2.2, h * .7));
-            context.DrawEllipse(new SolidColorBrush(glow), null,
-                new Rect(center.X - w * .42, y - h * .28, w * .84, h * .56));
-            if (intensity > .72)
-                context.DrawEllipse(B("#FFE6A0"), null,
-                    new Rect(center.X - w * .14, y - h * .16, w * .28, h * .28));
-            return;
+            context.DrawRectangle(B("#FF8A55"), null, new Rect(x - unit * 2.5, y - unit * 2.5, unit, unit));
+            context.DrawRectangle(B("#FF8A55"), null, new Rect(x + unit * 1.5, y - unit * 3.5, unit, unit));
         }
+    }
+
+    private static StreamGeometry FlameGeometry(double x, double y, double width, double height, double motion, bool broad)
+    {
         var geometry = new StreamGeometry();
-        using (var stream = geometry.Open())
-        {
-            var tipX = center.X + motion * w * .22;
-            stream.BeginFigure(new Point(tipX, y - h), true);
-            stream.CubicBezierTo(new Point(center.X + w * .95, y - h * .45), new Point(center.X + w, y + h * .2), new Point(center.X, y + h * .35));
-            stream.CubicBezierTo(new Point(center.X - w, y + h * .2), new Point(center.X - w * .75, y - h * .35), new Point(tipX, y - h));
-        }
-        context.DrawGeometry(B(color), null, geometry);
-        if (FeedbackStyle == ConsumptionFeedbackStyle.Fluid && intensity > .45)
-            context.DrawEllipse(B("#FFE89A"), null, new Rect(center.X - w * .23, y - h * .16, w * .46, h * .38));
+        using var stream = geometry.Open();
+        var tipX = x + motion * width * .22;
+        stream.BeginFigure(new Point(tipX, y - height), true);
+        stream.CubicBezierTo(new Point(x + width * (broad ? 1.2 : .92), y - height * .55),
+            new Point(x + width, y + height * .08), new Point(x, y + height * .24));
+        stream.CubicBezierTo(new Point(x - width, y + height * .08),
+            new Point(x - width * (broad ? 1.02 : .78), y - height * .42), new Point(tipX, y - height));
+        stream.EndFigure(true);
+        return geometry;
+    }
+
+    private static void DrawMoveMode(DrawingContext context, Rect rect, Point center, double size)
+    {
+        context.DrawEllipse(null, new Pen(B("#E6F5C86A"), Math.Max(1.5, size * .015),
+            new DashStyle([4, 3], 0)), rect.Deflate(size * .035));
+        DrawCenteredStatic(context, "MOVE", center.X, center.Y - size * .31, size * .06, B("#F5C86A"), FontWeight.Bold);
     }
 
     private void DrawCentered(DrawingContext context, string value, double y, double size, IBrush brush, FontWeight weight)
@@ -189,6 +307,13 @@ public sealed class OrbControl : Control
         var text = new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
             new Typeface(UiElements.AppFont, FontStyle.Normal, weight), Math.Max(7, size), brush);
         context.DrawText(text, new Point(Bounds.Center.X - text.Width / 2, y - text.Height / 2));
+    }
+
+    private static void DrawCenteredStatic(DrawingContext context, string value, double x, double y, double size, IBrush brush, FontWeight weight)
+    {
+        var text = new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            new Typeface(UiElements.AppFont, FontStyle.Normal, weight), Math.Max(7, size), brush);
+        context.DrawText(text, new Point(x - text.Width / 2, y - text.Height / 2));
     }
 
     private static void DrawRing(DrawingContext context, Rect bounds, double remaining, double width, IBrush track, IBrush progress)

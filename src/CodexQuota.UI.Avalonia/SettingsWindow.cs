@@ -229,7 +229,6 @@ public sealed partial class SettingsWindow : Window
     {
         _draft = _persisted;
         CancelRequested?.Invoke(this, EventArgs.Empty);
-        Hide();
     }
 
     private string T(string zh, string en) => _draft.Language == AppLanguage.SimplifiedChinese ? zh : en;

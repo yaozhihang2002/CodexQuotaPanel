@@ -36,11 +36,13 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private UsageDetailsWindow? _usageWindow;
     private TrayIcon? _tray;
     private NativeMenuItem? _clickThroughTrayItem;
+    private NativeMenuItem? _moveOrbTrayItem;
     private IDisposable? _recoveryShortcut;
     private Task? _refreshLoop;
     private Task? _usageLoop;
     private Task? _topmostLoop;
     private string? _cycleAlertDismissal;
+    private bool _temporaryMoveMode;
 
     public RuntimeCoordinator(IClassicDesktopStyleApplicationLifetime desktop)
     {
@@ -108,6 +110,16 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             _settings = _settings with { OrbX = placement.Position.X, OrbY = placement.Position.Y,
                 OrbDisplayId = placement.DisplayId, LastView = StartupViewMode.Orb };
             await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
+            if (_temporaryMoveMode)
+            {
+                _temporaryMoveMode = false;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _orb.SetMoveMode(false);
+                    ApplyNativeOrbSettings();
+                    UpdateTrayState();
+                });
+            }
         };
         _orb.Opened += (_, _) => ApplyNativeOrbSettings();
         _desktop.MainWindow = _orb;
@@ -118,6 +130,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         var menu = new NativeMenu();
         AddTrayItem(menu, T("展开额度详情", "Open quota details"), () => _ = OpenDashboardAsync());
         AddTrayItem(menu, T("显示/隐藏悬浮球", "Show/hide orb"), ToggleOrb);
+        _moveOrbTrayItem = AddTrayItem(menu, T("移动悬浮球…", "Move orb…"), BeginOrbMoveMode);
         AddTrayItem(menu, T("立即刷新", "Refresh now"), () => _ = RefreshAsync());
         _clickThroughTrayItem = AddTrayItem(menu, T("悬浮球鼠标穿透", "Orb click-through"), () => _ = ToggleClickThroughAsync());
         _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
@@ -225,6 +238,29 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         else { _orb.Show(); _orb.RestorePosition(_settings.OrbX, _settings.OrbY); ApplyNativeOrbSettings(); }
     }
 
+    private void BeginOrbMoveMode()
+    {
+        if (_orb is null) return;
+        if (_temporaryMoveMode)
+        {
+            _temporaryMoveMode = false;
+            _orb.SetMoveMode(false);
+            ApplyNativeOrbSettings();
+            UpdateTrayState();
+            return;
+        }
+        _temporaryMoveMode = true;
+        _orb.SetMoveMode(true);
+        if (!_orb.IsVisible) _orb.Show();
+        _orb.RestorePosition(_settings.OrbX, _settings.OrbY);
+        if (_orb.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
+        {
+            _platform.SetClickThrough(handle, false);
+            _platform.SetWindowTopMost(handle, true);
+        }
+        UpdateTrayState();
+    }
+
     private void ApplyApplicationTheme(AppSettings settings)
     {
         if (global::Avalonia.Application.Current is null) return;
@@ -242,7 +278,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         if (_orb?.TryGetPlatformHandle()?.Handle is { } orbHandle && orbHandle != 0)
         {
             _platform.SetWindowTopMost(orbHandle, _settings.AlwaysOnTop);
-            _platform.SetClickThrough(orbHandle, _settings.ClickThrough);
+            _platform.SetClickThrough(orbHandle, _settings.ClickThrough && !_temporaryMoveMode);
         }
 
         if (_dashboard?.IsVisible == true &&
@@ -288,6 +324,10 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private void UpdateTrayState()
     {
         if (_clickThroughTrayItem is not null) _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
+        if (_moveOrbTrayItem is not null)
+            _moveOrbTrayItem.Header = _temporaryMoveMode
+                ? T("取消移动模式", "Cancel move mode")
+                : T("移动悬浮球…", "Move orb…");
     }
 
     private void Restart()

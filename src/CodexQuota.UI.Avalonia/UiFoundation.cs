@@ -7,6 +7,15 @@ using CodexQuota.Domain;
 
 namespace CodexQuota.UI.Avalonia;
 
+public enum QuotaConnectionState
+{
+    Connecting,
+    Live,
+    LocalFallback,
+    Stale,
+    Offline
+}
+
 public sealed record QuotaPresentation(
     OfficialQuotaSnapshot? Snapshot,
     IReadOnlyList<QuotaHistoryPoint> History,
@@ -16,7 +25,13 @@ public sealed record QuotaPresentation(
     string? Error,
     DateTimeOffset UpdatedAt)
 {
-    public static QuotaPresentation Empty { get; } = new(null, [], [], null, false, null, DateTimeOffset.MinValue);
+    public QuotaConnectionState ConnectionState { get; init; } = QuotaConnectionState.Connecting;
+    public string? ConnectionDetail { get; init; }
+
+    public static QuotaPresentation Empty { get; } = new(null, [], [], null, false, null, DateTimeOffset.MinValue)
+    {
+        ConnectionState = QuotaConnectionState.Connecting
+    };
 }
 
 public sealed record UiPalette(
@@ -93,6 +108,13 @@ public static class UiElements
             : (language == AppLanguage.SimplifiedChinese ? $"{span.TotalHours:0.#} 小时窗口" : $"{span.TotalHours:0.#}-hour window");
     }
 
+    public static string ShortWindowLabel(int minutes)
+    {
+        if (minutes % 1_440 == 0) return $"{minutes / 1_440}D";
+        if (minutes % 60 == 0) return $"{minutes / 60}H";
+        return $"{minutes}M";
+    }
+
     public static string RemainingTime(DateTimeOffset? reset, AppLanguage language)
     {
         if (reset is null) return language == AppLanguage.SimplifiedChinese ? "重置时间未知" : "Reset time unavailable";
@@ -110,8 +132,9 @@ public static class UiElements
         if (windows.Count == 0) return (null, null);
         if (windows.Count == 1) return (windows[0], null);
         var outer = windows.FirstOrDefault(window => window.WindowMinutes == settings.OuterWindowMinutes) ?? windows[0];
-        var inner = windows.FirstOrDefault(window => window.WindowMinutes == settings.InnerWindowMinutes && window != outer) ??
-                    windows.First(window => window != outer);
+        var inner = windows.FirstOrDefault(window => window.WindowMinutes == settings.InnerWindowMinutes &&
+                                                     !ReferenceEquals(window, outer)) ??
+                    windows.First(window => !ReferenceEquals(window, outer));
         return (outer, inner);
     }
 }

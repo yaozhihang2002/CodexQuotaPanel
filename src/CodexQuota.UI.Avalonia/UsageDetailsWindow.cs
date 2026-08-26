@@ -13,6 +13,9 @@ public sealed class UsageDetailsWindow : Window
     private readonly UiPalette _palette;
     private readonly StackPanel _summary;
     private readonly StackPanel _daily;
+    private readonly DailyUsageChartControl _dailyChart;
+
+    internal int DailyChartDayCount => _dailyChart.RenderedDayCount;
 
     public UsageDetailsWindow(AppSettings settings, bool systemDark = true)
     {
@@ -28,6 +31,12 @@ public sealed class UsageDetailsWindow : Window
         Background = _palette.Canvas;
         _summary = new StackPanel { Spacing = 8 };
         _daily = new StackPanel { Spacing = 10 };
+        _dailyChart = new DailyUsageChartControl
+        {
+            Height = 205,
+            Language = _settings.Language,
+            IsDark = _settings.Theme != AppTheme.Light
+        };
         Content = BuildContent();
     }
 
@@ -38,6 +47,9 @@ public sealed class UsageDetailsWindow : Window
         var filtered = usage.Where(item => cycleStart is null || item.ObservedAt >= cycleStart)
             .Where(item => cycleEnd is null || item.ObservedAt <= cycleEnd).ToArray();
         var days = UsageSummaryCalculator.SummarizeByDay(filtered, TimeZoneInfo.Local);
+        _dailyChart.Days = days;
+        _dailyChart.CycleStart = cycleStart;
+        _dailyChart.CycleEnd = cycleEnd;
         var total = filtered.Aggregate(TokenUsageBreakdown.Zero, (sum, item) => sum.Add(item.Usage));
         var slices = days.SelectMany(day => day.Slices)
             .GroupBy(slice => (slice.Model, slice.ServiceTier))
@@ -99,6 +111,14 @@ public sealed class UsageDetailsWindow : Window
                 11, FontWeight.Normal, _palette.TextMuted),
             UiElements.Card(_summary, _palette),
             UiElements.Text(T("每日使用", "Daily usage"), 17, FontWeight.Bold, _palette.TextPrimary),
+            UiElements.Card(new StackPanel { Spacing = 7, Children =
+            {
+                UiElements.Text(T("当前重置周期", "Current reset cycle"), 12.5, FontWeight.SemiBold, _palette.TextPrimary),
+                _dailyChart,
+                UiElements.Text(T("悬停柱形可查看日期、Token 与 API 估算；无使用的日期仍会保留。",
+                        "Hover a bar for date, tokens and API estimate; zero-usage days remain visible."),
+                    10, FontWeight.Normal, _palette.TextMuted)
+            }}, _palette),
             _daily
         }};
         return new ScrollViewer { Content = panel,

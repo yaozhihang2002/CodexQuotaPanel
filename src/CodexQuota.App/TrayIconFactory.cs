@@ -1,8 +1,10 @@
+using CodexQuota.UI.Avalonia;
+
 namespace CodexQuota.App;
 
 internal static class TrayIconFactory
 {
-    public static Stream Create(double remainingPercent)
+    public static Stream Create(double remainingPercent, QuotaConnectionState connectionState)
     {
         const int size = 32;
         const int pixelBytes = size * size * 4;
@@ -39,12 +41,20 @@ internal static class TrayIconFactory
                 var dx = x + .5 - size / 2d;
                 var dy = y + .5 - size / 2d;
                 var radius = Math.Sqrt(dx * dx + dy * dy);
-                var alpha = Math.Clamp(1d - Math.Abs(radius - 11.3) / 2.4, 0d, 1d);
                 var angle = Math.Atan2(dy, dx) * 180d / Math.PI;
                 if (angle < 0) angle += 360;
                 var delta = (angle - 135 + 360) % 360;
                 var active = delta <= 270 * progress;
-                var (r, g, b) = active ? (87, 217, 170) : (56, 70, 64);
+                var status = connectionState switch
+                {
+                    QuotaConnectionState.Live => (R: 87, G: 217, B: 170),
+                    QuotaConnectionState.LocalFallback => (R: 114, G: 191, B: 242),
+                    QuotaConnectionState.Stale or QuotaConnectionState.Connecting => (R: 233, G: 185, B: 79),
+                    _ => (R: 126, G: 139, B: 133)
+                };
+                var centerDot = radius <= 2.8;
+                var alpha = centerDot ? 1d : Math.Clamp(1d - Math.Abs(radius - 11.3) / 2.4, 0d, 1d);
+                var (r, g, b) = centerDot || active ? status : (56, 70, 64);
                 writer.Write((byte)b);
                 writer.Write((byte)g);
                 writer.Write((byte)r);
