@@ -42,6 +42,7 @@ jobs:
       - name: Infrastructure checks
         run: dotnet run --project tests/CodexQuota.Infrastructure.Tests --configuration Release --no-build
       - name: UI render matrix
+        timeout-minutes: 4
         run: dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- artifacts/vnext-preview
       - name: Upload UI matrix
         uses: actions/upload-artifact@v7

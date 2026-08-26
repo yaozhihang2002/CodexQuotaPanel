@@ -27,6 +27,7 @@ var scenarios = new[]
 
 foreach (var (name, scenario, scale) in scenarios)
 {
+    Console.WriteLine($"Rendering {name}...");
     var window = new PreviewWindow(scenario);
     window.Show();
     window.SetRenderScaling(scale);
@@ -58,9 +59,11 @@ foreach (var (name, scenario, scale) in scenarios)
     await using (var output = File.Create(outputPath))
         frame.Save(output, PngBitmapEncoderOptions.Default);
     window.Close();
+    Console.WriteLine($"Rendered {name}");
 }
 
 Console.WriteLine($"UI render matrix passed: {scenarios.Length} scenarios -> {outputRoot}");
+Environment.Exit(0);
 
 static class Check
 {
