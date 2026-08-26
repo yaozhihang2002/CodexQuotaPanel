@@ -15,6 +15,7 @@ $solution = Join-Path $repositoryRoot 'CodexQuotaPanel.VNext.slnx'
 $aggregate = Join-Path $repositoryRoot 'build\CodexQuota.ReleaseAggregate.csproj'
 $appProject = Join-Path $repositoryRoot 'src\CodexQuota.App\CodexQuota.App.csproj'
 $stage = Join-Path $repositoryRoot 'artifacts\release-stage\win-x64'
+$portableLayout = Join-Path $repositoryRoot 'artifacts\portable-layout'
 $output = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else {
     Join-Path $repositoryRoot "artifacts\release-v$Version"
 }
@@ -56,6 +57,7 @@ if (-not $installerText.Contains('"ProductVersion" = "8:' + $Version + '"')) { t
 
 Reset-LocalDirectory $stage
 Reset-LocalDirectory $output
+Reset-LocalDirectory $portableLayout
 $dotnet = if ($DotNetPath) { (Resolve-Path -LiteralPath $DotNetPath).Path } else {
     $command = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($null -eq $command) { throw 'dotnet SDK was not found. Pass -DotNetPath or add dotnet to PATH.' }
@@ -84,6 +86,9 @@ Invoke-Step 'Publish one self-contained application payload' {
 }
 $exe = Join-Path $stage 'CodexQuotaPanel.exe'
 if (-not (Test-Path -LiteralPath $exe)) { throw 'Published executable is missing.' }
+# --no-build can retain PDB files from a prior build in the publish output.
+# They are not required by end users and may contain local build-path metadata.
+Get-ChildItem -LiteralPath $stage -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).FileVersion
 if ($fileVersion -cne "$Version.0") { throw "Published version mismatch: $fileVersion" }
 $payloadHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
@@ -96,12 +101,28 @@ $builtMsi = Join-Path $installerDirectory "Release\CodexQuotaPanel-$Version-x64.
 $transform = Join-Path $installerDirectory "Release\CodexQuotaPanel-$Version-en-us.mst"
 $setup = Join-Path $output "CodexQuotaPanel-$Version-Setup.exe"
 $portable = Join-Path $output "CodexQuotaPanel-$Version-portable-win-x64.zip"
+$portableRootName = "CodexQuotaPanel-$Version-portable-win-x64"
+$portableRoot = Join-Path $portableLayout $portableRootName
 $msi = Join-Path $output "CodexQuotaPanel-$Version-x64.msi"
 Copy-Item -LiteralPath $builtMsi -Destination $msi
 Invoke-Step 'Build Chinese-default language launcher' {
     & $launcherBuilder -MsiPath $builtMsi -EnglishTransformPath $transform -OutputPath $setup -Version $Version
 }
-Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $portable -CompressionLevel Optimal
+New-Item -ItemType Directory -Path $portableRoot -Force | Out-Null
+Copy-Item -Path (Join-Path $stage '*') -Destination $portableRoot -Recurse -Force
+[IO.Compression.ZipFile]::CreateFromDirectory(
+    $portableRoot, $portable, [IO.Compression.CompressionLevel]::Optimal, $true)
+$archive = [IO.Compression.ZipFile]::OpenRead($portable)
+try {
+    $prefix = $portableRootName + '/'
+    if ($archive.Entries.Count -eq 0 -or $archive.Entries.Where({ -not $_.FullName.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -gt 0) {
+        throw 'Portable ZIP entries are not contained by the expected top-level folder.'
+    }
+    if ($archive.Entries.Where({ $_.FullName.EndsWith('.pdb', [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+        throw 'Portable ZIP unexpectedly contains debug symbols.'
+    }
+}
+finally { $archive.Dispose() }
 if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -cne $payloadHash) {
     throw 'The application payload changed while packaging.'
 }

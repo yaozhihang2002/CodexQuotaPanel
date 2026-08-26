@@ -133,7 +133,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _moveOrbTrayItem = AddTrayItem(menu, T("移动悬浮球…", "Move orb…"), BeginOrbMoveMode);
         AddTrayItem(menu, T("立即刷新", "Refresh now"), () => _ = RefreshAsync());
         _clickThroughTrayItem = AddTrayItem(menu, ClickThroughTrayHeader(), () => _ = ToggleClickThroughAsync());
-        _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
+        _clickThroughTrayItem.IsChecked = false;
         menu.Items.Add(new NativeMenuItemSeparator());
         AddTrayItem(menu, T("设置…", "Settings…"), ShowSettings);
         AddTrayItem(menu, T("官方额度说明", "Official quota help"), () =>
@@ -341,7 +341,9 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_clickThroughTrayItem is not null)
         {
-            _clickThroughTrayItem.IsChecked = _settings.ClickThrough;
+            // Native checked items reserve a left gutter. Keep the label stable and
+            // use the conventional right-aligned accelerator column for the mark.
+            _clickThroughTrayItem.IsChecked = false;
             _clickThroughTrayItem.Header = ClickThroughTrayHeader();
         }
         if (_moveOrbTrayItem is not null)
@@ -351,8 +353,8 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     }
 
     private string ClickThroughTrayHeader() => _settings.ClickThrough
-        ? T("悬浮球鼠标穿透 · 已开启", "Orb click-through · ON")
-        : T("悬浮球鼠标穿透 · 已关闭", "Orb click-through · OFF");
+        ? T("悬浮球鼠标穿透\t✓", "Orb click-through\t✓")
+        : T("悬浮球鼠标穿透", "Orb click-through");
 
     private void Restart()
     {
