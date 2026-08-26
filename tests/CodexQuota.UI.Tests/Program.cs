@@ -88,6 +88,47 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
          new QuotaWindow("7d", 10_080, 44, now.AddDays(4))],
         Source: "App Server", PlanType: "pro",
         ResetCredits: [new ResetCredit("r1", "available", now.AddDays(2), "Full reset")]);
+
+    foreach (var (themeName, palette) in new[]
+             {
+                 ("dark", UiPalette.For(AppTheme.Dark)),
+                 ("light", UiPalette.For(AppTheme.Light, false))
+             })
+    {
+        var normalButton = UiElements.Button("收起为悬浮球", palette, true);
+        var hoverButton = UiElements.Button("收起为悬浮球", palette, true);
+        Check.True(hoverButton.Resources["ButtonBackgroundPointerOver"] is IBrush,
+            $"{themeName}: primary pointer-over brush exists");
+        hoverButton.Background = (IBrush)hoverButton.Resources["ButtonBackgroundPointerOver"]!;
+        hoverButton.BorderBrush = (IBrush)hoverButton.Resources["ButtonBorderBrushPointerOver"]!;
+        var stateRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 16,
+            Margin = new Thickness(22),
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new StackPanel { Spacing = 6, Children = { UiElements.Text("默认", 11, FontWeight.SemiBold, palette.TextSecondary), normalButton } },
+                new StackPanel { Spacing = 6, Children = { UiElements.Text("悬停", 11, FontWeight.SemiBold, palette.TextSecondary), hoverButton } }
+            }
+        };
+        var stateWindow = new Window
+        {
+            Width = 390, Height = 130, Background = palette.Canvas, Content = stateRow
+        };
+        stateWindow.Show();
+        stateWindow.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        using (var frame = stateWindow.CaptureRenderedFrame() ??
+                           throw new InvalidOperationException($"{themeName} button states: no rendered frame"))
+        {
+            await using var output = File.Create(Path.Combine(outputRoot, $"button-states-{themeName}.png"));
+            frame.Save(output, PngBitmapEncoderOptions.Default);
+        }
+        stateWindow.Close();
+    }
     var history = Enumerable.Range(0, 49).Select(index => new QuotaHistoryPoint(
         now.AddMinutes((index - 48) * 30), "7d", 10_080, 68 - index * .5)).ToArray();
     var usage = new[]
@@ -466,26 +507,39 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     {
         RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
         ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,Auto"),
-        RowSpacing = 12,
-        ColumnSpacing = 12,
-        Margin = new Thickness(20)
+        RowSpacing = 10,
+        ColumnSpacing = 10,
+        Margin = new Thickness(18)
     };
     var styles = Enum.GetValues<ConsumptionFeedbackStyle>();
     var intensities = new[] { 0d, .17d, .42d, .68d, .94d };
+    var styleNames = new[] { "简约余烬", "流体火焰", "像素火焰" };
+    var stateNames = new[] { "冰晶", "冷焰", "温焰", "旺火", "烈焰" };
     for (var row = 0; row < styles.Length; row++)
     for (var column = 0; column < intensities.Length; column++)
     {
         var control = new OrbControl
         {
-            Width = 118, Height = 118, RemainingPercent = 68, SecondaryRemainingPercent = 29,
+            Width = 104, Height = 104, RemainingPercent = 68, SecondaryRemainingPercent = 29,
             FeedbackStyle = styles[row], FeedbackIntensity = intensities[column], AnimateFeedback = false,
             ConnectionState = QuotaConnectionState.Live
         };
-        Grid.SetRow(control, row);
-        Grid.SetColumn(control, column);
-        feedbackGrid.Children.Add(control);
+        var cell = new StackPanel
+        {
+            Spacing = 3,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Children =
+            {
+                UiElements.Text($"{styleNames[row]} · {stateNames[column]}", 10, FontWeight.SemiBold,
+                    UiPalette.B("#D7E3DD"), TextWrapping.NoWrap),
+                control
+            }
+        };
+        Grid.SetRow(cell, row);
+        Grid.SetColumn(cell, column);
+        feedbackGrid.Children.Add(cell);
     }
-    var feedbackWindow = new Window { Width = 700, Height = 420, Background = UiPalette.B("#0D1210"), Content = feedbackGrid };
+    var feedbackWindow = new Window { Width = 760, Height = 430, Background = UiPalette.B("#0D1210"), Content = feedbackGrid };
     feedbackWindow.Show();
     feedbackWindow.UpdateLayout();
     Dispatcher.UIThread.RunJobs();
@@ -496,6 +550,44 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     feedbackWindow.Close();
+
+    var compactFeedbackGrid = new Grid
+    {
+        RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
+        ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,Auto"),
+        RowSpacing = 12,
+        ColumnSpacing = 18,
+        Margin = new Thickness(22)
+    };
+    for (var row = 0; row < styles.Length; row++)
+    for (var column = 0; column < intensities.Length; column++)
+    {
+        var control = new OrbControl
+        {
+            Width = 56, Height = 56, RemainingPercent = 68, SecondaryRemainingPercent = 29,
+            FeedbackStyle = styles[row], FeedbackIntensity = intensities[column], AnimateFeedback = false,
+            ConnectionState = QuotaConnectionState.Live
+        };
+        Grid.SetRow(control, row);
+        Grid.SetColumn(control, column);
+        compactFeedbackGrid.Children.Add(control);
+    }
+    var compactFeedbackWindow = new Window
+    {
+        Width = 470, Height = 250, Background = UiPalette.B("#0D1210"), Content = compactFeedbackGrid
+    };
+    compactFeedbackWindow.Show();
+    compactFeedbackWindow.SetRenderScaling(2d);
+    compactFeedbackWindow.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    using (var frame = compactFeedbackWindow.CaptureRenderedFrame() ??
+                       throw new InvalidOperationException("compact feedback matrix: no rendered frame"))
+    {
+        await using var output = File.Create(Path.Combine(outputRoot, "feedback-matrix-56px.png"));
+        frame.Save(output, PngBitmapEncoderOptions.Default);
+    }
+    compactFeedbackWindow.Close();
 }
 
 Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 31 : 0)} scenarios -> {outputRoot}");

@@ -73,20 +73,59 @@ public static class UiElements
         VerticalAlignment = VerticalAlignment.Center
     };
 
-    public static Button Button(string text, UiPalette palette, bool primary = false) => new()
+    public static Button Button(string text, UiPalette palette, bool primary = false)
     {
-        Content = text,
-        FontFamily = AppFont,
-        FontSize = 13 * ScaleFactor,
-        FontWeight = FontWeight.SemiBold,
-        Foreground = primary ? palette.ButtonText : palette.TextPrimary,
-        Background = primary ? palette.Mint : palette.SurfaceRaised,
-        BorderBrush = primary ? palette.Mint : palette.Border,
-        BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(8),
-        Padding = new Thickness(16, 9),
-        MinHeight = 38
-    };
+        var normalBackground = primary ? palette.Mint : palette.SurfaceRaised;
+        var normalBorder = primary ? palette.Mint : palette.Border;
+        var foreground = primary ? palette.ButtonText : palette.TextPrimary;
+        var hoverBackground = primary
+            ? Mix(normalBackground, IsBright(normalBackground) ? Colors.Black : Colors.White, .055)
+            : Mix(normalBackground, palette.TextPrimary, .055);
+        var pressedBackground = primary
+            ? Mix(normalBackground, Colors.Black, .095)
+            : Mix(normalBackground, palette.TextPrimary, .095);
+        var button = new Button
+        {
+            Content = text,
+            FontFamily = AppFont,
+            FontSize = 13 * ScaleFactor,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = foreground,
+            Background = normalBackground,
+            BorderBrush = normalBorder,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(16, 9),
+            MinHeight = 38
+        };
+
+        // Fluent's default pointer resources can replace a custom mint button
+        // with a near-black fill. Keep every state in the same colour family.
+        button.Resources["ButtonBackgroundPointerOver"] = hoverBackground;
+        button.Resources["ButtonBorderBrushPointerOver"] = Mix(normalBorder, foreground, .08);
+        button.Resources["ButtonForegroundPointerOver"] = foreground;
+        button.Resources["ButtonBackgroundPressed"] = pressedBackground;
+        button.Resources["ButtonBorderBrushPressed"] = Mix(normalBorder, foreground, .12);
+        button.Resources["ButtonForegroundPressed"] = foreground;
+        return button;
+    }
+
+    private static IBrush Mix(IBrush brush, Color target, double amount)
+    {
+        var source = brush is SolidColorBrush solid ? solid.Color : Colors.Transparent;
+        amount = Math.Clamp(amount, 0, 1);
+        return new SolidColorBrush(Color.FromArgb(
+            (byte)Math.Round(source.A + (target.A - source.A) * amount),
+            (byte)Math.Round(source.R + (target.R - source.R) * amount),
+            (byte)Math.Round(source.G + (target.G - source.G) * amount),
+            (byte)Math.Round(source.B + (target.B - source.B) * amount)));
+    }
+
+    private static IBrush Mix(IBrush brush, IBrush target, double amount) =>
+        Mix(brush, target is SolidColorBrush solid ? solid.Color : Colors.Transparent, amount);
+
+    private static bool IsBright(IBrush brush) => brush is SolidColorBrush solid &&
+        (solid.Color.R * .299 + solid.Color.G * .587 + solid.Color.B * .114) >= 150;
 
     public static Border Card(Control child, UiPalette palette, Thickness? padding = null) => new()
     {

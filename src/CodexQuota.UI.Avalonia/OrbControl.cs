@@ -134,15 +134,13 @@ public sealed partial class OrbControl : Control
             if (string.IsNullOrWhiteSpace(PrimaryLabel))
             {
                 DrawCentered(context, "—", center.Y - size * .015, size * .19, B("#AFC0B8"), FontWeight.Bold);
-                DrawCentered(context, Caption, center.Y + size * .14, size * .055, B("#AFC0B8"), FontWeight.SemiBold);
             }
             else
             {
-                DrawCentered(context, PrimaryLabel, center.Y - size * .145, size * .061,
-                    new SolidColorBrush(OuterRingColor), FontWeight.Bold);
+                DrawCentered(context, PrimaryLabel, center.Y - size * .145, size * .071,
+                    new SolidColorBrush(OuterRingColor), FontWeight.Bold, 8.2);
                 DrawCentered(context, $"{Math.Round(Math.Clamp(RemainingPercent, 0, 100)):0}%", center.Y - size * .01,
                     size * .19, Brushes.White, FontWeight.Bold);
-                DrawCentered(context, Caption, center.Y + size * .145, size * .052, B("#AFC0B8"), FontWeight.SemiBold);
             }
         }
         if (FeedbackEnabled) DrawFeedback(context, center, size);

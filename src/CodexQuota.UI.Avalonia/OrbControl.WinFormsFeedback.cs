@@ -28,7 +28,7 @@ public sealed partial class OrbControl
         var scale = size / 88d;
         if (activity == 0)
         {
-            DrawFrostSnowflake(context, center, scale, 1.05);
+            DrawFluidFrostSeed(context, center, scale);
             return;
         }
 
@@ -118,7 +118,7 @@ public sealed partial class OrbControl
         var scale = size / 88d;
         if (activity == 0)
         {
-            DrawFrostSnowflake(context, center, scale, .88);
+            DrawMinimalFrostSeed(context, center, scale);
             return;
         }
 
@@ -220,76 +220,87 @@ public sealed partial class OrbControl
         if (inferno > .68) DrawPixelCell(context, middle, originX, baseY, cell, frame is 0 or 1 ? 1 : -1, 5);
     }
 
-    private static void DrawFrostSnowflake(DrawingContext context, Point center, double scale, double styleScale)
+    private static void DrawMinimalFrostSeed(DrawingContext context, Point center, double scale)
     {
-        var ice = Color.FromRgb(116, 210, 255);
-        var snowCenter = new Point(center.X, center.Y + 28.5 * scale);
-        var radius = 4.8 * scale * styleScale;
-        var glowRadius = radius * 1.25;
-        context.DrawEllipse(new SolidColorBrush(WithAlpha(ice, 24)), null,
-            new Rect(snowCenter.X - glowRadius, snowCenter.Y - glowRadius,
-                glowRadius * 2, glowRadius * 2));
-        var pen = new Pen(new SolidColorBrush(WithAlpha(ice, 238)), Math.Max(.75, .9 * scale),
-            lineCap: PenLineCap.Round);
-        var branchPen = new Pen(new SolidColorBrush(WithAlpha(Blend(Colors.White, ice, .25), 215)),
-            Math.Max(.55, .62 * scale), lineCap: PenLineCap.Round);
-        foreach (var degrees in new[] { 0d, 60d, 120d })
-        {
-            var radians = degrees * Math.PI / 180d;
-            var dx = Math.Cos(radians);
-            var dy = Math.Sin(radians);
-            var start = new Point(snowCenter.X - dx * radius, snowCenter.Y - dy * radius);
-            var end = new Point(snowCenter.X + dx * radius, snowCenter.Y + dy * radius);
-            context.DrawLine(pen, start, end);
-            DrawSnowflakeBranch(context, branchPen, snowCenter, radius, radians, 1);
-            DrawSnowflakeBranch(context, branchPen, snowCenter, radius, radians, -1);
-        }
-        context.DrawEllipse(new SolidColorBrush(Blend(Colors.White, ice, .28)), null,
-            new Rect(snowCenter.X - .85 * scale, snowCenter.Y - .85 * scale, 1.7 * scale, 1.7 * scale));
+        var width = 4.8 * scale;
+        var height = 4.2 * scale;
+        var centerX = center.X;
+        var baseY = center.Y + 32d * scale;
+        var centerY = baseY - height * .45;
+        var ice = Color.FromRgb(112, 205, 252);
+        context.DrawEllipse(new SolidColorBrush(WithAlpha(ice, 30)), null,
+            new Rect(centerX - width * .95, centerY - height * 1.1, width * 1.9, height * 2.2));
+        var seed = CreateWinEmber(centerX, centerY, width, height);
+        context.DrawGeometry(VerticalBrush(Blend(Colors.White, ice, .26),
+            Blend(ice, Color.Parse("#0D1210"), .18)), null, seed);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(WithAlpha(ice, 205)),
+            Math.Max(.65, .72 * scale), lineCap: PenLineCap.Round), seed);
+        context.DrawLine(new Pen(new SolidColorBrush(WithAlpha(Colors.White, 210)),
+                Math.Max(.55, .6 * scale), lineCap: PenLineCap.Round),
+            new Point(centerX - width * .2, centerY - height * .12),
+            new Point(centerX + width * .08, centerY - height * .27));
     }
 
-    private static void DrawSnowflakeBranch(DrawingContext context, Pen pen, Point center,
-        double radius, double radians, int direction)
+    private static void DrawFluidFrostSeed(DrawingContext context, Point center, double scale)
     {
-        var dx = Math.Cos(radians) * direction;
-        var dy = Math.Sin(radians) * direction;
-        var root = new Point(center.X + dx * radius * .62, center.Y + dy * radius * .62);
-        var length = radius * .27;
-        foreach (var offset in new[] { -Math.PI / 4, Math.PI / 4 })
-        {
-            var angle = radians + (direction < 0 ? Math.PI : 0) + offset;
-            context.DrawLine(pen, root,
-                new Point(root.X - Math.Cos(angle) * length, root.Y - Math.Sin(angle) * length));
-        }
+        var width = 5.9 * scale;
+        var height = 7.45 * scale;
+        var centerX = center.X;
+        var baseY = center.Y + 32d * scale;
+        var topY = baseY - height;
+        var ice = Color.FromRgb(108, 201, 255);
+        var seed = CreateWinFlame(centerX, baseY, width, height, 0);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(WithAlpha(ice, 38)),
+            Math.Max(1, 1.42 * scale), lineCap: PenLineCap.Round), seed);
+        context.DrawGeometry(VerticalBrush(Blend(Colors.White, ice, .22),
+            Blend(ice, Color.Parse("#0D1210"), .16)), null, seed);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(WithAlpha(ice, 195)),
+            Math.Max(.62, .7 * scale), lineCap: PenLineCap.Round), seed);
+
+        // Preserve the v0.5.2 faceted droplet, but bend the facet so the tiny
+        // mark cannot read as a plus/cross at 56 px.
+        var facet = new Pen(new SolidColorBrush(WithAlpha(Blend(Colors.White, ice, .25), 175)),
+            Math.Max(.52, .58 * scale), lineCap: PenLineCap.Round);
+        var joint = new Point(centerX - width * .12, topY + height * .58);
+        context.DrawLine(facet, new Point(centerX + width * .05, topY + height * .22), joint);
+        context.DrawLine(facet, joint, new Point(centerX + width * .22, topY + height * .72));
     }
 
     private static void DrawPixelFrostSeed(DrawingContext context, Point center, double scale, double thaw)
     {
-        var cell = Math.Max(2, Math.Round(2.2 * scale));
-        var originX = Math.Round(center.X - cell / 2);
-        var baseY = center.Y + 33d * scale;
-        var edge = new SolidColorBrush(Blend(Color.FromRgb(102, 190, 255), Color.Parse("#0D1210"), .1));
-        var body = new SolidColorBrush(Color.FromRgb(120, 214, 255));
-        var shine = new SolidColorBrush(Color.FromRgb(225, 250, 255));
-        var core = new (int X, int Y)[]
-        {
-            (-2, -2), (2, -2), (-1, -1), (1, -1),
-            (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0),
-            (-1, 1), (1, 1), (-2, 2), (2, 2)
-        };
-        DrawPixelCells(context, edge, originX, baseY, cell, core);
-        if (thaw < .24)
-            DrawPixelCells(context, edge, originX, baseY, cell, [(-3, -1), (3, -1), (-3, 1), (3, 1)]);
-        if (thaw < .12)
-        {
-            DrawPixelCell(context, edge, originX, baseY, cell, -3, 0);
-            DrawPixelCell(context, edge, originX, baseY, cell, 3, 0);
-        }
-        DrawPixelCells(context, body, originX, baseY, cell,
-            [(-2, -2), (2, -2), (-1, -1), (1, -1), (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0),
-                (-1, 1), (1, 1), (-2, 2), (2, 2)]);
-        DrawPixelCell(context, shine, originX, baseY, cell, 0, 0);
-        DrawPixelCell(context, shine, originX, baseY, cell, -1, 1);
+        var crystalCenter = new Point(center.X, center.Y + 29.2 * scale);
+        var width = 5.8 * scale;
+        var height = 6.8 * scale;
+        var top = new Point(crystalCenter.X, crystalCenter.Y - height * .54);
+        var left = new Point(crystalCenter.X - width * .5, crystalCenter.Y - height * .08);
+        var right = new Point(crystalCenter.X + width * .5, crystalCenter.Y - height * .08);
+        var bottom = new Point(crystalCenter.X, crystalCenter.Y + height * .54);
+        var facet = new Point(crystalCenter.X - width * .06, crystalCenter.Y + height * .02);
+        var alpha = 1d - Math.Clamp(thaw, 0, 1) * .28;
+
+        // Keep the frozen pixel state intentionally tiny, but use a single
+        // faceted crystal silhouette instead of cross-like pixel branches.
+        context.DrawGeometry(new SolidColorBrush(WithAlpha(Color.FromRgb(205, 245, 255), 238 * alpha)), null,
+            CreateIceFacet(top, left, facet));
+        context.DrawGeometry(new SolidColorBrush(WithAlpha(Color.FromRgb(103, 205, 250), 244 * alpha)), null,
+            CreateIceFacet(top, facet, right));
+        context.DrawGeometry(new SolidColorBrush(WithAlpha(Color.FromRgb(65, 151, 218), 240 * alpha)), null,
+            CreateIceFacet(left, bottom, facet));
+        context.DrawGeometry(new SolidColorBrush(WithAlpha(Color.FromRgb(118, 220, 250), 240 * alpha)), null,
+            CreateIceFacet(facet, bottom, right));
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(WithAlpha(Color.FromRgb(124, 218, 252),
+                190 * alpha)), Math.Max(.45, .48 * scale)),
+            CreateIceFacet(top, right, bottom, left));
+    }
+
+    private static StreamGeometry CreateIceFacet(params Point[] points)
+    {
+        var geometry = new StreamGeometry();
+        using var path = geometry.Open();
+        path.BeginFigure(points[0], true);
+        for (var index = 1; index < points.Length; index++) path.LineTo(points[index]);
+        path.EndFigure(true);
+        return geometry;
     }
 
     private static StreamGeometry CreateWinFlame(double centerX, double baseY, double width, double height, double sway)
