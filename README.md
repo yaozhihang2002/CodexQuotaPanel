@@ -6,8 +6,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.5.2--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.0--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-12%2B%20Apple%20Silicon%20%7C%20Intel-111111">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-f0c674"></a>
 </p>
@@ -16,11 +17,11 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.5.2 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.6.0 Pre-release**。这是首个 Windows / macOS 共用核心与界面的公开跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
-## vNext 跨平台分支
+## v0.6.0 跨平台版本
 
-`codex/vnext-windows-macos` 正在以 Avalonia 和模块化核心重建下一代 **v0.6.0**。它不会覆盖 `work/` 中的 Windows 正式分支；只有功能对照、真实数据源、升级保留和平台验证全部达标后才会接替现有版本。
+`codex/vnext-windows-macos` 使用 Avalonia、模块化单体与很薄的平台适配层重建 **v0.6.0**。统计、预测、设置和普通界面在 Windows/macOS 之间共用，置顶、穿透、登录启动与托盘/菜单栏由平台层处理。
 
 当前 vNext 已实现：
 
@@ -31,7 +32,7 @@
 - Windows 托盘与 macOS 菜单栏、登录启动、全局找回快捷键，以及平台原生置顶/鼠标穿透适配。
 - Token 日志采用有界分批和跨重启增量游标；首次历史索引以及空/损坏游标恢复均由有限工作进程完成并自动退出，主界面不会继承导入内存。实时 App Server 可用时不会先扫描大型 JSONL，回退读取也从文件末尾反向查找最新额度。
 
-vNext 的普通设置、详情和统计界面共用同一套 UI；透明悬浮窗、置顶、穿透、登录启动和全局快捷键由很薄的平台适配层实现。Windows 候选会生成安装包与便携包，macOS 候选会生成 `.app`、ZIP 和 DMG。macOS 正式发布前仍需 Apple Developer ID 签名、公证和真实 Retina 设备验收。
+Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及一个同时包含 Apple Silicon / Intel 二进制的通用 macOS DMG。macOS 正式稳定版发布前仍需 Apple Developer ID 签名、公证和真实 Retina 设备验收。
 
 ## 一眼了解
 
@@ -74,7 +75,7 @@ vNext 的普通设置、详情和统计界面共用同一套 UI；透明悬浮�
   <img src="docs/images/tray-status.png" width="640" alt="CodexQuotaPanel 动态托盘额度图标">
 </p>
 
-## v0.5.2 Pre-release 功能
+## v0.6.0 Pre-release 功能
 
 ### 额度与显示
 
@@ -109,9 +110,12 @@ vNext 的普通设置、详情和统计界面共用同一套 UI；透明悬浮�
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.5.2` 会标记为 **Pre-release**，适用于 **Windows 10 / Windows 11 x64**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.0` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
 
-推荐下载 `Setup-Web.exe`：文件本身约 1–3 MB，只有电脑缺少 .NET 9 Desktop Runtime 时才从微软官方下载并校验运行库。无法联网时使用 `Setup-Offline.exe`；它包含完整运行环境。便携包也分为轻量版与完整离线版，所有附件均提供 SHA-256 校验文件。预发布版仍可能存在特定显卡、DPI 组合或系统环境下的兼容性问题。
+- Windows：`CodexQuotaPanel-0.6.0-Windows-Setup.exe`，约 12.3 MiB；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
+- macOS：`CodexQuotaPanel-0.6.0-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
+
+不再发布重复的 MSI、便携包、ZIP 或离线 Setup，减少选择成本。预发布版仍可能存在特定显卡、DPI 或系统环境下的兼容性问题。
 
 > Windows SmartScreen 可能提示“未知发布者”，这是因为当前预发布版尚未购买代码签名证书。请确认文件来自本项目 Releases 页面后再运行。
 
@@ -123,7 +127,7 @@ vNext 的普通设置、详情和统计界面共用同一套 UI；透明悬浮�
 
 ### vNext（Windows / macOS）
 
-vNext 使用自包含发布，普通用户不需要预装现代 .NET Desktop Runtime。开发机需要对应的 .NET 10 SDK：
+vNext 开发机需要 .NET 10 SDK。Windows Setup 使用框架依赖单文件并在缺少运行时时从微软下载；macOS DMG 使用自包含通用应用：
 
 ```powershell
 dotnet restore CodexQuotaPanel.VNext.slnx
@@ -134,16 +138,16 @@ dotnet run --project tests/CodexQuota.Infrastructure.Tests -c Release --no-build
 dotnet run --project tests/CodexQuota.UI.Tests -c Release --no-build
 ```
 
-Windows 本地候选只构建一次应用载荷，并由安装器与便携包复用：
+Windows 本地候选生成唯一的双语联网 Setup：
 
 ```powershell
 installer/Windows/Build-Release.ps1 -Version 0.6.0 -DotNetPath <dotnet.exe>
 ```
 
-macOS 在 Apple runner 或 Mac 上生成 `.app`、ZIP 和 DMG：
+macOS 在 Apple runner 或 Mac 上生成唯一的通用 DMG：
 
 ```powershell
-installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime osx-arm64
+installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime osx-universal -DmgOnly
 ```
 
 ### 现有 Windows 正式分支

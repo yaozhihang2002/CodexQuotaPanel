@@ -66,7 +66,7 @@ namespace CodexQuotaPanelSetup
         private const string ProductCode = "__MSI_PRODUCT_CODE__";
         private const string ChineseMsiResource = "CodexQuotaPanel.Installer.zh-cn.msi";
         private const string EnglishTransformResource = "CodexQuotaPanel.Installer.en-us.mst";
-        private static readonly bool RequiresDesktopRuntime = __REQUIRES_DESKTOP_RUNTIME__;
+        private static readonly bool RequiresDotNetRuntime = __REQUIRES_DOTNET_RUNTIME__;
         private static readonly string RuntimeDownloadUrl = "__RUNTIME_DOWNLOAD_URL__";
         private static readonly string RuntimeSha512 = "__RUNTIME_SHA512__";
         private static readonly Color Background = Color.FromArgb(18, 23, 21);
@@ -108,7 +108,7 @@ namespace CodexQuotaPanelSetup
             Label eyebrow = new Label
             {
                 AutoSize = true,
-                Text = RequiresDesktopRuntime
+                Text = RequiresDotNetRuntime
                     ? "CODEX · V0.6.0 WEB SETUP"
                     : "CODEX · V0.6.0 OFFLINE SETUP",
                 ForeColor = Accent,
@@ -130,8 +130,8 @@ namespace CodexQuotaPanelSetup
             Label subtitle = new Label
             {
                 AutoSize = true,
-                Text = RequiresDesktopRuntime
-                    ? "Small installer · downloads Microsoft .NET only when required."
+                Text = RequiresDotNetRuntime
+                    ? "Small installer · downloads Microsoft .NET 10 only when required."
                     : "Complete offline installer · no separate runtime download required.",
                 ForeColor = TextMuted,
                 Font = new Font("Segoe UI", 9f, FontStyle.Regular),
@@ -242,7 +242,7 @@ namespace CodexQuotaPanelSetup
             try
             {
                 Directory.CreateDirectory(temporaryDirectory);
-                EnsureDesktopRuntime(temporaryDirectory, english);
+                EnsureDotNetRuntime(temporaryDirectory, english);
                 string msiPath = Path.Combine(temporaryDirectory, "CodexQuotaPanel.msi");
                 string transformPath = Path.Combine(temporaryDirectory, "en-us.mst");
                 ExtractResource(ChineseMsiResource, msiPath);
@@ -303,16 +303,16 @@ namespace CodexQuotaPanelSetup
             }
         }
 
-        private void EnsureDesktopRuntime(string temporaryDirectory, bool english)
+        private void EnsureDotNetRuntime(string temporaryDirectory, bool english)
         {
-            if (!RequiresDesktopRuntime || HasDesktopRuntime9()) return;
+            if (!RequiresDotNetRuntime || HasDotNetRuntime10()) return;
 
             string runtimeInstaller = Path.Combine(
                 temporaryDirectory,
-                "windowsdesktop-runtime-9-win-x64.exe");
+                "dotnet-runtime-10-win-x64.exe");
             _status.Text = english
-                ? "Downloading Microsoft .NET Desktop Runtime…"
-                : "正在下载 Microsoft .NET 桌面运行库…";
+                ? "Downloading Microsoft .NET 10 Runtime…"
+                : "正在下载 Microsoft .NET 10 运行库…";
             Application.DoEvents();
 
             Exception downloadError = null;
@@ -350,8 +350,8 @@ namespace CodexQuotaPanelSetup
 
             VerifySha512(runtimeInstaller, RuntimeSha512);
             _status.Text = english
-                ? "Installing Microsoft .NET Desktop Runtime…"
-                : "正在安装 Microsoft .NET 桌面运行库…";
+                ? "Installing Microsoft .NET 10 Runtime…"
+                : "正在安装 Microsoft .NET 10 运行库…";
             Application.DoEvents();
 
             using (Process process = Process.Start(new ProcessStartInfo
@@ -371,16 +371,16 @@ namespace CodexQuotaPanelSetup
                 }
             }
 
-            if (!HasDesktopRuntime9())
+            if (!HasDotNetRuntime10())
             {
                 throw new InvalidOperationException(
                     english
-                        ? "Microsoft .NET Desktop Runtime 9 was not detected after installation."
-                        : "安装结束后仍未检测到 Microsoft .NET 9 桌面运行库。");
+                        ? "Microsoft .NET 10 Runtime was not detected after installation."
+                        : "安装结束后仍未检测到 Microsoft .NET 10 运行库。");
             }
         }
 
-        private static bool HasDesktopRuntime9()
+        private static bool HasDotNetRuntime10()
         {
             string registryLocation = null;
             try
@@ -403,11 +403,11 @@ namespace CodexQuotaPanelSetup
             foreach (string root in roots)
             {
                 if (string.IsNullOrWhiteSpace(root)) continue;
-                string sharedFramework = Path.Combine(root, "shared", "Microsoft.WindowsDesktop.App");
+                string sharedFramework = Path.Combine(root, "shared", "Microsoft.NETCore.App");
                 if (!Directory.Exists(sharedFramework)) continue;
                 try
                 {
-                    if (Directory.GetDirectories(sharedFramework, "9.*").Length > 0) return true;
+                    if (Directory.GetDirectories(sharedFramework, "10.*").Length > 0) return true;
                 }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }

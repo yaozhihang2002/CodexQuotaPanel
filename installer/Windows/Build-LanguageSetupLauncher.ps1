@@ -7,7 +7,7 @@
     [string]$OutputPath,
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version = '0.6.0',
-    [switch]$RequiresDesktopRuntime,
+    [switch]$RequiresDotNetRuntime,
     [string]$RuntimeDownloadUrl = '',
     [string]$RuntimeSha512 = ''
 )
@@ -35,13 +35,13 @@ if (-not $sourceText.Contains("[assembly: AssemblyVersion(`"$expectedAssemblyVer
 {
     throw "Setup launcher source version does not match requested version $Version."
 }
-if (-not $sourceText.Contains('__REQUIRES_DESKTOP_RUNTIME__') -or
+if (-not $sourceText.Contains('__REQUIRES_DOTNET_RUNTIME__') -or
     -not $sourceText.Contains('__RUNTIME_DOWNLOAD_URL__') -or
     -not $sourceText.Contains('__RUNTIME_SHA512__'))
 {
     throw 'Setup launcher source is missing runtime bootstrap placeholders.'
 }
-if ($RequiresDesktopRuntime)
+if ($RequiresDotNetRuntime)
 {
     if ($RuntimeDownloadUrl -notmatch '^https://builds\.dotnet\.microsoft\.com/' -or
         $RuntimeSha512 -notmatch '^[0-9A-Fa-f]{128}$')
@@ -132,8 +132,8 @@ $generatedSource = Join-Path ([IO.Path]::GetTempPath()) (
     'CodexQuotaPanelSetupLauncher-' + [Guid]::NewGuid().ToString('N') + '.cs')
 $sourceText = $sourceText.Replace('__MSI_PRODUCT_CODE__', $productCode)
 $sourceText = $sourceText.Replace(
-    '__REQUIRES_DESKTOP_RUNTIME__',
-    $(if ($RequiresDesktopRuntime) { 'true' } else { 'false' }))
+    '__REQUIRES_DOTNET_RUNTIME__',
+    $(if ($RequiresDotNetRuntime) { 'true' } else { 'false' }))
 $sourceText = $sourceText.Replace(
     '__RUNTIME_DOWNLOAD_URL__',
     (ConvertTo-CSharpStringLiteral $RuntimeDownloadUrl))
@@ -148,20 +148,22 @@ New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 
 try
 {
-    & $resolvedCompiler `
-        /nologo `
-        /target:winexe `
-        /optimize+ `
-        /platform:anycpu `
-        "/win32icon:$resolvedIcon" `
-        "/out:$fullOutput" `
-        /reference:System.dll `
-        /reference:System.Core.dll `
-        /reference:System.Drawing.dll `
-        /reference:System.Windows.Forms.dll `
-        "/resource:$resolvedMsi,CodexQuotaPanel.Installer.zh-cn.msi" `
-        "/resource:$resolvedTransform,CodexQuotaPanel.Installer.en-us.mst" `
-        $generatedSource
+    $compilerArguments = @(
+        '/nologo',
+        '/target:winexe',
+        '/optimize+',
+        '/platform:anycpu',
+        "/win32icon:$resolvedIcon",
+        "/out:$fullOutput",
+        '/reference:System.dll',
+        '/reference:System.Core.dll',
+        '/reference:System.Drawing.dll',
+        '/reference:System.Windows.Forms.dll'
+    )
+    $compilerArguments += "/resource:$resolvedMsi,CodexQuotaPanel.Installer.zh-cn.msi"
+    $compilerArguments += "/resource:$resolvedTransform,CodexQuotaPanel.Installer.en-us.mst"
+    $compilerArguments += $generatedSource
+    & $resolvedCompiler @compilerArguments
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fullOutput))
     {
@@ -180,5 +182,5 @@ if ($assembly.Version.ToString() -ne $expectedAssemblyVersion)
 }
 
 $fileSize = (Get-Item -LiteralPath $fullOutput).Length
-$flavor = if ($RequiresDesktopRuntime) { 'web + runtime bootstrap' } else { 'offline' }
+$flavor = if ($RequiresDotNetRuntime) { 'web + .NET 10 runtime bootstrap' } else { 'offline' }
 Write-Output "PASS setup launcher v$Version | flavor=$flavor | ProductCode=$productCode | default=zh-CN + en-US option + embedded MSI/MST | bytes=$fileSize | $fullOutput"

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       package_macos:
-        description: Build signed-ad-hoc macOS app, ZIP and DMG
+        description: Build one universal signed-ad-hoc macOS DMG
         required: false
         type: boolean
         default: false
@@ -77,6 +77,7 @@ jobs:
         with:
           name: vnext-preview-${{ matrix.os }}
           path: artifacts/vnext-preview/*.png
+          retention-days: 1
 
   macos-package:
     name: macOS native package
@@ -91,13 +92,14 @@ jobs:
           cache-dependency-path: |
             src/**/*.csproj
             tests/**/*.csproj
-      - name: Build app bundle, ZIP and DMG from one payload
+      - name: Build one universal app bundle and DMG
         shell: pwsh
         run: |
-          $runtime = if ((uname -m) -eq 'arm64') { 'osx-arm64' } else { 'osx-x64' }
-          ./installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime $runtime -SkipChecks
+          ./installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime osx-universal -SkipChecks -DmgOnly
       - name: Upload macOS package
         uses: actions/upload-artifact@v7
         with:
-          name: CodexQuotaPanel-0.6.0-macOS
-          path: artifacts/release-v0.6.0-macos/*
+          name: CodexQuotaPanel-0.6.0-macOS-DMG
+          path: artifacts/release-v0.6.0-macos/CodexQuotaPanel-0.6.0-macOS.dmg
+          if-no-files-found: error
+          retention-days: 1

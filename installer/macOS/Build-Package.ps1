@@ -1,9 +1,10 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.0',
-    [ValidateSet('osx-arm64','osx-x64')][string]$Runtime = 'osx-arm64',
+    [ValidateSet('osx-arm64','osx-x64','osx-universal')][string]$Runtime = 'osx-universal',
     [string]$OutputDirectory,
-    [switch]$SkipChecks
+    [switch]$SkipChecks,
+    [switch]$DmgOnly
 )
 
 Set-StrictMode -Version Latest
@@ -13,7 +14,8 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $solution = Join-Path $repositoryRoot 'CodexQuotaPanel.VNext.slnx'
 $aggregate = Join-Path $repositoryRoot 'build/CodexQuota.ReleaseAggregate.csproj'
 $appProject = Join-Path $repositoryRoot 'src\CodexQuota.App\CodexQuota.App.csproj'
-$stage = Join-Path $repositoryRoot "artifacts/release-stage/$Runtime"
+$stageRoot = Join-Path $repositoryRoot 'artifacts/release-stage'
+$runtimes = if ($Runtime -eq 'osx-universal') { @('osx-arm64','osx-x64') } else { @($Runtime) }
 $output = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else {
     Join-Path $repositoryRoot "artifacts/release-v$Version-macos"
 }
@@ -28,34 +30,55 @@ function Reset-LocalDirectory([string]$Path) {
     New-Item -ItemType Directory -Path $full -Force | Out-Null
 }
 
-Reset-LocalDirectory $stage
 Reset-LocalDirectory $output
 Reset-LocalDirectory $dmgStage
-dotnet restore $aggregate -r $Runtime -p:SelfContained=true
-if ($LASTEXITCODE) { throw 'Restore failed.' }
-dotnet build $aggregate -c Release -r $Runtime --self-contained true --no-restore `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true
-if ($LASTEXITCODE) { throw 'Build failed.' }
-if (-not $SkipChecks) {
-    foreach ($test in @('Domain','Application','Infrastructure','Platform')) {
-        dotnet run --project (Join-Path $repositoryRoot "tests/CodexQuota.$test.Tests") -c Release -r $Runtime --no-build --no-restore
-        if ($LASTEXITCODE) { throw "$test checks failed." }
+foreach ($targetRuntime in $runtimes) {
+    $stage = Join-Path $stageRoot $targetRuntime
+    Reset-LocalDirectory $stage
+    dotnet restore $aggregate -r $targetRuntime -p:SelfContained=true
+    if ($LASTEXITCODE) { throw "Restore failed for $targetRuntime." }
+    dotnet build $aggregate -c Release -r $targetRuntime --self-contained true --no-restore `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+        -p:EnableCompressionInSingleFile=true
+    if ($LASTEXITCODE) { throw "Build failed for $targetRuntime." }
+    if (-not $SkipChecks -and $targetRuntime -eq $runtimes[0]) {
+        foreach ($test in @('Domain','Application','Infrastructure','Platform')) {
+            dotnet run --project (Join-Path $repositoryRoot "tests/CodexQuota.$test.Tests") -c Release -r $targetRuntime --no-build --no-restore
+            if ($LASTEXITCODE) { throw "$test checks failed." }
+        }
+        dotnet run --project (Join-Path $repositoryRoot 'tests/CodexQuota.UI.Tests') -c Release -r $targetRuntime --no-build --no-restore -- `
+            (Join-Path $repositoryRoot 'artifacts/vnext-preview') formal
+        if ($LASTEXITCODE) { throw 'UI checks failed.' }
     }
-    dotnet run --project (Join-Path $repositoryRoot 'tests/CodexQuota.UI.Tests') -c Release -r $Runtime --no-build --no-restore -- `
-        (Join-Path $repositoryRoot 'artifacts/vnext-preview') formal
-    if ($LASTEXITCODE) { throw 'UI checks failed.' }
+    dotnet publish $appProject -c Release -r $targetRuntime --self-contained true --no-build --no-restore `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+        -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $stage
+    if ($LASTEXITCODE) { throw "Publish failed for $targetRuntime." }
+    Get-ChildItem -LiteralPath $stage -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 }
-dotnet publish $appProject -c Release -r $Runtime --self-contained true --no-build --no-restore `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $stage
-if ($LASTEXITCODE) { throw 'Publish failed.' }
 
 $macos = Join-Path $app 'Contents/MacOS'
 $resources = Join-Path $app 'Contents/Resources'
 New-Item -ItemType Directory -Path $macos,$resources -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $stage 'CodexQuotaPanel') -Destination (Join-Path $macos 'CodexQuotaPanel')
-& chmod +x (Join-Path $macos 'CodexQuotaPanel')
+if ($Runtime -eq 'osx-universal') {
+    Copy-Item -LiteralPath (Join-Path $stageRoot 'osx-arm64/CodexQuotaPanel') -Destination (Join-Path $macos 'CodexQuotaPanel-arm64')
+    Copy-Item -LiteralPath (Join-Path $stageRoot 'osx-x64/CodexQuotaPanel') -Destination (Join-Path $macos 'CodexQuotaPanel-x64')
+    $launcher = @'
+#!/bin/sh
+HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+case "$(uname -m)" in
+  arm64) exec "$HERE/CodexQuotaPanel-arm64" "$@" ;;
+  x86_64) exec "$HERE/CodexQuotaPanel-x64" "$@" ;;
+  *) osascript -e 'display alert "CodexQuotaPanel" message "This Mac architecture is not supported." as critical'; exit 1 ;;
+esac
+'@
+    [IO.File]::WriteAllText((Join-Path $macos 'CodexQuotaPanel'), $launcher, [Text.UTF8Encoding]::new($false))
+    & chmod +x (Join-Path $macos 'CodexQuotaPanel') (Join-Path $macos 'CodexQuotaPanel-arm64') (Join-Path $macos 'CodexQuotaPanel-x64')
+}
+else {
+    Copy-Item -LiteralPath (Join-Path $stageRoot "$Runtime/CodexQuotaPanel") -Destination (Join-Path $macos 'CodexQuotaPanel')
+    & chmod +x (Join-Path $macos 'CodexQuotaPanel')
+}
 $sourceIcon = Join-Path $repositoryRoot 'src/CodexQuota.App/Assets/CodexQuotaPanel.ico'
 $iconPng = Join-Path $resources 'CodexQuotaPanel.png'
 & sips -s format png $sourceIcon --out $iconPng | Out-Null
@@ -98,16 +121,21 @@ if ($LASTEXITCODE) { throw 'Code signing failed.' }
 & codesign --verify --deep --strict --verbose=2 $app
 if ($LASTEXITCODE) { throw 'Code signature verification failed.' }
 
-$zip = Join-Path $output "CodexQuotaPanel-$Version-$Runtime.zip"
-& ditto -c -k --sequesterRsrc --keepParent $app $zip
-if ($LASTEXITCODE) { throw 'ZIP packaging failed.' }
-$dmg = Join-Path $output "CodexQuotaPanel-$Version-$Runtime.dmg"
+if (-not $DmgOnly) {
+    $zip = Join-Path $output "CodexQuotaPanel-$Version-$Runtime.zip"
+    & ditto -c -k --sequesterRsrc --keepParent $app $zip
+    if ($LASTEXITCODE) { throw 'ZIP packaging failed.' }
+}
+$dmgName = if ($Runtime -eq 'osx-universal') { "CodexQuotaPanel-$Version-macOS.dmg" } else { "CodexQuotaPanel-$Version-$Runtime.dmg" }
+$dmg = Join-Path $output $dmgName
 Copy-Item -LiteralPath $app -Destination (Join-Path $dmgStage 'CodexQuotaPanel.app') -Recurse
 & /bin/ln -s /Applications (Join-Path $dmgStage 'Applications')
 & hdiutil create -volname CodexQuotaPanel -srcfolder $dmgStage -ov -format UDZO $dmg
 if ($LASTEXITCODE) { throw 'DMG packaging failed.' }
-& /usr/bin/unzip -t $zip | Out-Null
-if ($LASTEXITCODE) { throw 'ZIP integrity validation failed.' }
+if (-not $DmgOnly) {
+    & /usr/bin/unzip -t $zip | Out-Null
+    if ($LASTEXITCODE) { throw 'ZIP integrity validation failed.' }
+}
 & hdiutil verify $dmg | Out-Null
 if ($LASTEXITCODE) { throw 'DMG integrity validation failed.' }
 $mount = Join-Path $repositoryRoot "artifacts/release-dmg-mount-$Runtime"
@@ -118,6 +146,13 @@ try {
     if ($LASTEXITCODE) { throw 'DMG mount validation failed.' }
     if (-not (Test-Path -LiteralPath (Join-Path $mount 'CodexQuotaPanel.app/Contents/MacOS/CodexQuotaPanel'))) {
         throw 'DMG application payload is missing.'
+    }
+    if ($Runtime -eq 'osx-universal') {
+        foreach ($binary in @('CodexQuotaPanel-arm64','CodexQuotaPanel-x64')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $mount "CodexQuotaPanel.app/Contents/MacOS/$binary"))) {
+                throw "Universal DMG payload is missing $binary."
+            }
+        }
     }
     & /bin/test -L (Join-Path $mount 'Applications')
     if ($LASTEXITCODE) { throw 'DMG Applications shortcut is missing.' }

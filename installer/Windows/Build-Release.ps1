@@ -15,7 +15,6 @@ $solution = Join-Path $repositoryRoot 'CodexQuotaPanel.VNext.slnx'
 $aggregate = Join-Path $repositoryRoot 'build\CodexQuota.ReleaseAggregate.csproj'
 $appProject = Join-Path $repositoryRoot 'src\CodexQuota.App\CodexQuota.App.csproj'
 $stage = Join-Path $repositoryRoot 'artifacts\release-stage\win-x64'
-$portableLayout = Join-Path $repositoryRoot 'artifacts\portable-layout'
 $output = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else {
     Join-Path $repositoryRoot "artifacts\release-v$Version"
 }
@@ -57,7 +56,6 @@ if (-not $installerText.Contains('"ProductVersion" = "8:' + $Version + '"')) { t
 
 Reset-LocalDirectory $stage
 Reset-LocalDirectory $output
-Reset-LocalDirectory $portableLayout
 $dotnet = if ($DotNetPath) { (Resolve-Path -LiteralPath $DotNetPath).Path } else {
     $command = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($null -eq $command) { throw 'dotnet SDK was not found. Pass -DotNetPath or add dotnet to PATH.' }
@@ -65,11 +63,9 @@ $dotnet = if ($DotNetPath) { (Resolve-Path -LiteralPath $DotNetPath).Path } else
 }
 
 if (-not $SkipChecks) {
-    Invoke-Step 'Restore once' { & $dotnet restore $aggregate -r win-x64 -p:SelfContained=true }
+    Invoke-Step 'Restore once' { & $dotnet restore $aggregate -r win-x64 }
     Invoke-Step 'Build once' {
-        & $dotnet build $aggregate -c Release -r win-x64 --self-contained true --no-restore `
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true
+        & $dotnet build $aggregate -c Release -r win-x64 --no-restore -p:PublishSingleFile=true
     }
     foreach ($test in @('Domain','Application','Infrastructure','Platform','UI')) {
         $projectPath = Join-Path $repositoryRoot "tests\CodexQuota.$test.Tests\CodexQuota.$test.Tests.csproj"
@@ -77,11 +73,11 @@ if (-not $SkipChecks) {
     }
 }
 
-Invoke-Step 'Publish one self-contained application payload' {
-    & $dotnet publish $appProject -c Release -r win-x64 --self-contained true `
+Invoke-Step 'Publish one framework-dependent application payload' {
+    & $dotnet publish $appProject -c Release -r win-x64 --self-contained false `
         --no-build --no-restore `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-        -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false `
+        -p:DebugType=None -p:DebugSymbols=false `
         -o $stage
 }
 $exe = Join-Path $stage 'CodexQuotaPanel.exe'
@@ -99,30 +95,13 @@ Invoke-Step 'Build bilingual MSI from the same payload' {
 }
 $builtMsi = Join-Path $installerDirectory "Release\CodexQuotaPanel-$Version-x64.msi"
 $transform = Join-Path $installerDirectory "Release\CodexQuotaPanel-$Version-en-us.mst"
-$setup = Join-Path $output "CodexQuotaPanel-$Version-Setup.exe"
-$portable = Join-Path $output "CodexQuotaPanel-$Version-portable-win-x64.zip"
-$portableRootName = "CodexQuotaPanel-$Version-portable-win-x64"
-$portableRoot = Join-Path $portableLayout $portableRootName
-$msi = Join-Path $output "CodexQuotaPanel-$Version-x64.msi"
-Copy-Item -LiteralPath $builtMsi -Destination $msi
-Invoke-Step 'Build Chinese-default language launcher' {
-    & $launcherBuilder -MsiPath $builtMsi -EnglishTransformPath $transform -OutputPath $setup -Version $Version
+$setup = Join-Path $output "CodexQuotaPanel-$Version-Windows-Setup.exe"
+$runtimeUrl = 'https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.exe'
+$runtimeSha512 = '694e0e0af26b2b8949b8eda8a3831ab31aeac79797d43d6ff8c8798eae642c0904852e641c47329d7d893408f25feab1530ca2b7a0c6ed0d991e0113466a4bf9'
+Invoke-Step 'Build Chinese-default web setup launcher' {
+    & $launcherBuilder -MsiPath $builtMsi -EnglishTransformPath $transform -OutputPath $setup -Version $Version `
+        -RequiresDotNetRuntime -RuntimeDownloadUrl $runtimeUrl -RuntimeSha512 $runtimeSha512
 }
-New-Item -ItemType Directory -Path $portableRoot -Force | Out-Null
-Copy-Item -Path (Join-Path $stage '*') -Destination $portableRoot -Recurse -Force
-[IO.Compression.ZipFile]::CreateFromDirectory(
-    $portableRoot, $portable, [IO.Compression.CompressionLevel]::Optimal, $true)
-$archive = [IO.Compression.ZipFile]::OpenRead($portable)
-try {
-    $prefix = $portableRootName + '/'
-    if ($archive.Entries.Count -eq 0 -or $archive.Entries.Where({ -not $_.FullName.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -gt 0) {
-        throw 'Portable ZIP entries are not contained by the expected top-level folder.'
-    }
-    if ($archive.Entries.Where({ $_.FullName.EndsWith('.pdb', [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
-        throw 'Portable ZIP unexpectedly contains debug symbols.'
-    }
-}
-finally { $archive.Dispose() }
 if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -cne $payloadHash) {
     throw 'The application payload changed while packaging.'
 }
