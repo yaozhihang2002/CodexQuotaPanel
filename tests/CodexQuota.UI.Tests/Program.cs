@@ -3,46 +3,72 @@ using Avalonia.Headless;
 using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using CodexQuota.Application;
 using CodexQuota.UI.Avalonia;
+using CodexQuota.Domain;
 
-var outputPath = args.Length > 0
+var outputRoot = args.Length > 0
     ? Path.GetFullPath(args[0])
-    : Path.GetFullPath(Path.Combine("artifacts", "vnext-preview.png"));
+    : Path.GetFullPath(Path.Combine("artifacts", "vnext-preview"));
+Directory.CreateDirectory(outputRoot);
 
 TestAppBuilder.BuildAvaloniaApp().SetupWithoutStarting();
+var scenarios = new[]
+{
+    ("zh-dark-single-100", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Dark, false), 1d),
+    ("zh-dark-dual-150", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Dark, true), 1.5d),
+    ("zh-light-single-100", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Light, false), 1d),
+    ("zh-light-dual-200", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Light, true), 2d),
+    ("en-dark-single-100", new PreviewScenario(AppLanguage.English, AppTheme.Dark, false), 1d),
+    ("en-dark-dual-150", new PreviewScenario(AppLanguage.English, AppTheme.Dark, true), 1.5d),
+    ("en-light-single-100", new PreviewScenario(AppLanguage.English, AppTheme.Light, false), 1d),
+    ("en-light-dual-200", new PreviewScenario(AppLanguage.English, AppTheme.Light, true), 2d)
+};
 
-var window = new PreviewWindow();
-window.Show();
-window.SetRenderScaling(1d);
-window.Width = 980;
-window.Height = 620;
-Dispatcher.UIThread.RunJobs();
-AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-Dispatcher.UIThread.RunJobs();
-AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-var frame = window.CaptureRenderedFrame()
-            ?? throw new InvalidOperationException("The preview did not produce a rendered frame.");
+foreach (var (name, scenario, scale) in scenarios)
+{
+    var window = new PreviewWindow(scenario);
+    window.Show();
+    window.SetRenderScaling(scale);
+    window.Width = 980;
+    window.Height = 620;
+    window.ApplyQuota(new OfficialQuotaSnapshot(DateTimeOffset.UtcNow,
+        scenario.DualRing
+            ? [new QuotaWindow("5h", 300, 71, DateTimeOffset.UtcNow.AddHours(3)),
+               new QuotaWindow("7d", 10_080, 44, DateTimeOffset.UtcNow.AddDays(4))]
+            : [new QuotaWindow("7d", 10_080, 44, DateTimeOffset.UtcNow.AddDays(4))]));
+    Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    var frame = window.CaptureRenderedFrame()
+                ?? throw new InvalidOperationException($"{name}: no rendered frame.");
 
-if (frame.PixelSize.Width < 760 || frame.PixelSize.Height < 500)
-    throw new InvalidOperationException($"Unexpected preview size: {frame.PixelSize}.");
-if (window.ClientSize.Width < 900 || window.ClientSize.Height < 560)
-    throw new InvalidOperationException($"Unexpected client size: {window.ClientSize}.");
-if (window.ContentRegion.Bounds.Width < 700 || window.ContentRegion.Bounds.Height < 470)
-    throw new InvalidOperationException($"Content region collapsed: {window.ContentRegion.Bounds}.");
-if (window.SummaryCards.Bounds.Width < 380 || window.SummaryCards.Bounds.Height < 280)
-    throw new InvalidOperationException($"Summary cards collapsed: {window.SummaryCards.Bounds}.");
-if (window.OrbPreviewPanel.Bounds.Width < 240 || window.OrbPreviewPanel.Bounds.Height < 400)
-    throw new InvalidOperationException($"Orb preview collapsed: {window.OrbPreviewPanel.Bounds}.");
+    Check.True(frame.PixelSize.Width >= 760 * scale, $"{name}: pixel width");
+    Check.True(frame.PixelSize.Height >= 500 * scale, $"{name}: pixel height");
+    Check.True(window.ContentRegion.Bounds.Width >= 700, $"{name}: content width");
+    Check.True(window.SummaryCards.Bounds is { Width: >= 380, Height: >= 280 }, $"{name}: cards");
+    Check.True(window.OrbPreviewPanel.Bounds is { Width: >= 240, Height: >= 400 }, $"{name}: orb");
+    Check.True(window.OrbPreviewControl.Bounds.Width >= 185 && window.OrbPreviewControl.Bounds.Height >= 185,
+        $"{name}: orb control size");
+    Check.True(scenario.DualRing == double.IsFinite(window.OrbPreviewControl.SecondaryRemainingPercent),
+        $"{name}: adaptive ring count");
 
-Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-using (var output = File.Create(outputPath))
-    frame.Save(output, PngBitmapEncoderOptions.Default);
-window.Close();
+    var outputPath = Path.Combine(outputRoot, name + ".png");
+    await using (var output = File.Create(outputPath))
+        frame.Save(output, PngBitmapEncoderOptions.Default);
+    window.Close();
+}
 
-Console.WriteLine($"UI render check passed: {outputPath}");
-Console.WriteLine(
-    $"Layout: client={window.ClientSize}; content={window.ContentRegion.Bounds}; " +
-    $"cards={window.SummaryCards.Bounds}; orb={window.OrbPreviewPanel.Bounds}");
+Console.WriteLine($"UI render matrix passed: {scenarios.Length} scenarios -> {outputRoot}");
+
+static class Check
+{
+    public static void True(bool value, string name)
+    {
+        if (!value) throw new InvalidOperationException($"{name}: expected true");
+    }
+}
 
 public static class TestAppBuilder
 {
@@ -50,17 +76,10 @@ public static class TestAppBuilder
         AppBuilder.Configure<TestApplication>()
             .UseSkia()
             .UseHarfBuzz()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions
-            {
-                UseHeadlessDrawing = false
-            });
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }
 
 public sealed class TestApplication : Avalonia.Application
 {
-    public override void Initialize()
-    {
-        RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
-        Styles.Add(new FluentTheme());
-    }
+    public override void Initialize() => Styles.Add(new FluentTheme());
 }

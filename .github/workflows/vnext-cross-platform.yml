@@ -31,9 +31,9 @@ jobs:
           cache-dependency-path: |
             src/**/*.csproj
             tests/**/*.csproj
-      - name: Restore
+      - name: Restore once
         run: dotnet restore CodexQuotaPanel.VNext.slnx
-      - name: Build
+      - name: Build once
         run: dotnet build CodexQuotaPanel.VNext.slnx --configuration Release --no-restore
       - name: Domain checks
         run: dotnet run --project tests/CodexQuota.Domain.Tests --configuration Release --no-build
@@ -41,10 +41,10 @@ jobs:
         run: dotnet run --project tests/CodexQuota.Application.Tests --configuration Release --no-build
       - name: Infrastructure checks
         run: dotnet run --project tests/CodexQuota.Infrastructure.Tests --configuration Release --no-build
-      - name: UI render check
-        run: dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- artifacts/vnext-preview.png
-      - name: Upload UI render
+      - name: UI render matrix
+        run: dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- artifacts/vnext-preview
+      - name: Upload UI matrix
         uses: actions/upload-artifact@v7
         with:
           name: vnext-preview-${{ matrix.os }}
-          path: artifacts/vnext-preview.png
+          path: artifacts/vnext-preview/*.png

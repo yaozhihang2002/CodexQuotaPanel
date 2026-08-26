@@ -4,6 +4,7 @@
 
 # Release packages and local QA artifacts
 /outputs/
+/artifacts/
 /work/*
 !/work/CodexQuotaPanel/
 !/work/CodexQuotaPanel/**
