@@ -45,7 +45,7 @@ Status vocabulary:
 
 ## Release evidence
 
-- **Local complete:** 21 domain, 10 application, 43 infrastructure, 4 Windows platform, and 37 UI scenarios.
+- **Local complete:** 21 domain, 10 application, 43 infrastructure, 6 Windows platform, and 39 UI scenarios.
 - **Local complete:** real-user-environment App Server quota read; isolated JSONL first-index worker; single-instance and no-residual-child smoke.
 - **Local complete:** Windows 100/150/200% render matrix, settings large-font render, native topmost/click-through and open/collapse placement smoke.
 - **Local complete:** 15-minute active refresh/index smoke with one UI instance, bounded memory, and no child process left after exit.

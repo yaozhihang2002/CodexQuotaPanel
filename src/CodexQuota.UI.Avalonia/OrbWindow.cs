@@ -3,7 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CodexQuota.Application;
 
 namespace CodexQuota.UI.Avalonia;
@@ -11,14 +11,12 @@ namespace CodexQuota.UI.Avalonia;
 public sealed class OrbWindow : Window
 {
     private readonly OrbControl _orb;
-    private readonly DispatcherTimer _positionSaveTimer;
     private AppSettings _settings = AppSettings.Default;
     private bool _pointerMoved;
-    private bool _trackPosition;
-    private bool _constrainingPosition;
     private bool _moveMode;
-    private bool _userDragPending;
+    private bool _pointerPressed;
     private PixelPoint _pressPosition;
+    private PixelPoint _pressPointerScreenPosition;
 
     public event EventHandler? OpenDetailsRequested;
     public event EventHandler<PixelPoint>? MoveCompleted;
@@ -49,32 +47,7 @@ public sealed class OrbWindow : Window
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
-        _positionSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220) };
-        _positionSaveTimer.Tick += (_, _) =>
-        {
-            _positionSaveTimer.Stop();
-            if (!_trackPosition || _constrainingPosition || !_userDragPending) return;
-            var moved = Math.Abs(Position.X - _pressPosition.X) + Math.Abs(Position.Y - _pressPosition.Y) > 4;
-            if (!moved) return;
-            _constrainingPosition = true;
-            try
-            {
-                MoveCompleted?.Invoke(this, ConstrainPosition(_settings.SnapToEdge).Position);
-                _userDragPending = false;
-            }
-            finally
-            {
-                _orb.InteractionPaused = false;
-                _constrainingPosition = false;
-            }
-        };
-        Opened += (_, _) => _trackPosition = true;
-        PositionChanged += (_, _) =>
-        {
-            if (!_trackPosition || _constrainingPosition) return;
-            _positionSaveTimer.Stop();
-            _positionSaveTimer.Start();
-        };
+        PointerCaptureLost += (_, _) => FinishPointerInteraction(false);
     }
 
     public void ApplySettings(AppSettings settings)
@@ -209,29 +182,52 @@ public sealed class OrbWindow : Window
     {
         var point = e.GetCurrentPoint(this);
         if (point.Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed) return;
-        if (!point.Properties.IsLeftButtonPressed || !_moveMode && (_settings.PositionLocked || _settings.ClickThrough)) return;
+        if (!point.Properties.IsLeftButtonPressed || !_moveMode && _settings.ClickThrough) return;
+        _pointerPressed = true;
         _pointerMoved = false;
-        _userDragPending = true;
         _pressPosition = Position;
-        _orb.InteractionPaused = true;
-        BeginMoveDrag(e);
+        _pressPointerScreenPosition = this.PointToScreen(e.GetPosition(this));
+        e.Pointer.Capture(this);
+        e.Handled = true;
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (Math.Abs(Position.X - _pressPosition.X) + Math.Abs(Position.Y - _pressPosition.Y) > 4)
-            _pointerMoved = true;
+        if (!_pointerPressed || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!_moveMode && _settings.PositionLocked) return;
+        var pointer = this.PointToScreen(e.GetPosition(this));
+        var dx = pointer.X - _pressPointerScreenPosition.X;
+        var dy = pointer.Y - _pressPointerScreenPosition.Y;
+        if (Math.Abs(dx) + Math.Abs(dy) <= 4) return;
+        _pointerMoved = true;
+        _orb.InteractionPaused = true;
+        Position = new PixelPoint(_pressPosition.X + dx, _pressPosition.Y + dy);
+        e.Handled = true;
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        _pointerMoved |= Math.Abs(Position.X - _pressPosition.X) + Math.Abs(Position.Y - _pressPosition.Y) > 4;
-        if (!_pointerMoved)
+        if (!_pointerPressed) return;
+        FinishPointerInteraction(true);
+        e.Pointer.Capture(null);
+        e.Handled = true;
+    }
+
+    private void FinishPointerInteraction(bool allowClick)
+    {
+        if (!_pointerPressed) return;
+        _pointerPressed = false;
+        _orb.InteractionPaused = false;
+        if (_pointerMoved)
         {
-            _userDragPending = false;
-            _orb.InteractionPaused = false;
+            var placement = ConstrainPosition(_settings.SnapToEdge);
+            MoveCompleted?.Invoke(this, placement.Position);
         }
-        if (!_pointerMoved && !_settings.ClickThrough && !_moveMode) OpenDetailsRequested?.Invoke(this, EventArgs.Empty);
+        else if (allowClick && !_settings.ClickThrough && !_moveMode)
+        {
+            OpenDetailsRequested?.Invoke(this, EventArgs.Empty);
+        }
+        _pointerMoved = false;
     }
 
 }

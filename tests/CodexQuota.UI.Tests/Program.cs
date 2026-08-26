@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -268,6 +271,24 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Check.True(lifecycleOrb.Opacity > .99, "orb transition restores opacity");
     lifecycleOrb.Close();
 
+    var clickableOrb = new OrbWindow();
+    var openRequests = 0;
+    clickableOrb.OpenDetailsRequested += (_, _) => openRequests++;
+    clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = false, PositionLocked = false });
+    clickableOrb.Show();
+    clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
+    clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
+    Check.True(openRequests == 1, "orb click opens details when click-through is disabled");
+    clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = true, PositionLocked = false });
+    clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
+    clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
+    Check.True(openRequests == 1, "orb ignores clicks when click-through is enabled");
+    clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = false, PositionLocked = true });
+    clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
+    clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
+    Check.True(openRequests == 2, "position lock keeps click-to-open available");
+    clickableOrb.Close();
+
     var adaptiveOrb = new OrbWindow();
     adaptiveOrb.ApplySettings(new AppSettings { OrbSize = 120, Theme = AppTheme.Dark });
     adaptiveOrb.ApplyPresentation(presentation with
@@ -301,6 +322,23 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     adaptiveDashboard.ApplyPresentation(presentation);
     Check.True(adaptiveDashboard.WindowCardCount == 2 && adaptiveDashboard.SummaryRingCount == 2,
         "dashboard dynamic dual-window restore");
+    adaptiveDashboard.Show();
+    if (adaptiveDashboard.Screens.Primary is { } placementScreen)
+    {
+        var work = placementScreen.WorkingArea;
+        var rightOrb = new PixelPoint(work.Right - 100, work.Y + 90);
+        adaptiveDashboard.PlaceNear(rightOrb, 88);
+        Check.True(adaptiveDashboard.Position.X < rightOrb.X &&
+                   adaptiveDashboard.Position.X >= work.X && adaptiveDashboard.Position.Y >= work.Y &&
+                   adaptiveDashboard.Position.X + adaptiveDashboard.Bounds.Width * placementScreen.Scaling <= work.Right + 1 &&
+                   adaptiveDashboard.Position.Y + adaptiveDashboard.Bounds.Height * placementScreen.Scaling <= work.Bottom + 1,
+            "dashboard opens beside right-edge orb and remains inside the work area");
+        var leftOrb = new PixelPoint(work.X + 12, work.Y + 90);
+        adaptiveDashboard.PlaceNear(leftOrb, 88);
+        Check.True(adaptiveDashboard.Position.X > leftOrb.X,
+            "dashboard opens to the right of a left-edge orb");
+    }
+    adaptiveDashboard.ClosePermanently();
 
     var usageCycle = new UsageDetailsWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
     usageCycle.ApplyUsage(usage, now.Date.AddDays(-6), now.Date.AddDays(1));
@@ -319,6 +357,61 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     usageCycle.Close();
+
+    var compactDualRow = new StackPanel
+    {
+        Orientation = Orientation.Horizontal,
+        Spacing = 34,
+        Margin = new Thickness(24),
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center
+    };
+    foreach (var orbSize in new[] { 56d, 88d })
+    {
+        var compactOrb = new OrbControl
+        {
+            Width = orbSize,
+            Height = orbSize,
+            RemainingPercent = 100,
+            SecondaryRemainingPercent = 100,
+            PrimaryLabel = "7D",
+            SecondaryLabel = "5H",
+            FeedbackStyle = ConsumptionFeedbackStyle.Fluid,
+            FeedbackIntensity = .94,
+            AnimateFeedback = false,
+            ConnectionState = QuotaConnectionState.Live
+        };
+        compactDualRow.Children.Add(new StackPanel
+        {
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Children =
+            {
+                UiElements.Text($"{orbSize:0} px · 7D 100 / 5H 100", 10, FontWeight.SemiBold,
+                    UiPalette.B("#D7E3DD"), TextWrapping.NoWrap),
+                compactOrb
+            }
+        });
+    }
+    var compactDualWindow = new Window
+    {
+        Width = 390,
+        Height = 170,
+        Background = UiPalette.B("#0D1210"),
+        Content = compactDualRow
+    };
+    compactDualWindow.Show();
+    compactDualWindow.SetRenderScaling(2d);
+    compactDualWindow.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    using (var frame = compactDualWindow.CaptureRenderedFrame() ??
+                       throw new InvalidOperationException("compact dual orb: no rendered frame"))
+    {
+        await using var output = File.Create(Path.Combine(outputRoot, "orb-dual-minimum-legibility.png"));
+        frame.Save(output, PngBitmapEncoderOptions.Default);
+    }
+    compactDualWindow.Close();
 
     var feedbackGrid = new Grid
     {
@@ -356,7 +449,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     feedbackWindow.Close();
 }
 
-Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 29 : 0)} scenarios -> {outputRoot}");
+Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 31 : 0)} scenarios -> {outputRoot}");
 Environment.Exit(0);
 
 static SettingsWindow CreateSettings(AppLanguage language, AppTheme theme, int page)

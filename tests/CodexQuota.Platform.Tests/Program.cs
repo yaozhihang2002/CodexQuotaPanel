@@ -1,6 +1,7 @@
 using CodexQuota.Application;
 using CodexQuota.Platform.macOS;
 using CodexQuota.Platform.Windows;
+using System.Runtime.InteropServices;
 
 IPlatformShell shell = OperatingSystem.IsWindows() ? new WindowsPlatformShell() : new MacOSPlatformShell();
 Check.True(shell.SupportsClickThrough, "click-through capability");
@@ -15,8 +16,15 @@ if (OperatingSystem.IsWindows())
 {
     using var registration = shell.RegisterRecoveryShortcut(() => { });
     Check.True(registration is not null, "Windows recovery hotkey registration");
+    using var nativeWindow = NativeWindow.Create();
+    shell.SetClickThrough(nativeWindow.Handle, true);
+    Check.True(nativeWindow.HasExtendedStyle(NativeWindow.WsExTransparent),
+        "Windows click-through style enable");
+    shell.SetClickThrough(nativeWindow.Handle, false);
+    Check.True(!nativeWindow.HasExtendedStyle(NativeWindow.WsExTransparent),
+        "Windows click-through style disable");
 }
-var checkCount = 4;
+var checkCount = OperatingSystem.IsWindows() ? 6 : 4;
 if (string.Equals(Environment.GetEnvironmentVariable("CODEXQUOTA_PLATFORM_MUTATION_TESTS"), "1",
         StringComparison.Ordinal))
 {
@@ -37,6 +45,40 @@ if (string.Equals(Environment.GetEnvironmentVariable("CODEXQUOTA_PLATFORM_MUTATI
     }
 }
 Console.WriteLine($"Platform checks passed: {shell.PlatformName} ({checkCount})");
+
+sealed class NativeWindow : IDisposable
+{
+    public const long WsExTransparent = 0x00000020L;
+    private const int GwlExStyle = -20;
+    private const uint WsPopup = 0x80000000;
+
+    public nint Handle { get; }
+
+    private NativeWindow(nint handle) => Handle = handle;
+
+    public static NativeWindow Create()
+    {
+        var handle = CreateWindowExW(0, "STATIC", "CodexQuotaClickThroughTest", WsPopup,
+            0, 0, 8, 8, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (handle == 0) throw new InvalidOperationException("Unable to create native click-through test window.");
+        return new NativeWindow(handle);
+    }
+
+    public bool HasExtendedStyle(long style) => (GetWindowLongPtrW(Handle, GwlExStyle).ToInt64() & style) != 0;
+
+    public void Dispose() => _ = DestroyWindow(Handle);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern nint CreateWindowExW(uint extendedStyle, string className, string windowName,
+        uint style, int x, int y, int width, int height, nint parent, nint menu, nint instance, nint parameter);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern nint GetWindowLongPtrW(nint window, int index);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyWindow(nint window);
+}
 
 static class Check
 {

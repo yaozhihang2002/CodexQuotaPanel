@@ -18,7 +18,7 @@ public sealed class DashboardWindow : Window
     private readonly TextBlock _source;
     private readonly Border _connectionBadge;
     private readonly TextBlock _connectionText;
-    private readonly StackPanel _windowCards;
+    private readonly Grid _windowCards;
     private readonly TrendChartControl _trend;
     private readonly DailyUsageChartControl _dailyUsage;
     private readonly TextBlock _credit;
@@ -43,7 +43,7 @@ public sealed class DashboardWindow : Window
         Title = _settings.Language == AppLanguage.SimplifiedChinese ? "Codex 额度详情" : "Codex quota details";
         var scale = _settings.InterfaceScalePercent / 100d;
         Width = Math.Clamp(452 * (.65 + .35 * scale), 420, 560);
-        Height = Math.Clamp(700 * (.72 + .28 * scale), 620, 800);
+        Height = Math.Clamp(720 * (.72 + .28 * scale), 640, 810);
         MinWidth = 420;
         MinHeight = 590;
         MaxWidth = 560;
@@ -54,7 +54,7 @@ public sealed class DashboardWindow : Window
         RenderTransformOrigin = RelativePoint.Center;
         RenderTransform = new ScaleTransform(1, 1);
 
-        _summaryOrb = new OrbControl { Width = 138, Height = 138, HorizontalAlignment = HorizontalAlignment.Left };
+        _summaryOrb = new OrbControl { Width = 118, Height = 118, HorizontalAlignment = HorizontalAlignment.Left };
         _plan = UiElements.Text("—", 11, FontWeight.Bold, _palette.Mint);
         _headline = UiElements.Text(T("等待数据", "Waiting for data"), 28, FontWeight.Bold, _palette.TextPrimary);
         _forecast = UiElements.Text(T("正在连接 Codex 数据源", "Connecting to Codex data"), 12, FontWeight.Normal, _palette.TextSecondary);
@@ -71,11 +71,16 @@ public sealed class DashboardWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Child = _connectionText
         };
-        _windowCards = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Stretch };
-        _trend = new TrendChartControl { Height = 82, IsDark = _settings.Theme != AppTheme.Light };
+        _windowCards = new Grid
+        {
+            ColumnSpacing = 8,
+            RowSpacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        _trend = new TrendChartControl { Height = 62, IsDark = _settings.Theme != AppTheme.Light };
         _dailyUsage = new DailyUsageChartControl
         {
-            Height = 132,
+            Height = 92,
             Language = _settings.Language,
             IsDark = _settings.Theme != AppTheme.Light
         };
@@ -135,8 +140,22 @@ public sealed class DashboardWindow : Window
         ApplyConnectionState(presentation);
 
         _windowCards.Children.Clear();
-        foreach (var window in windows.OrderByDescending(window => window.WindowMinutes))
-            _windowCards.Children.Add(BuildWindowCard(window, presentation.History));
+        _windowCards.ColumnDefinitions.Clear();
+        _windowCards.RowDefinitions.Clear();
+        var orderedWindows = windows.OrderByDescending(window => window.WindowMinutes).ToArray();
+        var columnCount = Math.Min(2, Math.Max(1, orderedWindows.Length));
+        for (var column = 0; column < columnCount; column++)
+            _windowCards.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        var rowCount = Math.Max(1, (int)Math.Ceiling(orderedWindows.Length / (double)columnCount));
+        for (var row = 0; row < rowCount; row++)
+            _windowCards.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        for (var index = 0; index < orderedWindows.Length; index++)
+        {
+            var card = BuildWindowCard(orderedWindows[index]);
+            Grid.SetColumn(card, index % columnCount);
+            Grid.SetRow(card, index / columnCount);
+            _windowCards.Children.Add(card);
+        }
         if (windows.Count == 0)
             _windowCards.Children.Add(UiElements.Card(UiElements.Text(T("等待额度快照", "Waiting for quota snapshot"), 12,
                 FontWeight.Normal, _palette.TextMuted), _palette));
@@ -157,6 +176,31 @@ public sealed class DashboardWindow : Window
             ? $"{T("最早到期重置卡", "Next reset credit")} · {expiry.ToLocalTime():yyyy-MM-dd HH:mm}"
             : T("重置卡信息暂不可用", "Reset credit information unavailable");
         _tokenTotal.Text = $"{T("本周期 Token", "Cycle tokens")}：{presentation.Usage.Sum(item => item.TotalTokens):N0}";
+    }
+
+    public void PlaceNear(PixelPoint orbPosition, double orbLogicalSize)
+    {
+        var orbScreen = Screens.ScreenFromPoint(orbPosition) ?? Screens.Primary;
+        if (orbScreen is null) return;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        var scale = orbScreen.Scaling;
+        var work = orbScreen.WorkingArea;
+        var panelWidth = (int)Math.Ceiling(Width * scale);
+        var panelHeight = (int)Math.Ceiling(Height * scale);
+        var orbSize = (int)Math.Ceiling(orbLogicalSize * scale);
+        var gap = (int)Math.Ceiling(12 * scale);
+        var right = orbPosition.X + orbSize + gap;
+        var left = orbPosition.X - panelWidth - gap;
+        var preferLeft = orbPosition.X + orbSize / 2 > work.X + work.Width / 2;
+        var x = preferLeft && left >= work.X
+            ? left
+            : !preferLeft && right + panelWidth <= work.Right
+                ? right
+                : left >= work.X ? left : right;
+        var heroAlignedY = orbPosition.Y + orbSize / 2 - (int)Math.Round(112 * scale);
+        x = Math.Clamp(x, work.X, Math.Max(work.X, work.Right - panelWidth));
+        var y = Math.Clamp(heroAlignedY, work.Y, Math.Max(work.Y, work.Bottom - panelHeight));
+        Position = new PixelPoint(x, y);
     }
 
     public async Task AnimateInAsync()
@@ -198,47 +242,70 @@ public sealed class DashboardWindow : Window
         header.Children.Add(settings);
         root.Children.Add(header);
 
-        var scrollContent = new StackPanel { Spacing = 12, Margin = new Thickness(18, 4, 18, 16),
+        var scrollContent = new StackPanel { Spacing = 10, Margin = new Thickness(18, 2, 18, 12),
             HorizontalAlignment = HorizontalAlignment.Stretch };
-        var hero = new Grid { ColumnDefinitions = new ColumnDefinitions("140,*") };
+        var hero = new Grid { ColumnDefinitions = new ColumnDefinitions("122,*") };
         hero.Children.Add(_summaryOrb);
         var copy = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center,
             Children = { _plan, _headline, _forecast, _source } };
         Grid.SetColumn(copy, 1);
         hero.Children.Add(copy);
         scrollContent.Children.Add(hero);
-        scrollContent.Children.Add(UiElements.Text(T("额度窗口", "QUOTA WINDOWS"), 11, FontWeight.Bold, _palette.TextMuted));
-        scrollContent.Children.Add(_windowCards);
         scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 7, Children =
         {
-            UiElements.Text(T("24 小时趋势与均匀使用线", "24-hour trend and even-use guide"), 12.5, FontWeight.SemiBold, _palette.TextPrimary),
+            UiElements.Text(T("额度窗口与 24 小时节奏", "QUOTA WINDOWS · 24-HOUR PACE"), 12.5,
+                FontWeight.SemiBold, _palette.TextPrimary),
+            _windowCards,
+            new Border { Height = 1, Background = _palette.Border, Margin = new Thickness(0, 1) },
             _trend,
-            UiElements.Text(T("将鼠标放在曲线上可查看实际与均匀额度", "Hover the chart for actual and even-use values"), 10, FontWeight.Normal, _palette.TextMuted)
-        }}, _palette));
-        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 7, Children =
-        {
-            UiElements.Text(T("本周期每日消耗", "DAILY USAGE · CURRENT CYCLE"), 12.5, FontWeight.SemiBold, _palette.TextPrimary),
-            _dailyUsage,
-            UiElements.Text(T("悬停柱形查看具体日期、Token 和 API 估算", "Hover a bar for date, tokens and API estimate"),
-                10, FontWeight.Normal, _palette.TextMuted)
-        }}, _palette));
-        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 6, Children = { _credit, _tokenTotal } }, _palette));
+            UiElements.Text(T("悬停曲线可对照实际与均匀额度", "Hover to compare actual and even-use quota"),
+                9.5, FontWeight.Normal, _palette.TextMuted)
+        }}, _palette, new Thickness(14, 12)));
+        var dailyHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        dailyHeader.Children.Add(UiElements.Text(T("本周期每日消耗", "DAILY USAGE · CURRENT CYCLE"), 12.5,
+            FontWeight.SemiBold, _palette.TextPrimary));
+        _tokenTotal.FontSize = 10.5 * UiElements.ScaleFactor;
+        _tokenTotal.HorizontalAlignment = HorizontalAlignment.Right;
+        Grid.SetColumn(_tokenTotal, 1);
+        dailyHeader.Children.Add(_tokenTotal);
         var usage = UiElements.Button(T("查看使用明细", "Usage details"), _palette);
+        usage.MinHeight = 34;
+        usage.Padding = new Thickness(12, 6);
         usage.Click += (_, _) => UsageDetailsRequested?.Invoke(this, EventArgs.Empty);
-        scrollContent.Children.Add(usage);
+        _credit.FontSize = 9.5 * UiElements.ScaleFactor;
+        var dailyFooter = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        _credit.VerticalAlignment = VerticalAlignment.Center;
+        dailyFooter.Children.Add(_credit);
+        Grid.SetColumn(usage, 1);
+        dailyFooter.Children.Add(usage);
+        scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 6, Children =
+        {
+            dailyHeader,
+            _dailyUsage,
+            dailyFooter
+        }}, _palette, new Thickness(14, 12)));
         var scroll = new ScrollViewer { Content = scrollContent,
             VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         Grid.SetRow(scroll, 1);
         root.Children.Add(scroll);
 
-        var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(18, 10, 18, 16) };
+        var footer = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*"),
+            ColumnSpacing = 10,
+            Margin = new Thickness(18, 10, 18, 16)
+        };
         var refresh = UiElements.Button(T("刷新", "Refresh"), _palette);
+        refresh.HorizontalAlignment = HorizontalAlignment.Stretch;
+        refresh.HorizontalContentAlignment = HorizontalAlignment.Center;
+        refresh.VerticalContentAlignment = VerticalAlignment.Center;
         refresh.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         footer.Children.Add(refresh);
         var collapse = UiElements.Button(T("收起为悬浮球", "Collapse to orb"), _palette, true);
         collapse.HorizontalAlignment = HorizontalAlignment.Stretch;
-        collapse.Margin = new Thickness(10, 0, 0, 0);
+        collapse.HorizontalContentAlignment = HorizontalAlignment.Center;
+        collapse.VerticalContentAlignment = VerticalAlignment.Center;
         collapse.Click += (_, _) => CollapseRequested?.Invoke(this, EventArgs.Empty);
         Grid.SetColumn(collapse, 1);
         footer.Children.Add(collapse);
@@ -247,24 +314,27 @@ public sealed class DashboardWindow : Window
         return root;
     }
 
-    private Control BuildWindowCard(QuotaWindow window, IReadOnlyList<QuotaHistoryPoint> history)
+    private Control BuildWindowCard(QuotaWindow window)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         header.Children.Add(UiElements.Text(UiElements.WindowLabel(window, _settings.Language), 15, FontWeight.Bold, _palette.TextPrimary));
         var percent = UiElements.Text($"{window.ClampedRemainingPercent:0}% {T("剩余", "left")}", 13, FontWeight.Bold, _palette.Mint);
         Grid.SetColumn(percent, 1);
         header.Children.Add(percent);
-        var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = window.ClampedRemainingPercent, Height = 5,
+        var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = window.ClampedRemainingPercent, Height = 4,
             Foreground = _palette.Mint, Background = _palette.Border };
-        var points = history.Where(point => point.WindowId == window.Id && point.WindowMinutes == window.WindowMinutes).ToArray();
-        var chart = new TrendChartControl { Height = 54, Points = points, ResetAt = window.ResetsAt,
-            WindowMinutes = window.WindowMinutes, IsDark = _settings.Theme != AppTheme.Light };
-        return UiElements.Card(new StackPanel { Spacing = 7, Children =
+        return new Border
         {
-            header, bar, chart,
-            UiElements.Text($"{UiElements.RemainingTime(window.ResetsAt, _settings.Language)} · {window.ResetsAt?.ToLocalTime():MM-dd HH:mm}",
-                10.5, FontWeight.Normal, _palette.TextMuted)
-        }}, _palette);
+            Background = _palette.SurfaceRaised,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 7),
+            Child = new StackPanel { Spacing = 4, Children =
+            {
+                header, bar,
+                UiElements.Text($"{UiElements.RemainingTime(window.ResetsAt, _settings.Language)} · {window.ResetsAt?.ToLocalTime():MM-dd HH:mm}",
+                    9.5, FontWeight.Normal, _palette.TextMuted)
+            }}
+        };
     }
 
     private string ForecastText(UsageForecast? forecast)

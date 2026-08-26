@@ -16,7 +16,9 @@ public sealed class WindowsPlatformShell : IPlatformShell
     private const int HwndNotTopmost = -2;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
     private const string StartupKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupValue = "CodexQuotaPanel";
     private const string PreferencesKey = @"Software\CodexQuotaPanel";
@@ -57,6 +59,8 @@ public sealed class WindowsPlatformShell : IPlatformShell
             ? style | WsExTransparent | WsExLayered
             : style & ~WsExTransparent;
         SetWindowLongPtr(nativeWindowHandle, GwlExStyle, new IntPtr(style));
+        SetWindowPos(nativeWindowHandle, IntPtr.Zero, 0, 0, 0, 0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
     }
 
     public void SetWindowTopMost(nint nativeWindowHandle, bool enabled)

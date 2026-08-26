@@ -181,6 +181,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_dashboard?.IsVisible == true) { _dashboard.Activate(); return; }
         EnsureDashboard();
+        if (_orb is not null) _dashboard!.PlaceNear(_orb.Position, _settings.OrbSize);
         if (_orb?.IsVisible == true) await _orb.AnimateOutAsync();
         _dashboard!.ApplyPresentation(_presentation);
         await _dashboard.AnimateInAsync();

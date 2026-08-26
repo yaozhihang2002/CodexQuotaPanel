@@ -26,7 +26,7 @@ vNext does not replace the released Windows application until it includes:
 - current-cycle daily Token chart and model/tier/cost details;
 - three activity styles and five continuous intensity states, including an idle frozen state;
 - dark, light, and system themes plus Simplified Chinese and English;
-- topmost, native drag, click-through, position lock, optional edge snap, opacity, size, and type scale;
+- topmost, thresholded drag, click-through, position lock, optional edge snap, opacity, size, and type scale;
 - tray/menu-bar controls, alerts, quiet hours, restart, update checks, import/export, diagnostics, and settings migration;
 - Windows upgrade behavior that preserves settings and position.
 
@@ -79,7 +79,7 @@ These are acceptance targets, not marketing claims:
 
 - settings window warm open: visual first frame within 250 ms on the reference Windows PC;
 - tab switch after first construction: next complete frame within 50 ms, with no mixed old/new page frame;
-- orb drag: native window movement; no data parsing, layout rebuild, history persistence, or animation-cache regeneration during drag;
+- orb drag: direct window-position updates after a 4 px intent threshold; feedback animation pauses and no data parsing, layout rebuild, history persistence, or animation-cache regeneration runs during drag;
 - resize: only the visible page participates in live layout;
 - animation: compositor/property changes where possible; no per-frame control-tree reconstruction;
 - idle state: no continuous render timer when values are unchanged;
