@@ -35,10 +35,14 @@ foreach (var (name, scenario, scale) in scenarios)
 {
     Console.WriteLine($"Rendering {name}...");
     var window = new PreviewWindow(scenario);
-    window.Show();
-    window.SetRenderScaling(scale);
     window.Width = 980;
     window.Height = 620;
+    // Establish the logical window size before the platform creates its first
+    // native frame. Changing render scaling after Show() leaves macOS headless
+    // with a physical-size layout and causes a clipped intermediate frame.
+    window.SetRenderScaling(scale);
+    window.Show();
+    window.UpdateLayout();
     window.ApplyQuota(new OfficialQuotaSnapshot(DateTimeOffset.UtcNow,
         scenario.DualRing
             ? [new QuotaWindow("5h", 300, 71, DateTimeOffset.UtcNow.AddHours(3)),
