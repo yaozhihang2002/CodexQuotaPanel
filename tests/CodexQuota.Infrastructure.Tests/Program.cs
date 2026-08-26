@@ -29,7 +29,10 @@ try
         Theme = AppTheme.Light,
         OrbX = -640,
         OrbY = 318,
-        OrbDisplayId = "-1920,0,1920,1080"
+        OrbDisplayId = "-1920,0,1920,1080",
+        DashboardX = -1120,
+        DashboardY = 140,
+        DashboardDisplayId = "-1920,0,1920,1080"
     }, CancellationToken.None);
     var readSettings = await settings.ReadAsync(CancellationToken.None);
     Check.Equal(140, readSettings?.OrbSize, "settings round trip size");
@@ -37,6 +40,10 @@ try
     Check.Equal(-640d, readSettings?.OrbX, "settings round trip negative display X");
     Check.Equal(318d, readSettings?.OrbY, "settings round trip Y");
     Check.Equal("-1920,0,1920,1080", readSettings?.OrbDisplayId, "settings round trip display identity");
+    Check.Equal(-1120d, readSettings?.DashboardX, "settings round trip dashboard X");
+    Check.Equal(140d, readSettings?.DashboardY, "settings round trip dashboard Y");
+    Check.Equal("-1920,0,1920,1080", readSettings?.DashboardDisplayId,
+        "settings round trip dashboard display identity");
 
     await settings.WriteAsync(readSettings! with { OrbSize = 128 }, CancellationToken.None);
     await File.WriteAllTextAsync(settingsPath, "{broken", CancellationToken.None);

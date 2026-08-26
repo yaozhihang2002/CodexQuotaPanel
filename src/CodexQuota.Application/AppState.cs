@@ -32,7 +32,7 @@ public enum ConsumptionFeedbackStyle
 
 public sealed record AppSettings
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public AppTheme Theme { get; init; } = AppTheme.System;
@@ -73,6 +73,9 @@ public sealed record AppSettings
     public double? OrbX { get; init; }
     public double? OrbY { get; init; }
     public string? OrbDisplayId { get; init; }
+    public double? DashboardX { get; init; }
+    public double? DashboardY { get; init; }
+    public string? DashboardDisplayId { get; init; }
 
     public static AppSettings Default { get; } = new();
 

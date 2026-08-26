@@ -36,6 +36,7 @@ public sealed class DailyUsageChartControl : Control
     public AppLanguage Language { get; set; } = AppLanguage.SimplifiedChinese;
     public bool IsDark { get; set; } = true;
     internal int RenderedDayCount => BuildSeries().Count;
+    internal decimal RenderedMaximumCost => BuildSeries().Select(item => item.Cost).DefaultIfEmpty(0).Max();
     internal int HoveredDayIndex => _hoverIndex;
 
     internal void SetHoverIndexForTest(int index)
@@ -75,11 +76,11 @@ public sealed class DailyUsageChartControl : Control
             return;
         }
 
-        var max = Math.Max(1L, series.Max(item => item.Tokens));
-        var average = series.Average(item => (double)item.Tokens);
+        var max = Math.Max(.0001m, series.Max(item => item.Cost));
+        var average = series.Average(item => item.Cost);
         var slot = plot.Width / series.Count;
         var barWidth = Math.Clamp(slot * .52, 5d, 22d);
-        var averageY = plot.Bottom - plot.Height * average / max;
+        var averageY = plot.Bottom - plot.Height * (double)(average / max);
         context.DrawLine(new Pen(mintSoft, 1, dashStyle: new DashStyle([3, 4], 0)),
             new Point(plot.Left, averageY), new Point(plot.Right, averageY));
 
@@ -87,14 +88,14 @@ public sealed class DailyUsageChartControl : Control
         {
             var item = series[index];
             var centerX = plot.Left + slot * (index + .5);
-            var height = item.Tokens <= 0 ? 2d : Math.Max(5d, plot.Height * item.Tokens / max);
+            var height = item.Cost <= 0 ? 2d : Math.Max(5d, plot.Height * (double)(item.Cost / max));
             var rect = new Rect(centerX - barWidth / 2, plot.Bottom - height, barWidth, height);
             var brush = index == _hoverIndex ? text : mint;
             context.DrawRectangle(brush, null, rect);
             context.DrawEllipse(brush, null, new Rect(rect.Left, rect.Top - barWidth * .16, rect.Width, barWidth * .32));
         }
 
-        DrawText(context, Compact(max), new Point(plot.Left, 1), 9.5, muted, FontWeight.SemiBold);
+        DrawText(context, CompactUsd(max), new Point(plot.Left, 1), 9.5, muted, FontWeight.SemiBold);
         DrawText(context, DateLabel(series[0].Day), new Point(plot.Left, plot.Bottom + 6), 9.5, muted, FontWeight.Normal);
         var lastLabel = FormatText(DateLabel(series[^1].Day), 9.5, muted, FontWeight.Normal);
         context.DrawText(lastLabel, new Point(plot.Right - lastLabel.Width, plot.Bottom + 6));
@@ -164,12 +165,15 @@ public sealed class DailyUsageChartControl : Control
         ? day.ToString("M/d", CultureInfo.InvariantCulture)
         : day.ToString("MMM d", CultureInfo.InvariantCulture);
 
-    private static string Compact(long value) => value switch
+    private static string CompactUsd(decimal value) => value switch
     {
-        >= 1_000_000_000 => $"{value / 1_000_000_000d:0.#}B",
-        >= 1_000_000 => $"{value / 1_000_000d:0.#}M",
-        >= 1_000 => $"{value / 1_000d:0.#}K",
-        _ => value.ToString(CultureInfo.InvariantCulture)
+        >= 1_000 => $"${value / 1_000m:0.#}K",
+        >= 100 => $"${value:0}",
+        >= 10 => $"${value:0.0}",
+        >= 1 => $"${value:0.00}",
+        >= .01m => $"${value:0.00}",
+        > 0 => $"${value:0.0000}",
+        _ => "$0"
     };
 
     private static void DrawText(DrawingContext context, string value, Point point, double size, IBrush brush, FontWeight weight) =>

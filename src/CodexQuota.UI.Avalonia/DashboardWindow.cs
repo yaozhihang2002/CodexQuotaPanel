@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
+using Avalonia.Threading;
 using CodexQuota.Application;
 using CodexQuota.Domain;
 
@@ -23,18 +25,23 @@ public sealed class DashboardWindow : Window
     private readonly DailyUsageChartControl _dailyUsage;
     private readonly TextBlock _credit;
     private readonly TextBlock _tokenTotal;
+    private readonly DispatcherTimer _placementTimer;
     private bool _allowClose;
+    private bool _trackPlacement;
+    private bool _placementDirty;
 
     public event EventHandler? CollapseRequested;
     public event EventHandler? RefreshRequested;
     public event EventHandler? SettingsRequested;
     public event EventHandler? UsageDetailsRequested;
+    public event Action<PixelPoint, string>? PlacementCommitted;
 
     internal int WindowCardCount => _windowCards.Children.Count;
     internal int DailyChartDayCount => _dailyUsage.RenderedDayCount;
     internal string ConnectionBadgeText => _connectionText.Text ?? string.Empty;
     internal int SummaryRingCount => double.IsFinite(_summaryOrb.SecondaryRemainingPercent) ? 2 :
         string.IsNullOrWhiteSpace(_summaryOrb.PrimaryLabel) ? 0 : 1;
+    internal void EnablePlacementTrackingForTest() => _trackPlacement = true;
 
     public DashboardWindow(AppSettings settings, bool systemDark = true)
     {
@@ -85,9 +92,18 @@ public sealed class DashboardWindow : Window
             IsDark = _settings.Theme != AppTheme.Light
         };
         _credit = UiElements.Text(T("重置卡信息暂不可用", "Reset credit information unavailable"), 11.5, FontWeight.Normal, _palette.TextSecondary);
-        _tokenTotal = UiElements.Text(T("本周期 Token：—", "Cycle tokens: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
+        _tokenTotal = UiElements.Text(T("本周期 API 估算：—", "Cycle API estimate: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
+        _placementTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(320) };
+        _placementTimer.Tick += (_, _) => FlushPlacement();
         Content = BuildContent();
         Closing += (_, e) => { if (!_allowClose) { e.Cancel = true; CollapseRequested?.Invoke(this, EventArgs.Empty); } };
+        PositionChanged += (_, _) =>
+        {
+            if (!_trackPlacement || !IsVisible) return;
+            _placementDirty = true;
+            _placementTimer.Stop();
+            _placementTimer.Start();
+        };
     }
 
     public void ApplyPresentation(QuotaPresentation presentation)
@@ -166,8 +182,11 @@ public sealed class DashboardWindow : Window
         _trend.ResetAt = selected?.ResetsAt;
         _trend.WindowMinutes = selected?.WindowMinutes ?? 0;
         var cycleStart = selected?.ResetsAt?.AddMinutes(-selected.WindowMinutes);
-        var days = UsageSummaryCalculator.SummarizeByDay(presentation.Usage.Where(item =>
-            cycleStart is null || item.ObservedAt >= cycleStart), TimeZoneInfo.Local);
+        var cycleUsage = presentation.Usage.Where(item =>
+                (cycleStart is null || item.ObservedAt >= cycleStart) &&
+                (selected?.ResetsAt is null || item.ObservedAt <= selected.ResetsAt))
+            .ToArray();
+        var days = UsageSummaryCalculator.SummarizeByDay(cycleUsage, TimeZoneInfo.Local);
         _dailyUsage.Days = days;
         _dailyUsage.CycleStart = cycleStart;
         _dailyUsage.CycleEnd = selected?.ResetsAt;
@@ -175,53 +194,95 @@ public sealed class DashboardWindow : Window
         _credit.Text = reset?.ExpiresAt is { } expiry
             ? $"{T("最早到期重置卡", "Next reset credit")} · {expiry.ToLocalTime():yyyy-MM-dd HH:mm}"
             : T("重置卡信息暂不可用", "Reset credit information unavailable");
-        _tokenTotal.Text = $"{T("本周期 Token", "Cycle tokens")}：{presentation.Usage.Sum(item => item.TotalTokens):N0}";
+        var estimatedCost = days.Sum(day => day.EstimatedApiUsd);
+        var unpriced = days.Sum(day => day.UnpricedEventCount);
+        _tokenTotal.Text = $"{T("本周期 API 估算", "Cycle API estimate")}：${estimatedCost:0.00}" +
+                           (unpriced > 0 ? T(" + 未定价", " + unpriced") : string.Empty);
     }
 
     public void PlaceNear(PixelPoint orbPosition, double orbLogicalSize)
     {
         var orbScreen = Screens.ScreenFromPoint(orbPosition) ?? Screens.Primary;
         if (orbScreen is null) return;
-        WindowStartupLocation = WindowStartupLocation.Manual;
         var scale = orbScreen.Scaling;
         var work = orbScreen.WorkingArea;
         var panelWidth = (int)Math.Ceiling(Width * scale);
         var panelHeight = (int)Math.Ceiling(Height * scale);
         var orbSize = (int)Math.Ceiling(orbLogicalSize * scale);
-        var gap = (int)Math.Ceiling(12 * scale);
-        var right = orbPosition.X + orbSize + gap;
-        var left = orbPosition.X - panelWidth - gap;
-        var preferLeft = orbPosition.X + orbSize / 2 > work.X + work.Width / 2;
-        var x = preferLeft && left >= work.X
-            ? left
-            : !preferLeft && right + panelWidth <= work.Right
-                ? right
-                : left >= work.X ? left : right;
-        var heroAlignedY = orbPosition.Y + orbSize / 2 - (int)Math.Round(112 * scale);
+        var x = (int)Math.Round(orbPosition.X + orbSize / 2d - panelWidth / 2d);
+        var y = (int)Math.Round(orbPosition.Y + orbSize / 2d - panelHeight / 2d);
         x = Math.Clamp(x, work.X, Math.Max(work.X, work.Right - panelWidth));
-        var y = Math.Clamp(heroAlignedY, work.Y, Math.Max(work.Y, work.Bottom - panelHeight));
-        Position = new PixelPoint(x, y);
+        y = Math.Clamp(y, work.Y, Math.Max(work.Y, work.Bottom - panelHeight));
+        SetAutomaticPosition(new PixelPoint(x, y));
+    }
+
+    public bool RestorePosition(double? x, double? y, string? displayId = null)
+    {
+        if (x is null || y is null) return false;
+        var desired = new PixelPoint((int)Math.Round(x.Value), (int)Math.Round(y.Value));
+        var screen = Screens.All.FirstOrDefault(item => DisplayId(item) == displayId) ??
+                     Screens.ScreenFromPoint(desired) ?? Screens.Primary;
+        if (screen is null) return false;
+        var work = screen.WorkingArea;
+        var panelWidth = (int)Math.Ceiling(Width * screen.Scaling);
+        var panelHeight = (int)Math.Ceiling(Height * screen.Scaling);
+        var restored = new PixelPoint(
+            Math.Clamp(desired.X, work.X, Math.Max(work.X, work.Right - panelWidth)),
+            Math.Clamp(desired.Y, work.Y, Math.Max(work.Y, work.Bottom - panelHeight)));
+        SetAutomaticPosition(restored);
+        return true;
     }
 
     public async Task AnimateInAsync()
     {
-        if (_settings.ReducedMotion) { Opacity = 1; Show(); Activate(); return; }
+        _trackPlacement = false;
+        if (_settings.ReducedMotion) { Opacity = 1; Show(); Activate(); _trackPlacement = true; return; }
         Opacity = 0;
         if (RenderTransform is ScaleTransform start) start.ScaleX = .94;
         if (RenderTransform is ScaleTransform startY) startY.ScaleY = .88;
         Show();
         Activate();
         await AnimateAsync(0, 1, .94, 1, .88, 1, 125);
+        _trackPlacement = true;
     }
 
     public async Task AnimateOutAsync()
     {
+        FlushPlacement();
+        _trackPlacement = false;
         if (_settings.ReducedMotion) { Hide(); return; }
         await AnimateAsync(1, 0, 1, .94, 1, .88, 105);
         Hide();
     }
 
-    public void ClosePermanently() { _allowClose = true; Close(); }
+    public void ClosePermanently()
+    {
+        FlushPlacement();
+        _placementTimer.Stop();
+        _allowClose = true;
+        Close();
+    }
+
+    private void SetAutomaticPosition(PixelPoint position)
+    {
+        _trackPlacement = false;
+        _placementDirty = false;
+        _placementTimer.Stop();
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Position = position;
+    }
+
+    private void FlushPlacement()
+    {
+        _placementTimer.Stop();
+        if (!_placementDirty) return;
+        _placementDirty = false;
+        var screen = Screens.ScreenFromPoint(Position) ?? Screens.Primary;
+        PlacementCommitted?.Invoke(Position, screen is null ? string.Empty : DisplayId(screen));
+    }
+
+    private static string DisplayId(Screen screen) =>
+        $"{screen.Bounds.X},{screen.Bounds.Y},{screen.Bounds.Width},{screen.Bounds.Height}";
 
     private Control BuildContent()
     {

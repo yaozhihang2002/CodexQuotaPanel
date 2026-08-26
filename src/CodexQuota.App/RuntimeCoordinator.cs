@@ -181,7 +181,9 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_dashboard?.IsVisible == true) { _dashboard.Activate(); return; }
         EnsureDashboard();
-        if (_orb is not null) _dashboard!.PlaceNear(_orb.Position, _settings.OrbSize);
+        if (!_dashboard!.RestorePosition(_settings.DashboardX, _settings.DashboardY, _settings.DashboardDisplayId) &&
+            _orb is not null)
+            _dashboard.PlaceNear(_orb.Position, _settings.OrbSize);
         if (_orb?.IsVisible == true) await _orb.AnimateOutAsync();
         _dashboard!.ApplyPresentation(_presentation);
         await _dashboard.AnimateInAsync();
@@ -198,6 +200,19 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _dashboard.RefreshRequested += async (_, _) => await RefreshAsync();
         _dashboard.SettingsRequested += (_, _) => ShowSettings();
         _dashboard.UsageDetailsRequested += (_, _) => ShowUsageDetails();
+        _dashboard.PlacementCommitted += (position, displayId) =>
+            _ = SaveDashboardPlacementAsync(position, displayId);
+    }
+
+    private async Task SaveDashboardPlacementAsync(PixelPoint position, string displayId)
+    {
+        _settings = _settings with
+        {
+            DashboardX = position.X,
+            DashboardY = position.Y,
+            DashboardDisplayId = displayId
+        };
+        await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
     }
 
     private async Task CollapseDashboardAsync()

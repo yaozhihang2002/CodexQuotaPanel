@@ -326,17 +326,35 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     if (adaptiveDashboard.Screens.Primary is { } placementScreen)
     {
         var work = placementScreen.WorkingArea;
-        var rightOrb = new PixelPoint(work.Right - 100, work.Y + 90);
-        adaptiveDashboard.PlaceNear(rightOrb, 88);
-        Check.True(adaptiveDashboard.Position.X < rightOrb.X &&
-                   adaptiveDashboard.Position.X >= work.X && adaptiveDashboard.Position.Y >= work.Y &&
-                   adaptiveDashboard.Position.X + adaptiveDashboard.Bounds.Width * placementScreen.Scaling <= work.Right + 1 &&
-                   adaptiveDashboard.Position.Y + adaptiveDashboard.Bounds.Height * placementScreen.Scaling <= work.Bottom + 1,
-            "dashboard opens beside right-edge orb and remains inside the work area");
-        var leftOrb = new PixelPoint(work.X + 12, work.Y + 90);
-        adaptiveDashboard.PlaceNear(leftOrb, 88);
-        Check.True(adaptiveDashboard.Position.X > leftOrb.X,
-            "dashboard opens to the right of a left-edge orb");
+        var scale = placementScreen.Scaling;
+        var panelWidth = (int)Math.Ceiling(adaptiveDashboard.Width * scale);
+        var panelHeight = (int)Math.Ceiling(adaptiveDashboard.Height * scale);
+        var orbSize = (int)Math.Ceiling(88 * scale);
+        var centeredOrb = new PixelPoint(work.X + work.Width / 2 - orbSize / 2,
+            work.Y + work.Height / 2 - orbSize / 2);
+        adaptiveDashboard.PlaceNear(centeredOrb, 88);
+        Check.True(Math.Abs(adaptiveDashboard.Position.X -
+                            (centeredOrb.X + orbSize / 2d - panelWidth / 2d)) <= 1 &&
+                   Math.Abs(adaptiveDashboard.Position.Y -
+                            (centeredOrb.Y + orbSize / 2d - panelHeight / 2d)) <= 1,
+            "dashboard initially centers on the orb");
+        var edgeOrb = new PixelPoint(work.Right - orbSize, work.Bottom - orbSize);
+        adaptiveDashboard.PlaceNear(edgeOrb, 88);
+        Check.True(adaptiveDashboard.Position.X == work.Right - panelWidth &&
+                   adaptiveDashboard.Position.Y == work.Bottom - panelHeight,
+            "dashboard clamps flush to the work-area edge");
+        Check.True(adaptiveDashboard.RestorePosition(work.X + 42, work.Y + 38,
+                       $"{placementScreen.Bounds.X},{placementScreen.Bounds.Y},{placementScreen.Bounds.Width},{placementScreen.Bounds.Height}") &&
+                   adaptiveDashboard.Position == new PixelPoint(work.X + 42, work.Y + 38),
+            "dashboard restores a user-fixed position");
+        PixelPoint? committedPosition = null;
+        adaptiveDashboard.PlacementCommitted += (position, _) => committedPosition = position;
+        adaptiveDashboard.EnablePlacementTrackingForTest();
+        var moved = new PixelPoint(work.X + 68, work.Y + 61);
+        adaptiveDashboard.Position = moved;
+        Thread.Sleep(380);
+        Dispatcher.UIThread.RunJobs();
+        Check.True(committedPosition == moved, "dashboard commits a manually adjusted position");
     }
     adaptiveDashboard.ClosePermanently();
 
@@ -347,6 +365,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     usageCycle.UpdateLayout();
     Dispatcher.UIThread.RunJobs();
     var dailyChart = usageCycle.GetVisualDescendants().OfType<DailyUsageChartControl>().Single();
+    Check.True(dailyChart.RenderedMaximumCost > 0, "daily chart scales the bars by API estimate");
     dailyChart.SetHoverIndexForTest(6);
     Check.True(dailyChart.HoveredDayIndex == 6, "daily chart hover selects the exact day");
     AvaloniaHeadlessPlatform.ForceRenderTimerTick();

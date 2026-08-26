@@ -28,7 +28,7 @@ public sealed partial class OrbControl
         var scale = size / 88d;
         if (activity == 0)
         {
-            DrawFluidFrostSeed(context, center, scale);
+            DrawFrostSnowflake(context, center, scale, 1.05);
             return;
         }
 
@@ -118,7 +118,7 @@ public sealed partial class OrbControl
         var scale = size / 88d;
         if (activity == 0)
         {
-            DrawMinimalFrostSeed(context, center, scale);
+            DrawFrostSnowflake(context, center, scale, .88);
             return;
         }
 
@@ -220,40 +220,47 @@ public sealed partial class OrbControl
         if (inferno > .68) DrawPixelCell(context, middle, originX, baseY, cell, frame is 0 or 1 ? 1 : -1, 5);
     }
 
-    private static void DrawMinimalFrostSeed(DrawingContext context, Point center, double scale)
+    private static void DrawFrostSnowflake(DrawingContext context, Point center, double scale, double styleScale)
     {
-        var width = 5.35 * scale;
-        var height = 3.45 * scale;
-        var centerY = center.Y + 32d * scale - height * .45;
-        var ice = Color.FromRgb(112, 205, 252);
-        context.DrawEllipse(new SolidColorBrush(WithAlpha(ice, 36)), null,
-            new Rect(center.X - width * .95, centerY - height * 1.1, width * 1.9, height * 2.2));
-        var seed = CreateWinEmber(center.X, centerY, width, height);
-        context.DrawGeometry(VerticalBrush(Blend(Colors.White, ice, .26), Blend(ice, Color.Parse("#0D1210"), .18)),
-            new Pen(new SolidColorBrush(WithAlpha(ice, 205)), Math.Max(.65, .72 * scale), lineCap: PenLineCap.Round), seed);
-        context.DrawLine(new Pen(new SolidColorBrush(WithAlpha(Colors.White, 220)), Math.Max(.55, .6 * scale),
-                lineCap: PenLineCap.Round),
-            new Point(center.X - width * .2, centerY - height * .12),
-            new Point(center.X + width * .08, centerY - height * .27));
+        var ice = Color.FromRgb(116, 210, 255);
+        var snowCenter = new Point(center.X, center.Y + 28.5 * scale);
+        var radius = 4.8 * scale * styleScale;
+        var glowRadius = radius * 1.25;
+        context.DrawEllipse(new SolidColorBrush(WithAlpha(ice, 24)), null,
+            new Rect(snowCenter.X - glowRadius, snowCenter.Y - glowRadius,
+                glowRadius * 2, glowRadius * 2));
+        var pen = new Pen(new SolidColorBrush(WithAlpha(ice, 238)), Math.Max(.75, .9 * scale),
+            lineCap: PenLineCap.Round);
+        var branchPen = new Pen(new SolidColorBrush(WithAlpha(Blend(Colors.White, ice, .25), 215)),
+            Math.Max(.55, .62 * scale), lineCap: PenLineCap.Round);
+        foreach (var degrees in new[] { 0d, 60d, 120d })
+        {
+            var radians = degrees * Math.PI / 180d;
+            var dx = Math.Cos(radians);
+            var dy = Math.Sin(radians);
+            var start = new Point(snowCenter.X - dx * radius, snowCenter.Y - dy * radius);
+            var end = new Point(snowCenter.X + dx * radius, snowCenter.Y + dy * radius);
+            context.DrawLine(pen, start, end);
+            DrawSnowflakeBranch(context, branchPen, snowCenter, radius, radians, 1);
+            DrawSnowflakeBranch(context, branchPen, snowCenter, radius, radians, -1);
+        }
+        context.DrawEllipse(new SolidColorBrush(Blend(Colors.White, ice, .28)), null,
+            new Rect(snowCenter.X - .85 * scale, snowCenter.Y - .85 * scale, 1.7 * scale, 1.7 * scale));
     }
 
-    private static void DrawFluidFrostSeed(DrawingContext context, Point center, double scale)
+    private static void DrawSnowflakeBranch(DrawingContext context, Pen pen, Point center,
+        double radius, double radians, int direction)
     {
-        var width = 5.9 * scale;
-        var height = 7.45 * scale;
-        var baseY = center.Y + 32d * scale;
-        var topY = baseY - height;
-        var ice = Color.FromRgb(108, 201, 255);
-        var seed = CreateWinFlame(center.X, baseY, width, height, 0);
-        context.DrawGeometry(VerticalBrush(Blend(Colors.White, ice, .22), Blend(ice, Color.Parse("#0D1210"), .16)),
-            new Pen(new SolidColorBrush(WithAlpha(ice, 195)), Math.Max(.62, .7 * scale), lineCap: PenLineCap.Round), seed);
-        context.DrawGeometry(null, new Pen(new SolidColorBrush(WithAlpha(ice, 42)), Math.Max(1, 1.55 * scale),
-            lineCap: PenLineCap.Round), seed);
-        var facet = new Pen(new SolidColorBrush(WithAlpha(Blend(Colors.White, ice, .25), 180)),
-            Math.Max(.52, .58 * scale), lineCap: PenLineCap.Round);
-        context.DrawLine(facet, new Point(center.X, topY + height * .22), new Point(center.X, baseY - height * .18));
-        context.DrawLine(facet, new Point(center.X - width * .19, topY + height * .52),
-            new Point(center.X + width * .19, topY + height * .52));
+        var dx = Math.Cos(radians) * direction;
+        var dy = Math.Sin(radians) * direction;
+        var root = new Point(center.X + dx * radius * .62, center.Y + dy * radius * .62);
+        var length = radius * .27;
+        foreach (var offset in new[] { -Math.PI / 4, Math.PI / 4 })
+        {
+            var angle = radians + (direction < 0 ? Math.PI : 0) + offset;
+            context.DrawLine(pen, root,
+                new Point(root.X - Math.Cos(angle) * length, root.Y - Math.Sin(angle) * length));
+        }
     }
 
     private static void DrawPixelFrostSeed(DrawingContext context, Point center, double scale, double thaw)
@@ -264,17 +271,25 @@ public sealed partial class OrbControl
         var edge = new SolidColorBrush(Blend(Color.FromRgb(102, 190, 255), Color.Parse("#0D1210"), .1));
         var body = new SolidColorBrush(Color.FromRgb(120, 214, 255));
         var shine = new SolidColorBrush(Color.FromRgb(225, 250, 255));
-        var core = new (int X, int Y)[] { (0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (-1, 2), (1, 2) };
+        var core = new (int X, int Y)[]
+        {
+            (-2, -2), (2, -2), (-1, -1), (1, -1),
+            (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0),
+            (-1, 1), (1, 1), (-2, 2), (2, 2)
+        };
         DrawPixelCells(context, edge, originX, baseY, cell, core);
         if (thaw < .24)
-            DrawPixelCells(context, edge, originX, baseY, cell, [(-1, 1), (1, 1), (-1, 3), (1, 3)]);
+            DrawPixelCells(context, edge, originX, baseY, cell, [(-3, -1), (3, -1), (-3, 1), (3, 1)]);
         if (thaw < .12)
         {
-            DrawPixelCell(context, edge, originX, baseY, cell, -2, 2);
-            DrawPixelCell(context, edge, originX, baseY, cell, 2, 2);
+            DrawPixelCell(context, edge, originX, baseY, cell, -3, 0);
+            DrawPixelCell(context, edge, originX, baseY, cell, 3, 0);
         }
-        DrawPixelCells(context, body, originX, baseY, cell, [(0, 1), (0, 2), (0, 3), (-1, 2), (1, 2)]);
-        DrawPixelCell(context, shine, originX, baseY, cell, 0, 2);
+        DrawPixelCells(context, body, originX, baseY, cell,
+            [(-2, -2), (2, -2), (-1, -1), (1, -1), (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0),
+                (-1, 1), (1, 1), (-2, 2), (2, 2)]);
+        DrawPixelCell(context, shine, originX, baseY, cell, 0, 0);
+        DrawPixelCell(context, shine, originX, baseY, cell, -1, 1);
     }
 
     private static StreamGeometry CreateWinFlame(double centerX, double baseY, double width, double height, double sway)

@@ -75,7 +75,7 @@ public sealed class UsageDetailsWindow : Window
             _summary.Children.Add(SliceRow($"{ApiCostEstimator.DisplayModel(slice.Model)} · {DisplayTier(slice.ServiceTier)}", $"{slice.Tokens:N0} raw", value));
         }
 
-        var maxTokens = Math.Max(1L, days.Count == 0 ? 1 : days.Max(day => day.Usage.TotalTokens));
+        var maxCost = Math.Max(.0001m, days.Count == 0 ? .0001m : days.Max(day => day.EstimatedApiUsd));
         foreach (var day in days.OrderByDescending(day => day.Day))
         {
             var row = new StackPanel { Spacing = 6 };
@@ -88,7 +88,7 @@ public sealed class UsageDetailsWindow : Window
             Grid.SetColumn(cost, 1);
             header.Children.Add(cost);
             row.Children.Add(header);
-            var bar = new ProgressBar { Minimum = 0, Maximum = maxTokens, Value = day.Usage.TotalTokens,
+            var bar = new ProgressBar { Minimum = 0, Maximum = (double)maxCost, Value = (double)day.EstimatedApiUsd,
                 Height = 7, Foreground = _palette.Mint, Background = _palette.Border };
             ToolTip.SetTip(bar, $"{day.Day:yyyy-MM-dd}\n{day.Usage.TotalTokens:N0} raw tokens\n${day.EstimatedApiUsd:0.0000}");
             row.Children.Add(bar);

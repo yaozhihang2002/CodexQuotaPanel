@@ -21,8 +21,16 @@ var standardCost = ApiCostEstimator.Estimate("gpt-5.6-sol", "default", usage);
 Check.True(standardCost.IsPriced, "standard priced");
 Check.Equal(0.456m, standardCost.Usd, "standard cost");
 Check.Equal(0.912m, ApiCostEstimator.Estimate("gpt-5.6-sol", "fast", usage).Usd, "fast cost");
-Check.True(!ApiCostEstimator.Estimate("codex-auto-review", "default", usage).IsPriced,
-    "auto review unpriced");
+Check.Equal(0.31m, ApiCostEstimator.Estimate("codex-auto-review", "default", usage).Usd,
+    "auto review uses the official GPT-5.4 API-equivalent rate");
+Check.Equal(0.62m, ApiCostEstimator.Estimate("gpt-5.5", "default", usage).Usd,
+    "gpt-5.5 official API rate");
+Check.Equal(0.093m, ApiCostEstimator.Estimate("gpt-5.4-mini", "default", usage).Usd,
+    "gpt-5.4 mini official API rate");
+Check.Equal(0.252m, ApiCostEstimator.Estimate("gpt-5.3-codex", "default", usage).Usd,
+    "gpt-5.3-codex official API rate");
+Check.True(!ApiCostEstimator.Estimate("gpt-5.4-mini", "fast", usage).IsPriced,
+    "unsupported fast tier remains unpriced");
 Check.Equal("Auto-review", ApiCostEstimator.DisplayModel("codex-auto-review"), "auto review display");
 Check.Equal("Fast", ApiCostEstimator.DisplayTier("priority"), "priority display");
 Check.Equal(ServiceTier.Unknown, ApiCostEstimator.NormalizeTier(null), "missing tier remains unknown");
@@ -34,7 +42,8 @@ var daily = UsageSummaryCalculator.SummarizeByDay(
 ], TimeZoneInfo.Utc);
 Check.Equal(1, daily.Count, "daily grouping");
 Check.Equal(220_000L, daily[0].Usage.TotalTokens, "daily token total");
-Check.Equal(1, daily[0].UnpricedEventCount, "daily unpriced count");
+Check.Equal(0, daily[0].UnpricedEventCount, "daily auto review priced count");
+Check.Equal(0.766m, daily[0].EstimatedApiUsd, "daily API-equivalent total includes auto review");
 Check.Equal(2, daily[0].Slices.Count, "model tier slices");
 
 var history = Enumerable.Range(0, 13)

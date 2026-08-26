@@ -98,7 +98,10 @@ internal sealed partial class RuntimeCoordinator
         {
             EnsureDashboard();
             _dashboard!.ApplyPresentation(_presentation);
-            _dashboard.Show();
+            if (!_dashboard.RestorePosition(_settings.DashboardX, _settings.DashboardY, _settings.DashboardDisplayId) &&
+                _orb is not null)
+                _dashboard.PlaceNear(_orb.Position, _settings.OrbSize);
+            _ = _dashboard.AnimateInAsync();
         }
     }
 
@@ -144,7 +147,8 @@ internal sealed partial class RuntimeCoordinator
             DefaultExtension = "json", FileTypeChoices = [new FilePickerFileType("JSON") { Patterns = ["*.json"] }]
         });
         if (file is null) return;
-        var portable = _settings with { OrbX = null, OrbY = null, OrbDisplayId = null, StartWithSystem = false,
+        var portable = _settings with { OrbX = null, OrbY = null, OrbDisplayId = null,
+            DashboardX = null, DashboardY = null, DashboardDisplayId = null, StartWithSystem = false,
             DismissedAlertCycleKey = null, LastWarningCycleKey = null, LastCriticalCycleKey = null };
         await using var stream = await file.OpenWriteAsync();
         await JsonSerializer.SerializeAsync(stream, portable, new JsonSerializerOptions { WriteIndented = true }, _lifetime.Token);
@@ -166,6 +170,8 @@ internal sealed partial class RuntimeCoordinator
             var imported = await JsonSerializer.DeserializeAsync<AppSettings>(stream, cancellationToken: _lifetime.Token);
             if (imported is null) throw new JsonException();
             await SaveSettingsAsync(imported with { OrbX = _settings.OrbX, OrbY = _settings.OrbY,
+                OrbDisplayId = _settings.OrbDisplayId, DashboardX = _settings.DashboardX,
+                DashboardY = _settings.DashboardY, DashboardDisplayId = _settings.DashboardDisplayId,
                 StartWithSystem = _settings.StartWithSystem });
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
@@ -187,6 +193,10 @@ internal sealed partial class RuntimeCoordinator
         {
             OrbX = _settings.OrbX,
             OrbY = _settings.OrbY,
+            OrbDisplayId = _settings.OrbDisplayId,
+            DashboardX = _settings.DashboardX,
+            DashboardY = _settings.DashboardY,
+            DashboardDisplayId = _settings.DashboardDisplayId,
             StartWithSystem = _settings.StartWithSystem
         };
         await SaveSettingsAsync(defaults);
