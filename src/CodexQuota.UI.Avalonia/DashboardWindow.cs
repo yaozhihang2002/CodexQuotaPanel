@@ -49,6 +49,14 @@ public sealed class DashboardWindow : Window
     internal bool ResetCreditIsProminent => ReferenceEquals(_creditCard.BorderBrush, _palette.Amber);
     internal int SummaryRingCount => double.IsFinite(_summaryOrb.SecondaryRemainingPercent) ? 2 :
         string.IsNullOrWhiteSpace(_summaryOrb.PrimaryLabel) ? 0 : 1;
+    internal Rect SummaryOrbBoundsInWindow
+    {
+        get
+        {
+            var origin = _summaryOrb.TranslatePoint(default, this) ?? default;
+            return new Rect(origin, _summaryOrb.Bounds.Size);
+        }
+    }
     internal void EnablePlacementTrackingForTest() => _trackPlacement = true;
     internal void CommitPlacementForTest() { _placementDirty = true; FlushPlacement(); }
 
@@ -73,7 +81,15 @@ public sealed class DashboardWindow : Window
         RenderTransformOrigin = RelativePoint.Center;
         RenderTransform = new ScaleTransform(1, 1);
 
-        _summaryOrb = new OrbControl { Width = 110, Height = 110, HorizontalAlignment = HorizontalAlignment.Left };
+        _summaryOrb = new OrbControl
+        {
+            Width = 110,
+            Height = 110,
+            MinWidth = 110,
+            MinHeight = 110,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ClipToBounds = false
+        };
         _plan = UiElements.Text("—", 11, FontWeight.Bold, _palette.Mint);
         _headline = UiElements.Text(T("等待数据", "Waiting for data"), 28, FontWeight.Bold, _palette.TextPrimary);
         _forecast = UiElements.Text(T("正在连接 Codex 数据源", "Connecting to Codex data"), 12, FontWeight.Normal, _palette.TextSecondary);
@@ -341,7 +357,7 @@ public sealed class DashboardWindow : Window
         }});
         Grid.SetColumn(_connectionBadge, 1);
         header.Children.Add(_connectionBadge);
-        var settings = UiElements.Button("···", _palette);
+        var settings = UiElements.Button("⋯", _palette);
         settings.Width = 42;
         settings.Click += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         Grid.SetColumn(settings, 2);
@@ -350,7 +366,13 @@ public sealed class DashboardWindow : Window
 
         var scrollContent = new StackPanel { Spacing = 7, Margin = new Thickness(18, 0, 18, 8),
             HorizontalAlignment = HorizontalAlignment.Stretch };
-        var hero = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*"), ColumnSpacing = 8 };
+        var hero = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("110,*"),
+            ColumnSpacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ClipToBounds = false
+        };
         hero.Children.Add(_summaryOrb);
         var copy = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center,
             Children = { _plan, _headline, _forecast, _source } };

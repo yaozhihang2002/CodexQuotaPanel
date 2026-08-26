@@ -194,6 +194,14 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         Dispatcher.UIThread.RunJobs();
         AvaloniaHeadlessPlatform.ForceRenderTimerTick();
         Dispatcher.UIThread.RunJobs();
+        if (window is DashboardWindow laidOutDashboard)
+        {
+            var orbBounds = laidOutDashboard.SummaryOrbBoundsInWindow;
+            Check.True(orbBounds.Width >= 109 && orbBounds.Height >= 109,
+                $"{name}: summary orb keeps its fixed layout slot");
+            Check.True(orbBounds.Left >= 17 && orbBounds.Right <= laidOutDashboard.Bounds.Width - 17,
+                $"{name}: summary orb stays fully inside the dashboard client area");
+        }
         using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException($"{name}: no rendered frame");
         Check.True(frame.PixelSize.Width >= 100, $"{name}: width");
         Check.True(frame.PixelSize.Height >= 100, $"{name}: height");
