@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CodexQuota.Application;
 using CodexQuota.UI.Avalonia;
 using CodexQuota.Domain;
@@ -155,6 +156,17 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     settingsInteraction.SaveRequested += draft => savedDraft = draft;
     settingsInteraction.CancelRequested += (_, _) => cancelCount++;
     settingsInteraction.Show();
+    settingsInteraction.NavigateToPage(1);
+    settingsInteraction.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    var numericEditors = settingsInteraction.GetVisualDescendants().OfType<NumericUpDown>().ToArray();
+    Check.True(numericEditors.Length >= 3 && numericEditors.All(editor => editor.Bounds.Width >= 128),
+        "settings numeric editors preserve three-digit width");
+    var numericTextBoxes = numericEditors
+        .Select(editor => editor.GetVisualDescendants().OfType<TextBox>().FirstOrDefault())
+        .Where(box => box is not null).Cast<TextBox>().ToArray();
+    Check.True(numericTextBoxes.Length == numericEditors.Length && numericTextBoxes.All(box => box.Bounds.Width >= 45),
+        "settings numeric editor text area remains readable");
     settingsInteraction.NavigateToPage(4);
     Check.True(settingsInteraction.CachedPageCount == 5, "settings caches five pages");
     Check.True(settingsInteraction.SelectedPageIndex == 4 && settingsInteraction.VisiblePageCount == 1,

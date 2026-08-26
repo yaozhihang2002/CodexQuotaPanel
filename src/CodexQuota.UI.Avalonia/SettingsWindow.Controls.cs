@@ -70,8 +70,12 @@ public sealed partial class SettingsWindow
     {
         var slider = new Slider { Minimum = minimum, Maximum = maximum, Value = value, Width = 170,
             VerticalAlignment = VerticalAlignment.Center };
+        // Avalonia's macOS template reserves more horizontal space for the two
+        // spinner buttons than the Windows template. Keep enough fixed room for
+        // three digits at 1x so values such as 100 and 150 are never reduced to
+        // a single visible character.
         var number = new NumericUpDown { Minimum = minimum, Maximum = maximum, Value = value,
-            Width = Math.Clamp(92 * UiElements.ScaleFactor, 92, 138),
+            Width = Math.Clamp(128 * UiElements.ScaleFactor, 128, 180),
             Increment = 1, FormatString = "0", FontFamily = UiElements.AppFont };
         var updating = false;
         slider.ValueChanged += (_, _) =>
