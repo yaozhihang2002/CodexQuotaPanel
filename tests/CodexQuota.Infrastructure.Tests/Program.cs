@@ -28,6 +28,25 @@ try
     Check.Equal(140, readSettings?.OrbSize, "settings round trip size");
     Check.Equal(AppTheme.Light, readSettings?.Theme, "settings round trip theme");
 
+    await settings.WriteAsync(readSettings! with { OrbSize = 128 }, CancellationToken.None);
+    await File.WriteAllTextAsync(settingsPath, "{broken", CancellationToken.None);
+    var recoveredSettings = await settings.ReadAsync(CancellationToken.None);
+    Check.Equal(140, recoveredSettings?.OrbSize, "settings backup recovery");
+
+    var legacyPath = Path.Combine(root, "preferences.json");
+    var migratedPath = Path.Combine(root, "settings-migrated.json");
+    await File.WriteAllTextAsync(legacyPath,
+        """{"Schema":"codex-quota-panel.preferences","SchemaVersion":1,"OrbSize":146,"OrbOpacityPercent":62,"OrbBackgroundColorArgb":-16777216,"OuterColorArgb":-9763664,"InnerColorArgb":-8469249,"ThemeMode":2,"Language":1,"OrbX":420,"OrbY":220,"ConsumptionFlameStyle":2}""");
+    var migrationStore = new JsonSettingsStore(migratedPath, legacyPath);
+    var migrated = await migrationStore.ReadAsync(CancellationToken.None);
+    Check.Equal(146, migrated?.OrbSize, "legacy size migration");
+    Check.Equal(62, migrated?.OrbOpacityPercent, "legacy opacity migration");
+    Check.Equal(AppTheme.Light, migrated?.Theme, "legacy theme migration");
+    Check.Equal(AppLanguage.English, migrated?.Language, "legacy language migration");
+    Check.Equal(ConsumptionFeedbackStyle.Pixel, migrated?.ConsumptionFeedbackStyle,
+        "legacy flame migration");
+    Check.True(File.Exists(migratedPath), "migrated settings persisted");
+
     var lines = new[]
     {
         """{"timestamp":"2026-08-26T01:00:00Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}""",
@@ -47,10 +66,98 @@ try
     Check.True(!events[0].IsServiceTierExplicit, "backfilled event remains marked inferred");
     Check.Equal(50L, events[1].Usage.TotalTokens, "cumulative normalization");
 
+    var streamingRoot = Path.Combine(root, "streaming");
+    var streamingSessions = Path.Combine(streamingRoot, "sessions");
+    Directory.CreateDirectory(streamingSessions);
+    var streamingTranscript = Path.Combine(streamingSessions, "large.jsonl");
+    var streamingLines = new List<string>
+    {
+        """{"timestamp":"2026-08-26T00:00:00Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-sol","service_tier":"default"}}}"""
+    };
+    var streamingStart = new DateTimeOffset(2026, 8, 26, 0, 0, 0, TimeSpan.Zero);
+    for (var index = 0; index < 600; index++)
+        streamingLines.Add(TokenLine(streamingStart.AddSeconds(index + 1).ToString("O"), $"stream-{index}",
+            (index + 1) * 50L, (index + 1) * 40L, (index + 1) * 10L));
+    await File.WriteAllLinesAsync(streamingTranscript, streamingLines);
+    var streamingState = Path.Combine(streamingRoot, "usage-file-state.jsonl");
+    var streamingSource = new JsonlUsageEventSource(streamingRoot, streamingState);
+    var initialBatches = await CollectBatchesAsync(streamingSource, 600);
+    Check.Equal(600, initialBatches.Sum(batch => batch.Count), "streaming initial event count");
+    Check.True(initialBatches.All(batch => batch.Count <= 256), "streaming batches stay bounded");
+    Check.True(streamingSource.InitialScanCompleted.IsCompletedSuccessfully,
+        "streaming initial scan completion signal");
+    await File.AppendAllTextAsync(streamingTranscript, Environment.NewLine +
+        TokenLine(streamingStart.AddSeconds(601).ToString("O"), "stream-600", 30_050, 24_040, 6_010));
+    var restartedStreamingSource = new JsonlUsageEventSource(streamingRoot, streamingState);
+    var appendedBatches = await CollectBatchesAsync(restartedStreamingSource, 1);
+    Check.Equal(1, appendedBatches.Sum(batch => batch.Count), "streaming restart reads only new event");
+    var streamingStateText = await File.ReadAllTextAsync(streamingState);
+    Check.True(!streamingStateText.Contains(root, StringComparison.OrdinalIgnoreCase),
+        "streaming cursor cache excludes personal paths");
+
+    var lateTierRoot = Path.Combine(root, "late-tier");
+    var lateTierSessions = Path.Combine(lateTierRoot, "sessions");
+    Directory.CreateDirectory(lateTierSessions);
+    var lateTierTranscript = Path.Combine(lateTierSessions, "late.jsonl");
+    await File.WriteAllLinesAsync(lateTierTranscript,
+    [
+        """{"timestamp":"2026-08-26T03:00:00Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}""",
+        TokenLine("2026-08-26T03:01:00Z", "late-a", 100, 80, 20),
+        TokenLine("2026-08-26T03:02:00Z", "late-b", 150, 120, 30)
+    ]);
+    var lateTierSource = new JsonlUsageEventSource(lateTierRoot);
+    var defaultTierBatch = await CollectBatchesAsync(lateTierSource, 2);
+    Check.True(defaultTierBatch.SelectMany(batch => batch).All(item => item.ServiceTier == "default"),
+        "streaming missing tier defaults safely");
+    await File.AppendAllTextAsync(lateTierTranscript, Environment.NewLine +
+        """{"timestamp":"2026-08-26T03:03:00Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-terra","service_tier":"fast"}}}""" +
+        Environment.NewLine + TokenLine("2026-08-26T03:04:00Z", "late-c", 200, 160, 40));
+    var backfilledBatches = await CollectBatchesAsync(lateTierSource, 3);
+    var backfilledEvents = backfilledBatches.SelectMany(batch => batch).ToArray();
+    Check.Equal(3, backfilledEvents.Length, "streaming late tier triggers bounded replay");
+    Check.True(backfilledEvents.Take(2).All(item => item.ServiceTier == "fast" && !item.IsServiceTierExplicit),
+        "streaming late tier backfills prior events");
+    var finiteEvents = new List<ObservedUsage>();
+    await foreach (var batch in new JsonlUsageEventSource(lateTierRoot)
+                       .ScanExistingBatchesAsync(CancellationToken.None))
+        finiteEvents.AddRange(batch);
+    Check.Equal(3, finiteEvents.Count, "finite index worker scan completes");
+
     var quotaSource = new JsonlQuotaSource(root);
     var quota = await quotaSource.ReadAsync(CancellationToken.None);
     Check.Equal(1, quota?.VisibleWindows.Count, "single window detection");
     Check.Equal(62d, quota?.VisibleWindows[0].RemainingPercent, "quota remaining");
+
+    var archived = Path.Combine(root, "archived_sessions");
+    Directory.CreateDirectory(archived);
+    var archivedTranscript = Path.Combine(archived, "archived.jsonl");
+    await File.WriteAllTextAsync(archivedTranscript,
+        """{"timestamp":"2026-08-26T02:04:00Z","type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":41,"window_minutes":10080,"resets_at":1788050820}}}}""");
+    File.SetLastWriteTimeUtc(archivedTranscript, DateTime.UtcNow.AddMinutes(1));
+    quota = await quotaSource.ReadAsync(CancellationToken.None);
+    Check.Equal(59d, quota?.VisibleWindows[0].RemainingPercent, "archived session quota detection");
+
+    var reverseTranscript = Path.Combine(archived, "reverse.jsonl");
+    await File.WriteAllLinesAsync(reverseTranscript,
+    [
+        new string('x', 180_000),
+        """{"timestamp":"2026-08-26T04:00:00Z","type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":45,"window_minutes":10080,"resets_at":1788050820}}}}""",
+        """{"timestamp":"2026-08-26T04:05:00Z","type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":47,"window_minutes":10080,"resets_at":1788050820}}}}"""
+    ]);
+    File.SetLastWriteTimeUtc(reverseTranscript, DateTime.UtcNow.AddMinutes(2));
+    quota = await quotaSource.ReadAsync(CancellationToken.None);
+    Check.Equal(53d, quota?.VisibleWindows[0].RemainingPercent, "reverse quota scan returns newest event");
+
+    using var appServerDocument = JsonDocument.Parse("""
+        {"rateLimits":{"limitId":"codex","planType":"pro","secondary":{"usedPercent":12,"windowDurationMins":10080,"resetsAt":1788050820}},
+         "rateLimitResetCredits":{"availableCount":2,"credits":[
+           {"id":"late","status":"available","title":"Full reset","expiresAt":1789000000},
+           {"id":"soon","status":"available","title":"Full reset","expiresAt":1788100000}]}}
+        """);
+    var appServerQuota = QuotaPayloadParser.ParseAppServerResult(appServerDocument.RootElement);
+    Check.Equal("App Server", appServerQuota?.Source, "app-server source metadata");
+    Check.Equal("pro", appServerQuota?.PlanType, "app-server plan metadata");
+    Check.Equal("soon", appServerQuota?.SoonestAvailableResetCredit?.Id, "soonest reset credit");
 
     var store = new SqliteUsageHistoryStore(database);
     await store.InitializeAsync(CancellationToken.None);
@@ -63,13 +170,16 @@ try
     Check.Equal(1, usageHistory.Count, "SQLite fingerprint deduplication");
     Check.True(usageHistory[0].IsServiceTierExplicit, "SQLite inference upgrade");
     Check.Equal(events[0] with { IsServiceTierExplicit = true }, usageHistory[0], "SQLite usage round trip");
+    await store.ClearAsync(CancellationToken.None);
+    Check.Equal(0, (await store.ReadQuotaAsync(DateTimeOffset.MinValue, CancellationToken.None)).Count, "SQLite quota clear");
+    Check.Equal(0, (await store.ReadUsageAsync(DateTimeOffset.MinValue, CancellationToken.None)).Count, "SQLite usage clear");
 }
 finally
 {
     if (Directory.Exists(root)) Directory.Delete(root, true);
 }
 
-Console.WriteLine("Infrastructure checks passed: 16");
+Console.WriteLine("Infrastructure checks passed: 40");
 
 if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
 {
@@ -112,6 +222,24 @@ static string TokenLine(string timestamp, string turn, long total, long input, l
             }
         }
     });
+
+static async Task<IReadOnlyList<IReadOnlyList<ObservedUsage>>> CollectBatchesAsync(
+    JsonlUsageEventSource source,
+    int expectedCount)
+{
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    var result = new List<IReadOnlyList<ObservedUsage>>();
+    var count = 0;
+    await foreach (var batch in source.WatchBatchesAsync(timeout.Token))
+    {
+        result.Add(batch);
+        count += batch.Count;
+        if (count < expectedCount) continue;
+        timeout.Cancel();
+        break;
+    }
+    return result;
+}
 
 static class Check
 {

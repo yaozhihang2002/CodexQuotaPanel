@@ -58,6 +58,20 @@ public sealed class SqliteUsageHistoryStore : IUsageHistoryStore
             CREATE INDEX IF NOT EXISTS ix_usage_events_time ON usage_events(observed_utc_ms);
             """, cancellationToken).ConfigureAwait(false);
 
+        var quotaCutoff = DateTimeOffset.UtcNow.AddHours(-25).ToUnixTimeMilliseconds();
+        // The UI reports the active reset cycle (currently at most seven days).
+        // Ten days retain a complete cycle plus a safety margin without turning
+        // this lightweight panel into an unbounded transcript index.
+        var usageCutoff = DateTimeOffset.UtcNow.AddDays(-10).ToUnixTimeMilliseconds();
+        await using (var prune = connection.CreateCommand())
+        {
+            prune.CommandText = "DELETE FROM quota_history WHERE observed_utc_ms < $quota; " +
+                                "DELETE FROM usage_events WHERE observed_utc_ms < $usage;";
+            prune.Parameters.AddWithValue("$quota", quotaCutoff);
+            prune.Parameters.AddWithValue("$usage", usageCutoff);
+            await prune.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await using var version = connection.CreateCommand();
         version.CommandText = "INSERT INTO metadata(key, value) VALUES('schema_version', $version) " +
                               "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
@@ -89,10 +103,20 @@ public sealed class SqliteUsageHistoryStore : IUsageHistoryStore
     }
 
     public async Task AppendUsageAsync(ObservedUsage usage, CancellationToken cancellationToken)
+        => await AppendUsageBatchAsync([usage], cancellationToken).ConfigureAwait(false);
+
+    public async Task AppendUsageBatchAsync(
+        IReadOnlyList<ObservedUsage> usages,
+        CancellationToken cancellationToken)
     {
+        if (usages.Count == 0) return;
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var usage in usages)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
             INSERT INTO usage_events(
                 fingerprint, observed_utc_ms, model, service_tier, service_tier_explicit,
                 total_tokens, input_tokens, cached_input_tokens, output_tokens,
@@ -110,18 +134,20 @@ public sealed class SqliteUsageHistoryStore : IUsageHistoryStore
                 reasoning_output_tokens = excluded.reasoning_output_tokens,
                 cache_write_input_tokens = excluded.cache_write_input_tokens;
             """;
-        command.Parameters.AddWithValue("$fingerprint", usage.Fingerprint);
-        command.Parameters.AddWithValue("$time", usage.ObservedAt.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$model", usage.Model);
-        command.Parameters.AddWithValue("$tier", usage.ServiceTier);
-        command.Parameters.AddWithValue("$explicit", usage.IsServiceTierExplicit ? 1 : 0);
-        command.Parameters.AddWithValue("$total", usage.Usage.TotalTokens);
-        command.Parameters.AddWithValue("$input", usage.Usage.InputTokens);
-        command.Parameters.AddWithValue("$cached", usage.Usage.CachedInputTokens);
-        command.Parameters.AddWithValue("$output", usage.Usage.OutputTokens);
-        command.Parameters.AddWithValue("$reasoning", usage.Usage.ReasoningOutputTokens);
-        command.Parameters.AddWithValue("$cacheWrite", usage.Usage.CacheWriteInputTokens);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue("$fingerprint", usage.Fingerprint);
+            command.Parameters.AddWithValue("$time", usage.ObservedAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$model", usage.Model);
+            command.Parameters.AddWithValue("$tier", usage.ServiceTier);
+            command.Parameters.AddWithValue("$explicit", usage.IsServiceTierExplicit ? 1 : 0);
+            command.Parameters.AddWithValue("$total", usage.Usage.TotalTokens);
+            command.Parameters.AddWithValue("$input", usage.Usage.InputTokens);
+            command.Parameters.AddWithValue("$cached", usage.Usage.CachedInputTokens);
+            command.Parameters.AddWithValue("$output", usage.Usage.OutputTokens);
+            command.Parameters.AddWithValue("$reasoning", usage.Usage.ReasoningOutputTokens);
+            command.Parameters.AddWithValue("$cacheWrite", usage.Usage.CacheWriteInputTokens);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<QuotaHistoryPoint>> ReadQuotaAsync(
@@ -169,6 +195,13 @@ public sealed class SqliteUsageHistoryStore : IUsageHistoryStore
                     reader.GetInt64(6), reader.GetInt64(7), reader.GetInt64(8)),
                 reader.GetString(9), reader.GetInt32(10) != 0));
         return result;
+    }
+
+    public async Task ClearAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, "DELETE FROM quota_history; DELETE FROM usage_events;", cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)

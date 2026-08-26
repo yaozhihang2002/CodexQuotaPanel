@@ -18,6 +18,21 @@
 
 > 当前版本：**v0.5.2 Pre-release**。这是仍在验证兼容性与界面细节的公开测试版，不代表已经达到稳定版标准。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
+## vNext 跨平台分支
+
+`codex/vnext-windows-macos` 正在以 Avalonia 和模块化核心重建下一代 **v0.6.0**。它不会覆盖 `work/` 中的 Windows 正式分支；只有功能对照、真实数据源、升级保留和平台验证全部达标后才会接替现有版本。
+
+当前 vNext 已实现：
+
+- 与正式版一致的单环/双环悬浮球、三种消耗反馈、展开详情、24 小时实际趋势与均匀使用参考线。
+- 当前重置周期 Token 明细、每日/模型/`Default`/`Fast` 汇总，以及明确标为“API 等价估算、非账单”的美元估算。
+- 中英文、深色/浅色/跟随系统、尺寸/字体/透明度/背景/环颜色、置顶、穿透、位置锁定、边缘吸附和提醒设置。
+- 设置即时预览、保存后不退出、取消完整回滚、导入/导出、备份恢复、旧版设置迁移、更新检查和重启应用。
+- Windows 托盘与 macOS 菜单栏、登录启动、全局找回快捷键，以及平台原生置顶/鼠标穿透适配。
+- Token 日志采用有界分批和跨重启增量游标；首次历史索引由有限工作进程完成并自动退出，主界面不会继承导入内存。实时 App Server 可用时不会先扫描大型 JSONL，回退读取也从文件末尾反向查找最新额度。
+
+vNext 的普通设置、详情和统计界面共用同一套 UI；透明悬浮窗、置顶、穿透、登录启动和全局快捷键由很薄的平台适配层实现。Windows 候选会生成安装包与便携包，macOS 候选会生成 `.app`、ZIP 和 DMG。macOS 正式发布前仍需 Apple Developer ID 签名、公证和真实 Retina 设备验收。
+
 ## 一眼了解
 
 - **桌面双环悬浮球**：同时查看五小时与一周额度；窗口、环角色与颜色均可调整，点击后展开完整详情。
@@ -102,6 +117,33 @@
 程序在本机读取 Codex 客户端产生的可用额度与结构化 Token 计数事件，不读取 `auth.json` 或对话正文。为减少重复扫描，只在本机保存版本化的聚合计数缓存，不保存对话文本，也不上传额度数据、账号或会话内容。美元金额只是按界面标注日期的公开 API 价格作出的等价估算，不是订阅账单，也不是官方额度百分比换算。额度是否可显示仍取决于当前电脑上 Codex 客户端产生的数据是否可用。
 
 ## 从源码构建
+
+### vNext（Windows / macOS）
+
+vNext 使用自包含发布，普通用户不需要预装现代 .NET Desktop Runtime。开发机需要对应的 .NET 10 SDK：
+
+```powershell
+dotnet restore CodexQuotaPanel.VNext.slnx
+dotnet build CodexQuotaPanel.VNext.slnx -c Release
+dotnet run --project tests/CodexQuota.Domain.Tests -c Release --no-build
+dotnet run --project tests/CodexQuota.Application.Tests -c Release --no-build
+dotnet run --project tests/CodexQuota.Infrastructure.Tests -c Release --no-build
+dotnet run --project tests/CodexQuota.UI.Tests -c Release --no-build
+```
+
+Windows 本地候选只构建一次应用载荷，并由安装器与便携包复用：
+
+```powershell
+installer/Windows/Build-Release.ps1 -Version 0.6.0 -DotNetPath <dotnet.exe>
+```
+
+macOS 在 Apple runner 或 Mac 上生成 `.app`、ZIP 和 DMG：
+
+```powershell
+installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime osx-arm64
+```
+
+### 现有 Windows 正式分支
 
 需要 Windows x64 与对应的 .NET SDK：
 

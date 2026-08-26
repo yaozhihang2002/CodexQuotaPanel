@@ -19,7 +19,7 @@ public static class QuotaPayloadParser
             if (!DateTimeOffset.TryParse(ReadString(root, "timestamp"), CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal, out var observedAt))
                 return null;
-            return ParseLimits(limits, observedAt);
+            return ParseLimits(limits, observedAt, "Local session");
         }
         catch (JsonException)
         {
@@ -43,15 +43,48 @@ public static class QuotaPayloadParser
         if (candidates.Count == 0) return null;
         var selected = candidates.FirstOrDefault(item => item.Id.Equals("codex", StringComparison.OrdinalIgnoreCase));
         if (selected.Value.ValueKind == JsonValueKind.Undefined) selected = candidates[0];
-        return ParseLimits(selected.Value, DateTimeOffset.UtcNow);
+        return ParseLimits(selected.Value, DateTimeOffset.UtcNow, "App Server",
+            ReadString(selected.Value, "planType", "plan_type"), ReadResetCredits(result));
     }
 
-    private static OfficialQuotaSnapshot? ParseLimits(JsonElement limits, DateTimeOffset observedAt)
+    private static OfficialQuotaSnapshot? ParseLimits(
+        JsonElement limits,
+        DateTimeOffset observedAt,
+        string source,
+        string? planType = null,
+        IReadOnlyList<ResetCredit>? resetCredits = null)
     {
         var windows = new List<QuotaWindow>(2);
         AddWindow(windows, limits, "primary", "primaryWindow", "primary_window");
         AddWindow(windows, limits, "secondary", "secondaryWindow", "secondary_window");
-        return windows.Count == 0 ? null : new OfficialQuotaSnapshot(observedAt, windows);
+        return windows.Count == 0 ? null : new OfficialQuotaSnapshot(
+            observedAt, windows, false, source, planType, resetCredits);
+    }
+
+    private static IReadOnlyList<ResetCredit>? ReadResetCredits(JsonElement root)
+    {
+        if (!TryGetAny(root, out var summary, "rateLimitResetCredits", "rate_limit_reset_credits") ||
+            summary.ValueKind != JsonValueKind.Object ||
+            !TryGet(summary, "credits", out var values) || values.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var credits = new List<ResetCredit>();
+        foreach (var value in values.EnumerateArray())
+        {
+            var id = ReadString(value, "id");
+            var status = ReadString(value, "status");
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(status)) continue;
+            DateTimeOffset? expiresAt = null;
+            var seconds = ReadLong(value, "expiresAt", "expires_at");
+            if (seconds is > 0)
+            {
+                try { expiresAt = DateTimeOffset.FromUnixTimeSeconds(seconds.Value); }
+                catch (ArgumentOutOfRangeException) { }
+            }
+            credits.Add(new ResetCredit(id, status, expiresAt,
+                ReadString(value, "title"), ReadString(value, "description")));
+        }
+        return credits;
     }
 
     private static void AddWindow(List<QuotaWindow> windows, JsonElement root, params string[] names)

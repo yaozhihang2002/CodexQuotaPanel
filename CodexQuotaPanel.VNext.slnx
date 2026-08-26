@@ -13,5 +13,6 @@
     <Project Path="tests/CodexQuota.Application.Tests/CodexQuota.Application.Tests.csproj" />
     <Project Path="tests/CodexQuota.Infrastructure.Tests/CodexQuota.Infrastructure.Tests.csproj" />
     <Project Path="tests/CodexQuota.UI.Tests/CodexQuota.UI.Tests.csproj" />
+    <Project Path="tests/CodexQuota.Platform.Tests/CodexQuota.Platform.Tests.csproj" />
   </Folder>
 </Solution>

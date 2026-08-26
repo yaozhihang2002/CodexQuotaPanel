@@ -22,6 +22,11 @@
 /work/Installer/Release-en-us/
 /work/Installer/CodexQuotaPanelSetup.en-us.generated.vdproj
 /work/Installer/CodexQuotaPanelInstaller.en-us.generated.sln
+/installer/Windows/Debug/
+/installer/Windows/Release/
+/installer/Windows/Release-en-us/
+/installer/Windows/CodexQuotaPanelSetup.en-us.generated.vdproj
+/installer/Windows/CodexQuotaPanelInstaller.en-us.generated.sln
 *.user
 *.suo
 *.cache

@@ -1,0 +1,21 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36310.24
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{978C614F-708E-4E1A-B201-565925725DBA}") = "CodexQuotaPanelSetup", "CodexQuotaPanelSetup.vdproj", "{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Default = Debug|Default
+		Release|Default = Release|Default
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}.Debug|Default.ActiveCfg = Debug
+		{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}.Debug|Default.Build.0 = Debug
+		{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}.Release|Default.ActiveCfg = Release
+		{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}.Release|Default.Build.0 = Release
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

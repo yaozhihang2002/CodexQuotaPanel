@@ -19,6 +19,7 @@ public interface IUsageHistoryStore
     Task AppendUsageAsync(ObservedUsage usage, CancellationToken cancellationToken);
     Task<IReadOnlyList<QuotaHistoryPoint>> ReadQuotaAsync(DateTimeOffset since, CancellationToken cancellationToken);
     Task<IReadOnlyList<ObservedUsage>> ReadUsageAsync(DateTimeOffset since, CancellationToken cancellationToken);
+    Task ClearAsync(CancellationToken cancellationToken);
 }
 
 public interface ISettingsStore
@@ -32,4 +33,20 @@ public interface IPlatformShell
     string PlatformName { get; }
     bool SupportsClickThrough { get; }
     bool SupportsMenuBarOrTray { get; }
+    bool SupportsGlobalShortcut { get; }
+    bool GetStartWithSystem();
+    AppLanguage? GetInitialLanguage();
+    void SetStartWithSystem(bool enabled);
+    void SetClickThrough(nint nativeWindowHandle, bool enabled);
+    void SetWindowTopMost(nint nativeWindowHandle, bool enabled);
+    void SetWindowDarkMode(nint nativeWindowHandle, bool enabled);
+    IGlobalShortcutRegistration? RegisterRecoveryShortcut(Action callback);
+    void PlayAlertSound();
+    void OpenUri(Uri uri);
+    void RestartApplication();
+}
+
+public interface IGlobalShortcutRegistration : IDisposable
+{
+    bool IsRegistered { get; }
 }

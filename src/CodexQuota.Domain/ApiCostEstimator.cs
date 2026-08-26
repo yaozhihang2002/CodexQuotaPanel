@@ -53,11 +53,28 @@ public static class ApiCostEstimator
         _ => "unknown"
     };
 
+    public static string DisplayModel(string? model) => NormalizeModel(model) switch
+    {
+        "gpt-5.6-sol" => "GPT-5.6 Sol",
+        "gpt-5.6-terra" => "GPT-5.6 Terra",
+        "gpt-5.6-luna" => "GPT-5.6 Luna",
+        "codex-auto-review" => "Auto-review",
+        "unknown" => "Unknown",
+        var value => value
+    };
+
     public static ServiceTier NormalizeTier(string? tier) => tier?.Trim().ToLowerInvariant() switch
     {
         "default" or "standard" => ServiceTier.Default,
         "fast" or "priority" => ServiceTier.Fast,
         _ => ServiceTier.Unknown
+    };
+
+    public static string DisplayTier(string? tier) => NormalizeTier(tier) switch
+    {
+        ServiceTier.Default => "Default",
+        ServiceTier.Fast => "Fast",
+        _ => "Unknown"
     };
 
     private sealed record ModelPrice(decimal Input, decimal CachedInput, decimal Output);

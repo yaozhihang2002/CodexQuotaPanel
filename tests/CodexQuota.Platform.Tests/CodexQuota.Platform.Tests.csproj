@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/CodexQuota.Application/CodexQuota.Application.csproj" />
+    <ProjectReference Include="../../src/CodexQuota.Platform.Windows/CodexQuota.Platform.Windows.csproj" />
+    <ProjectReference Include="../../src/CodexQuota.Platform.macOS/CodexQuota.Platform.macOS.csproj" />
+  </ItemGroup>
+</Project>

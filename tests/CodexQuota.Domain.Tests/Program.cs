@@ -23,6 +23,8 @@ Check.Equal(0.456m, standardCost.Usd, "standard cost");
 Check.Equal(0.912m, ApiCostEstimator.Estimate("gpt-5.6-sol", "fast", usage).Usd, "fast cost");
 Check.True(!ApiCostEstimator.Estimate("codex-auto-review", "default", usage).IsPriced,
     "auto review unpriced");
+Check.Equal("Auto-review", ApiCostEstimator.DisplayModel("codex-auto-review"), "auto review display");
+Check.Equal("Fast", ApiCostEstimator.DisplayTier("priority"), "priority display");
 Check.Equal(ServiceTier.Unknown, ApiCostEstimator.NormalizeTier(null), "missing tier remains unknown");
 
 var daily = UsageSummaryCalculator.SummarizeByDay(
@@ -52,7 +54,7 @@ var burstForecast = QuotaRunwayForecaster.Evaluate(snapshot, burst, start);
 Check.True(burstForecast is not null && burstForecast.PercentPerHour < 2d,
     "long idle view tempers one burst");
 
-Console.WriteLine("Domain checks passed: 19");
+Console.WriteLine("Domain checks passed: 21");
 
 static class Check
 {

@@ -1,6 +1,13 @@
 name: vNext cross-platform
 
 on:
+  workflow_dispatch:
+    inputs:
+      package_macos:
+        description: Build signed-ad-hoc macOS app, ZIP and DMG
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - codex/vnext-windows-macos
@@ -41,6 +48,10 @@ jobs:
         run: dotnet run --project tests/CodexQuota.Application.Tests --configuration Release --no-build
       - name: Infrastructure checks
         run: dotnet run --project tests/CodexQuota.Infrastructure.Tests --configuration Release --no-build
+      - name: Platform checks
+        run: dotnet run --project tests/CodexQuota.Platform.Tests --configuration Release --no-build
+        env:
+          CODEXQUOTA_PLATFORM_MUTATION_TESTS: 1
       - name: UI render matrix
         timeout-minutes: 6
         shell: bash
@@ -58,9 +69,35 @@ jobs:
             dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- \
               artifacts/vnext-preview "$scenario"
           done
+          dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- \
+            artifacts/vnext-preview formal
       - name: Upload UI matrix
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vnext-preview-${{ matrix.os }}
           path: artifacts/vnext-preview/*.png
+
+  macos-package:
+    name: macOS native package
+    if: github.event_name == 'workflow_dispatch' && inputs.package_macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            src/**/*.csproj
+            tests/**/*.csproj
+      - name: Build app bundle, ZIP and DMG from one payload
+        shell: pwsh
+        run: |
+          $runtime = if ((uname -m) -eq 'arm64') { 'osx-arm64' } else { 'osx-x64' }
+          ./installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime $runtime -SkipChecks
+      - name: Upload macOS package
+        uses: actions/upload-artifact@v7
+        with:
+          name: CodexQuotaPanel-0.6.0-macOS
+          path: artifacts/release-v0.6.0-macos/*
