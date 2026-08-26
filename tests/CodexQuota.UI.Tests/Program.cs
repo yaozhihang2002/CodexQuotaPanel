@@ -37,12 +37,10 @@ foreach (var (name, scenario, scale) in scenarios)
     var window = new PreviewWindow(scenario);
     window.Width = 980;
     window.Height = 620;
-    // Establish the logical window size before the platform creates its first
-    // native frame. Changing render scaling after Show() leaves macOS headless
-    // with a physical-size layout and causes a clipped intermediate frame.
-    window.SetRenderScaling(scale);
     window.Show();
-    window.UpdateLayout();
+    // SetRenderScaling performs the DPI-change layout pass. The logical size
+    // must be fixed before Show(), and must not be reassigned after scaling.
+    window.SetRenderScaling(scale);
     window.ApplyQuota(new OfficialQuotaSnapshot(DateTimeOffset.UtcNow,
         scenario.DualRing
             ? [new QuotaWindow("5h", 300, 71, DateTimeOffset.UtcNow.AddHours(3)),
@@ -52,8 +50,8 @@ foreach (var (name, scenario, scale) in scenarios)
     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
     Dispatcher.UIThread.RunJobs();
     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-    var frame = window.CaptureRenderedFrame()
-                ?? throw new InvalidOperationException($"{name}: no rendered frame.");
+    using var frame = window.CaptureRenderedFrame()
+                      ?? throw new InvalidOperationException($"{name}: no rendered frame.");
 
     Check.True(frame.PixelSize.Width >= 760 * scale, $"{name}: pixel width");
     Check.True(frame.PixelSize.Height >= 500 * scale, $"{name}: pixel height");
