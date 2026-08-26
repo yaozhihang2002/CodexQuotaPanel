@@ -35,12 +35,15 @@ foreach (var (name, scenario, scale) in scenarios)
 {
     Console.WriteLine($"Rendering {name}...");
     var window = new PreviewWindow(scenario);
+    window.Show();
+    window.SetRenderScaling(scale);
     window.Width = 980;
     window.Height = 620;
-    window.Show();
-    // SetRenderScaling performs the DPI-change layout pass. The logical size
-    // must be fixed before Show(), and must not be reassigned after scaling.
-    window.SetRenderScaling(scale);
+    // The macOS headless host needs a resize after a 2x DPI notification to
+    // commit a frame. Force layout after that resize so capture cannot observe
+    // the intermediate physical-size layout.
+    window.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
     window.ApplyQuota(new OfficialQuotaSnapshot(DateTimeOffset.UtcNow,
         scenario.DualRing
             ? [new QuotaWindow("5h", 300, 71, DateTimeOffset.UtcNow.AddHours(3)),
