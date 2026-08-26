@@ -20,12 +20,15 @@ The SQLite schema stores timestamps, window percentages, model/tier labels, toke
 
 ## Visual regression matrix
 
-The headless render check produces eight screenshots:
+The headless render check covers eight Windows scenarios and six macOS scenarios:
 
 - Simplified Chinese and English
 - dark and light themes
 - single and dual rings
-- 100%, 150%, and 200% render scaling
+- Windows: 100%, 150%, and 200% render scaling
+- macOS: 100% and 150% headless render scaling
+
+Avalonia Headless 12.1.1 on the hosted macOS 26 ARM64 runner deadlocks when a shown window is switched to exactly 200% scaling. The workflow does not disguise 150% output as 200%: Windows retains the exact 200% regression gate, while real Retina 200% rendering remains an explicit native-device acceptance gate.
 
 The orb remains dark in both themes. The light theme uses an off-white canvas and theme-matched rounded borders rather than pure white/black corner artifacts.
 
@@ -33,8 +36,8 @@ The orb remains dark in both themes. The light theme uses an off-white canvas an
 
 - one restore and one build per platform
 - domain, application, infrastructure, and UI checks run with `--no-build`
-- Windows and macOS GitHub runners upload the full screenshot matrix
-- native click-through, menu-bar/tray, and macOS signing remain later platform acceptance gates
+- Windows and macOS GitHub runners upload their platform-specific screenshot matrices, including partial evidence when a render gate fails
+- native 200% Retina rendering, click-through, menu-bar/tray, and macOS signing remain later platform acceptance gates
 
 ## Upstream stability note
 

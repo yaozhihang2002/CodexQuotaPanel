@@ -46,14 +46,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for scenario in \
-            zh-dark-single-100 zh-dark-dual-150 zh-light-single-100 zh-light-dual-200 \
-            en-dark-single-100 en-dark-dual-150 en-light-single-100 en-light-dual-200
+          scenarios=(
+            zh-dark-single-100 zh-dark-dual-150 zh-light-single-100
+            en-dark-single-100 en-dark-dual-150 en-light-single-100
+          )
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            scenarios+=(zh-light-dual-200 en-light-dual-200)
+          fi
+          for scenario in "${scenarios[@]}"
           do
             dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- \
               artifacts/vnext-preview "$scenario"
           done
       - name: Upload UI matrix
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: vnext-preview-${{ matrix.os }}
