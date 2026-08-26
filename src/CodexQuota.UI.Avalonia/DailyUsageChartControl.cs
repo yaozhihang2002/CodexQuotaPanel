@@ -37,6 +37,7 @@ public sealed class DailyUsageChartControl : Control
     public bool IsDark { get; set; } = true;
     internal int RenderedDayCount => BuildSeries().Count;
     internal decimal RenderedMaximumCost => BuildSeries().Select(item => item.Cost).DefaultIfEmpty(0).Max();
+    internal int RenderedValueLabelCount => BuildSeries().Count(item => item.Cost > 0);
     internal int HoveredDayIndex => _hoverIndex;
 
     internal void SetHoverIndexForTest(int index)
@@ -92,10 +93,17 @@ public sealed class DailyUsageChartControl : Control
             var rect = new Rect(centerX - barWidth / 2, plot.Bottom - height, barWidth, height);
             var brush = index == _hoverIndex ? text : mint;
             context.DrawRectangle(brush, null, rect);
-            context.DrawEllipse(brush, null, new Rect(rect.Left, rect.Top - barWidth * .16, rect.Width, barWidth * .32));
+            if (item.Cost > 0)
+            {
+                var valueLabel = FormatText(CompactUsd(item.Cost), 8.3, index == _hoverIndex ? text : muted,
+                    FontWeight.SemiBold);
+                var labelX = Math.Clamp(centerX - valueLabel.Width / 2, plot.Left,
+                    Math.Max(plot.Left, plot.Right - valueLabel.Width));
+                var labelY = Math.Max(2, rect.Top - valueLabel.Height - 3);
+                context.DrawText(valueLabel, new Point(labelX, labelY));
+            }
         }
 
-        DrawText(context, CompactUsd(max), new Point(plot.Left, 1), 9.5, muted, FontWeight.SemiBold);
         DrawText(context, DateLabel(series[0].Day), new Point(plot.Left, plot.Bottom + 6), 9.5, muted, FontWeight.Normal);
         var lastLabel = FormatText(DateLabel(series[^1].Day), 9.5, muted, FontWeight.Normal);
         context.DrawText(lastLabel, new Point(plot.Right - lastLabel.Width, plot.Bottom + 6));

@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using CodexQuota.Application;
+using CodexQuota.Domain;
 
 namespace CodexQuota.UI.Avalonia;
 
@@ -108,6 +109,7 @@ public sealed partial class SettingsWindow
     private Control BuildDataPage()
     {
         var panel = Page(T("数据与关于", "Data & About"), T("本地历史、迁移、更新与诊断", "Local history, migration, updates and diagnostics"));
+        panel.Children.Add(BuildPricingStandardCard());
         panel.Children.Add(ToggleRow(T("记录本地 24 小时趋势", "Record 24-hour trend"), T("只保存在本机", "Stored locally only"),
             _draft.TrendRecordingEnabled, value => Change(s => s with { TrendRecordingEnabled = value })));
         panel.Children.Add(ToggleRow(T("启动时检查更新", "Check updates on startup"), T("最多每 24 小时一次", "At most once every 24 hours"),
@@ -130,6 +132,54 @@ public sealed partial class SettingsWindow
             UiElements.Text("github.com/yaozhihang2002/CodexQuotaPanel", 11, FontWeight.SemiBold, _palette.TextMuted)
         }}, _palette));
         return Scroll(panel);
+    }
+
+    private Control BuildPricingStandardCard()
+    {
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 12 };
+        header.Children.Add(new StackPanel { Spacing = 2, Children =
+        {
+            UiElements.Text(T("API 等价计价标准", "API-equivalent pricing standard"), 15,
+                FontWeight.Bold, _palette.TextPrimary),
+            UiElements.Text($"{T("费率基准", "Rate snapshot")} · {ApiCostEstimator.BasisDate}", 10.5,
+                FontWeight.SemiBold, _palette.Mint)
+        }});
+        var official = UiElements.Button(T("查看官方价格", "Official pricing"), _palette);
+        official.MinHeight = 34;
+        official.Padding = new Thickness(12, 6);
+        official.Click += (_, _) => OpenPricingRequested?.Invoke(this, EventArgs.Empty);
+        Grid.SetColumn(official, 1);
+        header.Children.Add(official);
+
+        var explanation = new StackPanel { Spacing = 5, Children =
+        {
+            UiElements.Text(T(
+                    "用于把本机观察到的 Token 统一换算成可比较的 API 等价美元；不是 Codex 订阅账单、额度百分比换算或实际扣费。",
+                    "Converts locally observed tokens into comparable API-equivalent USD. It is not a Codex subscription bill, quota conversion, or actual charge."),
+                10.5, FontWeight.Normal, _palette.TextSecondary),
+            new Border { Height = 1, Background = _palette.Border, Margin = new Thickness(0, 3) },
+            PricingFact(T("计价组成", "Components"), T("未缓存输入 + 缓存写入 + 缓存输入 + 输出（输出已包含推理 Token）",
+                "Uncached input + cache writes + cached input + output (output already includes reasoning tokens)")),
+            PricingFact("Fast", T("按公开 API Priority 美元倍率计算，不套用 ChatGPT credits 的消耗倍率",
+                "Uses the public API Priority USD multiplier, not the ChatGPT credits multiplier")),
+            PricingFact("Auto-review", T("按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算",
+                "Estimated with the GPT-5.4 API rate mapped by the current official Codex rate card")),
+            PricingFact("Unknown / Unpriced", T("保留原始 Token，但不计入美元合计，绝不按免费处理",
+                "Raw tokens are retained but excluded from the USD total; they are never treated as free"))
+        }};
+        return UiElements.Card(new StackPanel { Spacing = 10, Children = { header, explanation } },
+            _palette, new Thickness(16, 13));
+    }
+
+    private Control PricingFact(string label, string value)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), ColumnSpacing = 10 };
+        grid.Children.Add(UiElements.Text(label, 10, FontWeight.Bold, _palette.TextMuted,
+            TextWrapping.NoWrap));
+        var detail = UiElements.Text(value, 10.5, FontWeight.Normal, _palette.TextSecondary);
+        Grid.SetColumn(detail, 1);
+        grid.Children.Add(detail);
+        return grid;
     }
 
 }

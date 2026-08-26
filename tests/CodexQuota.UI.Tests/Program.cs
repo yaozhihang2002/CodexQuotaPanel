@@ -88,8 +88,8 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
          new QuotaWindow("7d", 10_080, 44, now.AddDays(4))],
         Source: "App Server", PlanType: "pro",
         ResetCredits: [new ResetCredit("r1", "available", now.AddDays(2), "Full reset")]);
-    var history = Enumerable.Range(0, 25).Select(index => new QuotaHistoryPoint(
-        now.AddHours(index - 24), "7d", 10_080, 68 - index)).ToArray();
+    var history = Enumerable.Range(0, 49).Select(index => new QuotaHistoryPoint(
+        now.AddMinutes((index - 48) * 30), "7d", 10_080, 68 - index * .5)).ToArray();
     var usage = new[]
     {
         new ObservedUsage(now.AddHours(-3), "gpt-5.6-sol", "Default",
@@ -195,9 +195,18 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Check.True(localizedChoices.Contains("恢复上次状态") && localizedChoices.Contains("跟随系统") &&
                localizedChoices.Contains("简体中文"), "settings enum choices are localized");
     settingsInteraction.NavigateToPage(4);
+    settingsInteraction.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
     Check.True(settingsInteraction.CachedPageCount == 5, "settings caches five pages");
     Check.True(settingsInteraction.SelectedPageIndex == 4 && settingsInteraction.VisiblePageCount == 1,
         "settings atomic tab switch");
+    var pricingCopy = settingsInteraction.GetVisualDescendants().OfType<TextBlock>()
+        .Select(text => text.Text ?? string.Empty).ToArray();
+    Check.True(pricingCopy.Any(text => text.Contains("API 等价计价标准", StringComparison.Ordinal)) &&
+               pricingCopy.Any(text => text.Contains(ApiCostEstimator.BasisDate, StringComparison.Ordinal)) &&
+               pricingCopy.Any(text => text.Contains("Fast", StringComparison.Ordinal)) &&
+               pricingCopy.Any(text => text.Contains("Auto-review", StringComparison.Ordinal)),
+        "settings explains the dated API-equivalent pricing standard");
     settingsInteraction.PreviewSettings(settings => settings with
     {
         Theme = AppTheme.Light,
@@ -322,6 +331,13 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     adaptiveDashboard.ApplyPresentation(presentation);
     Check.True(adaptiveDashboard.WindowCardCount == 2 && adaptiveDashboard.SummaryRingCount == 2,
         "dashboard dynamic dual-window restore");
+    Check.True(adaptiveDashboard.ForecastDisplayText.Contains("预计可用", StringComparison.Ordinal) &&
+               adaptiveDashboard.ForecastDisplayText.Contains("当前", StringComparison.Ordinal),
+        "dashboard forecast shows both availability duration and pace");
+    Check.True(adaptiveDashboard.ResetCreditDisplayText.Contains("后到期", StringComparison.Ordinal) &&
+               adaptiveDashboard.ResetCreditMetaText.Contains("1 张可用", StringComparison.Ordinal) &&
+               adaptiveDashboard.ResetCreditIsProminent,
+        "dashboard promotes the earliest reset credit expiry");
     adaptiveDashboard.Show();
     if (adaptiveDashboard.Screens.Primary is { } placementScreen)
     {
@@ -366,6 +382,8 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Dispatcher.UIThread.RunJobs();
     var dailyChart = usageCycle.GetVisualDescendants().OfType<DailyUsageChartControl>().Single();
     Check.True(dailyChart.RenderedMaximumCost > 0, "daily chart scales the bars by API estimate");
+    Check.True(dailyChart.RenderedValueLabelCount == 2,
+        "daily chart draws a USD value label for every non-zero bar");
     dailyChart.SetHoverIndexForTest(6);
     Check.True(dailyChart.HoveredDayIndex == 6, "daily chart hover selects the exact day");
     AvaloniaHeadlessPlatform.ForceRenderTimerTick();

@@ -36,6 +36,8 @@ internal sealed partial class RuntimeCoordinator
         _settingsWindow.RestoreDefaultsRequested += async (_, _) => await ResetDefaultsAsync();
         _settingsWindow.OpenProjectRequested += (_, _) =>
             _platform.OpenUri(new Uri("https://github.com/yaozhihang2002/CodexQuotaPanel"));
+        _settingsWindow.OpenPricingRequested += (_, _) =>
+            _platform.OpenUri(new Uri(ApiCostEstimator.SourceUrl));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();

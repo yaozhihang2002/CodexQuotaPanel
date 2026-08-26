@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -23,7 +24,10 @@ public sealed class DashboardWindow : Window
     private readonly Grid _windowCards;
     private readonly TrendChartControl _trend;
     private readonly DailyUsageChartControl _dailyUsage;
+    private readonly Border _creditCard;
+    private readonly TextBlock _creditBadge;
     private readonly TextBlock _credit;
+    private readonly TextBlock _creditMeta;
     private readonly TextBlock _tokenTotal;
     private readonly DispatcherTimer _placementTimer;
     private bool _allowClose;
@@ -39,6 +43,10 @@ public sealed class DashboardWindow : Window
     internal int WindowCardCount => _windowCards.Children.Count;
     internal int DailyChartDayCount => _dailyUsage.RenderedDayCount;
     internal string ConnectionBadgeText => _connectionText.Text ?? string.Empty;
+    internal string ForecastDisplayText => _forecast.Text ?? string.Empty;
+    internal string ResetCreditDisplayText => _credit.Text ?? string.Empty;
+    internal string ResetCreditMetaText => _creditMeta.Text ?? string.Empty;
+    internal bool ResetCreditIsProminent => ReferenceEquals(_creditCard.BorderBrush, _palette.Amber);
     internal int SummaryRingCount => double.IsFinite(_summaryOrb.SecondaryRemainingPercent) ? 2 :
         string.IsNullOrWhiteSpace(_summaryOrb.PrimaryLabel) ? 0 : 1;
     internal void EnablePlacementTrackingForTest() => _trackPlacement = true;
@@ -91,7 +99,13 @@ public sealed class DashboardWindow : Window
             Language = _settings.Language,
             IsDark = _settings.Theme != AppTheme.Light
         };
-        _credit = UiElements.Text(T("重置卡信息暂不可用", "Reset credit information unavailable"), 11.5, FontWeight.Normal, _palette.TextSecondary);
+        _creditBadge = UiElements.Text(T("重置卡", "RESET CREDIT"), 9.5, FontWeight.Bold, _palette.TextMuted,
+            TextWrapping.NoWrap);
+        _credit = UiElements.Text(T("重置卡信息暂不可用", "Reset credit information unavailable"), 13.5,
+            FontWeight.Bold, _palette.TextSecondary);
+        _creditMeta = UiElements.Text(T("等待 Codex 返回可用重置卡", "Waiting for available reset credits from Codex"),
+            9.5, FontWeight.Normal, _palette.TextMuted);
+        _creditCard = BuildResetCreditCard();
         _tokenTotal = UiElements.Text(T("本周期 API 估算：—", "Cycle API estimate: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
         _placementTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(320) };
         _placementTimer.Tick += (_, _) => FlushPlacement();
@@ -148,7 +162,7 @@ public sealed class DashboardWindow : Window
         _summaryOrb.AnimateFeedback = !_settings.ReducedMotion;
         _summaryOrb.FeedbackIntensity = Math.Clamp((presentation.Forecast?.PercentPerHour ?? 0) / 8d, 0, 1);
         _summaryOrb.ConnectionState = presentation.ConnectionState;
-        _forecast.Text = ForecastText(presentation.Forecast);
+        _forecast.Text = ForecastText(presentation.Forecast, windows, presentation.UpdatedAt);
         _source.Text = presentation.Error is not null
             ? presentation.Error
             : $"{presentation.Snapshot?.Source ?? T("尚未连接", "Not connected")} · {T("更新于", "Updated")} " +
@@ -191,9 +205,35 @@ public sealed class DashboardWindow : Window
         _dailyUsage.CycleStart = cycleStart;
         _dailyUsage.CycleEnd = selected?.ResetsAt;
         var reset = presentation.Snapshot?.SoonestAvailableResetCredit;
-        _credit.Text = reset?.ExpiresAt is { } expiry
-            ? $"{T("最早到期重置卡", "Next reset credit")} · {expiry.ToLocalTime():yyyy-MM-dd HH:mm}"
-            : T("重置卡信息暂不可用", "Reset credit information unavailable");
+        if (reset?.ExpiresAt is { } expiry)
+        {
+            var reference = presentation.UpdatedAt == DateTimeOffset.MinValue
+                ? DateTimeOffset.Now
+                : presentation.UpdatedAt;
+            var remaining = expiry - reference;
+            var availableCount = presentation.Snapshot?.ResetCredits?.Count(credit =>
+                credit.Status.Equals("available", StringComparison.OrdinalIgnoreCase) &&
+                credit.ExpiresAt > reference) ?? 0;
+            _creditBadge.Text = T("重置卡 · 可用", "RESET CREDIT · AVAILABLE");
+            _creditBadge.Foreground = _palette.Amber;
+            _credit.Text = remaining > TimeSpan.Zero
+                ? T($"最早一张将在 {FormatDuration(remaining)} 后到期",
+                    $"Earliest card expires in {FormatDuration(remaining)}")
+                : T("最早一张重置卡即将到期", "The earliest reset credit is expiring now");
+            _credit.Foreground = _palette.TextPrimary;
+            _creditMeta.Text = $"{T($"{availableCount} 张可用", $"{availableCount} available")} · " +
+                               $"{T("有效至", "valid until")} {expiry.ToLocalTime():yyyy-MM-dd HH:mm}";
+            _creditCard.BorderBrush = _palette.Amber;
+        }
+        else
+        {
+            _creditBadge.Text = T("重置卡", "RESET CREDIT");
+            _creditBadge.Foreground = _palette.TextMuted;
+            _credit.Text = T("重置卡信息暂不可用", "Reset credit information unavailable");
+            _credit.Foreground = _palette.TextSecondary;
+            _creditMeta.Text = T("等待 Codex 返回可用重置卡", "Waiting for available reset credits from Codex");
+            _creditCard.BorderBrush = _palette.Border;
+        }
         var estimatedCost = days.Sum(day => day.EstimatedApiUsd);
         var unpriced = days.Sum(day => day.UnpricedEventCount);
         _tokenTotal.Text = $"{T("本周期 API 估算", "Cycle API estimate")}：${estimatedCost:0.00}" +
@@ -312,6 +352,7 @@ public sealed class DashboardWindow : Window
         Grid.SetColumn(copy, 1);
         hero.Children.Add(copy);
         scrollContent.Children.Add(hero);
+        scrollContent.Children.Add(_creditCard);
         scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 7, Children =
         {
             UiElements.Text(T("额度窗口与 24 小时节奏", "QUOTA WINDOWS · 24-HOUR PACE"), 12.5,
@@ -333,10 +374,9 @@ public sealed class DashboardWindow : Window
         usage.MinHeight = 34;
         usage.Padding = new Thickness(12, 6);
         usage.Click += (_, _) => UsageDetailsRequested?.Invoke(this, EventArgs.Empty);
-        _credit.FontSize = 9.5 * UiElements.ScaleFactor;
         var dailyFooter = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
-        _credit.VerticalAlignment = VerticalAlignment.Center;
-        dailyFooter.Children.Add(_credit);
+        dailyFooter.Children.Add(UiElements.Text(T("柱顶为 API 等价美元", "Bar labels show API-equivalent USD"),
+            9.5, FontWeight.Normal, _palette.TextMuted));
         Grid.SetColumn(usage, 1);
         dailyFooter.Children.Add(usage);
         scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 6, Children =
@@ -375,6 +415,29 @@ public sealed class DashboardWindow : Window
         return root;
     }
 
+    private Border BuildResetCreditCard()
+    {
+        var accent = new Border
+        {
+            Width = 3,
+            Background = _palette.Amber,
+            CornerRadius = new CornerRadius(999),
+            Margin = new Thickness(0, 1, 10, 1)
+        };
+        var copy = new StackPanel { Spacing = 2, Children = { _creditBadge, _credit, _creditMeta } };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Children = { accent, copy } };
+        Grid.SetColumn(copy, 1);
+        return new Border
+        {
+            Background = _palette.Surface,
+            BorderBrush = _palette.Border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12, 9),
+            Child = grid
+        };
+    }
+
     private Control BuildWindowCard(QuotaWindow window)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -398,9 +461,12 @@ public sealed class DashboardWindow : Window
         };
     }
 
-    private string ForecastText(UsageForecast? forecast)
+    private string ForecastText(UsageForecast? forecast, IReadOnlyList<QuotaWindow> windows,
+        DateTimeOffset updatedAt)
     {
-        if (forecast is null) return T("续航预测：等待更多样本", "Forecast: collecting more samples");
+        if (forecast is null)
+            return T("续航预测：等待更多样本\n预计可用时长：尚无法判断",
+                "Forecast: collecting more samples\nEstimated availability: not enough data");
         var state = forecast.State switch
         {
             ForecastState.Sustainable => T("可持续到重置", "Sustainable until reset"),
@@ -415,7 +481,37 @@ public sealed class DashboardWindow : Window
             ForecastConfidence.Low => T("低置信度", "low confidence"),
             _ => T("置信度不足", "confidence unavailable")
         };
-        return $"{state} · {confidence}\n{T("当前", "Current")} {forecast.PercentPerHour:0.##}%/h · {T("安全", "safe")} {forecast.SustainablePercentPerHour:0.##}%/h";
+        var reference = updatedAt == DateTimeOffset.MinValue ? DateTimeOffset.Now : updatedAt;
+        var resetAt = windows.FirstOrDefault(window => window.Id == forecast.WindowId)?.ResetsAt;
+        string availability;
+        if (forecast.State == ForecastState.Exhausted)
+        {
+            availability = T("预计可用 0 分钟", "Estimated availability: 0 minutes");
+        }
+        else if (forecast.State == ForecastState.Sustainable && resetAt is { } reset && reset > reference)
+        {
+            availability = T($"预计至少可用 {FormatDuration(reset - reference)}（至本轮重置）",
+                $"Available for at least {FormatDuration(reset - reference)} (until reset)");
+        }
+        else if (forecast.ExhaustsAt is { } exhaustsAt && exhaustsAt > reference)
+        {
+            availability = T($"预计可用 {FormatDuration(exhaustsAt - reference)} · {exhaustsAt.ToLocalTime():MM-dd HH:mm} 见底",
+                $"Estimated availability {FormatDuration(exhaustsAt - reference)} · empty {exhaustsAt.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture)}");
+        }
+        else
+        {
+            availability = T("预计可用时长：尚无法判断", "Estimated availability: not enough data");
+        }
+        return $"{state} · {confidence}\n{availability}\n{T("当前", "Current")} {forecast.PercentPerHour:0.##}%/h · {T("安全", "safe")} {forecast.SustainablePercentPerHour:0.##}%/h";
+    }
+
+    private string FormatDuration(TimeSpan span)
+    {
+        if (span <= TimeSpan.Zero) return T("0 分钟", "0 min");
+        var days = Math.Max(0, (int)span.TotalDays);
+        if (days > 0) return T($"{days} 天 {span.Hours} 小时", $"{days}d {span.Hours}h");
+        if (span.Hours > 0) return T($"{span.Hours} 小时 {span.Minutes} 分", $"{span.Hours}h {span.Minutes}m");
+        return T($"{Math.Max(1, span.Minutes)} 分钟", $"{Math.Max(1, span.Minutes)}m");
     }
 
     private void ApplyConnectionState(QuotaPresentation presentation)

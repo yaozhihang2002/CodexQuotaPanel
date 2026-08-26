@@ -37,6 +37,7 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler? CopyDiagnosticsRequested;
     public event EventHandler? RestoreDefaultsRequested;
     public event EventHandler? OpenProjectRequested;
+    public event EventHandler? OpenPricingRequested;
 
     public SettingsWindow(AppSettings settings, bool systemDark = true, IReadOnlyList<int>? availableWindowMinutes = null)
     {
