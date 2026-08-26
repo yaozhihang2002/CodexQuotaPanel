@@ -13,7 +13,7 @@ var outputRoot = args.Length > 0
 Directory.CreateDirectory(outputRoot);
 
 TestAppBuilder.BuildAvaloniaApp().SetupWithoutStarting();
-var scenarios = new[]
+var allScenarios = new[]
 {
     ("zh-dark-single-100", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Dark, false), 1d),
     ("zh-dark-dual-150", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Dark, true), 1.5d),
@@ -24,6 +24,12 @@ var scenarios = new[]
     ("en-light-single-100", new PreviewScenario(AppLanguage.English, AppTheme.Light, false), 1d),
     ("en-light-dual-200", new PreviewScenario(AppLanguage.English, AppTheme.Light, true), 2d)
 };
+var requestedScenario = args.Length > 1 ? args[1] : null;
+var scenarios = string.IsNullOrWhiteSpace(requestedScenario)
+    ? allScenarios
+    : allScenarios.Where(item => item.Item1.Equals(requestedScenario, StringComparison.Ordinal)).ToArray();
+if (scenarios.Length == 0)
+    throw new ArgumentException($"Unknown render scenario: {requestedScenario}");
 
 foreach (var (name, scenario, scale) in scenarios)
 {

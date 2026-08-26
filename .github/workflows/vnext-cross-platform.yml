@@ -42,8 +42,17 @@ jobs:
       - name: Infrastructure checks
         run: dotnet run --project tests/CodexQuota.Infrastructure.Tests --configuration Release --no-build
       - name: UI render matrix
-        timeout-minutes: 4
-        run: dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- artifacts/vnext-preview
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in \
+            zh-dark-single-100 zh-dark-dual-150 zh-light-single-100 zh-light-dual-200 \
+            en-dark-single-100 en-dark-dual-150 en-light-single-100 en-light-dual-200
+          do
+            dotnet run --project tests/CodexQuota.UI.Tests --configuration Release --no-build -- \
+              artifacts/vnext-preview "$scenario"
+          done
       - name: Upload UI matrix
         uses: actions/upload-artifact@v7
         with:
