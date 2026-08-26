@@ -36,7 +36,10 @@ internal sealed partial class RuntimeCoordinator
     private async Task RunUsagePipelineAsync(CancellationToken cancellationToken)
     {
         var cursorState = Path.Combine(_dataRoot, "usage-file-state.jsonl");
-        if (!File.Exists(cursorState))
+        // A crash can leave the cursor file present but empty or truncated.
+        // Treat that state exactly like a first launch so the finite worker,
+        // rather than the resident UI process, repairs the historical index.
+        if (!JsonlUsageEventSource.HasUsableCursorState(cursorState))
             await UsageIndexWorker.RunChildAsync(_dataRoot, cancellationToken).ConfigureAwait(false);
         var source = new JsonlUsageEventSource(cursorStatePath: cursorState);
         await WatchUsageAsync(source, cancellationToken).ConfigureAwait(false);

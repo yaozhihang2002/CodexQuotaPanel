@@ -80,6 +80,14 @@ try
             (index + 1) * 50L, (index + 1) * 40L, (index + 1) * 10L));
     await File.WriteAllLinesAsync(streamingTranscript, streamingLines);
     var streamingState = Path.Combine(streamingRoot, "usage-file-state.jsonl");
+    var emptyState = Path.Combine(streamingRoot, "empty-state.jsonl");
+    var corruptState = Path.Combine(streamingRoot, "corrupt-state.jsonl");
+    await File.WriteAllTextAsync(emptyState, string.Empty);
+    await File.WriteAllTextAsync(corruptState, "{broken");
+    Check.True(!JsonlUsageEventSource.HasUsableCursorState(emptyState),
+        "empty cursor state is rejected");
+    Check.True(!JsonlUsageEventSource.HasUsableCursorState(corruptState),
+        "corrupt cursor state is rejected");
     var streamingSource = new JsonlUsageEventSource(streamingRoot, streamingState);
     var initialBatches = await CollectBatchesAsync(streamingSource, 600);
     Check.Equal(600, initialBatches.Sum(batch => batch.Count), "streaming initial event count");
@@ -92,6 +100,8 @@ try
     var appendedBatches = await CollectBatchesAsync(restartedStreamingSource, 1);
     Check.Equal(1, appendedBatches.Sum(batch => batch.Count), "streaming restart reads only new event");
     var streamingStateText = await File.ReadAllTextAsync(streamingState);
+    Check.True(JsonlUsageEventSource.HasUsableCursorState(streamingState),
+        "persisted cursor state is usable");
     Check.True(!streamingStateText.Contains(root, StringComparison.OrdinalIgnoreCase),
         "streaming cursor cache excludes personal paths");
 
@@ -179,7 +189,7 @@ finally
     if (Directory.Exists(root)) Directory.Delete(root, true);
 }
 
-Console.WriteLine("Infrastructure checks passed: 40");
+Console.WriteLine("Infrastructure checks passed: 43");
 
 if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
 {

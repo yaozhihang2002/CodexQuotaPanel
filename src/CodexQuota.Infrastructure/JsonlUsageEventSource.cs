@@ -21,6 +21,30 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
 
     public Task InitialScanCompleted => _initialScanCompleted.Task;
 
+    public static bool HasUsableCursorState(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+        try
+        {
+            var found = false;
+            foreach (var line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                CursorEnvelope? item;
+                try { item = JsonSerializer.Deserialize<CursorEnvelope>(line); }
+                catch (JsonException) { return false; }
+                if (item is null || string.IsNullOrWhiteSpace(item.Key) || item.Cursor.Length < 0)
+                    return false;
+                found = true;
+            }
+            return found;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public JsonlUsageEventSource(
         string? codexHome = null,
         string? cursorStatePath = null,
