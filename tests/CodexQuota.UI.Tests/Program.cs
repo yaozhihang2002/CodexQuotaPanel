@@ -12,6 +12,16 @@ using CodexQuota.Application;
 using CodexQuota.UI.Avalonia;
 using CodexQuota.Domain;
 
+AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+{
+    Console.Error.WriteLine("UI render matrix failed.");
+    Console.Error.WriteLine(eventArgs.ExceptionObject);
+    Environment.Exit(1);
+};
+
+if (args.Length > 0 && args[0].StartsWith('-'))
+    throw new ArgumentException("The first argument must be an output directory, not an option. Example: CodexQuota.UI.Tests.exe C:\\Temp\\quota-ui formal");
+
 var outputRoot = args.Length > 0
     ? Path.GetFullPath(args[0])
     : Path.GetFullPath(Path.Combine("artifacts", "vnext-preview"));
