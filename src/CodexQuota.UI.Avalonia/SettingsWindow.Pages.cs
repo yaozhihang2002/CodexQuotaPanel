@@ -28,7 +28,8 @@ public sealed partial class SettingsWindow
     {
         var panel = Page(T("外观", "Appearance"), T("悬浮球即时预览与视觉反馈", "Live orb preview and visual feedback"));
         _orbPreview = new OrbControl { Width = 116, Height = 116, RemainingPercent = 68, SecondaryRemainingPercent = 29,
-            OrbBackground = Color.Parse(_draft.OrbBackground), OuterRingColor = Color.Parse(_draft.OuterRingColor),
+            OrbBackground = Color.Parse(_draft.OrbBackground), OrbBackgroundOpacity = _draft.OrbOpacityPercent / 100d,
+            OuterRingColor = Color.Parse(_draft.OuterRingColor),
             InnerRingColor = Color.Parse(_draft.InnerRingColor), FeedbackEnabled = _draft.ConsumptionFeedbackEnabled,
             FeedbackStyle = _draft.ConsumptionFeedbackStyle, FeedbackIntensity = .55,
             AnimateFeedback = !_draft.ReducedMotion };
@@ -37,7 +38,7 @@ public sealed partial class SettingsWindow
             value => Change(s => s with { OrbSize = value }))));
         panel.Children.Add(Row(T("设置与弹窗字体", "Interface scale"), "80–150%", NumberSlider(80, 150, _draft.InterfaceScalePercent,
             value => Change(s => s with { InterfaceScalePercent = value }))));
-        panel.Children.Add(Row(T("悬浮球不透明度", "Orb opacity"), "30–100%", NumberSlider(30, 100, _draft.OrbOpacityPercent,
+        panel.Children.Add(Row(T("背景不透明度", "Background opacity"), "30–100%", NumberSlider(30, 100, _draft.OrbOpacityPercent,
             value => Change(s => s with { OrbOpacityPercent = value }))));
         panel.Children.Add(Row(T("悬浮球背景", "Orb background"), T("十六进制颜色", "Hex color"), ColorBox(_draft.OrbBackground,
             value => Change(s => s with { OrbBackground = value }))));

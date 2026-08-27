@@ -63,7 +63,23 @@ var burstForecast = QuotaRunwayForecaster.Evaluate(snapshot, burst, start);
 Check.True(burstForecast is not null && burstForecast.PercentPerHour < 2d,
     "long idle view tempers one burst");
 
-Console.WriteLine("Domain checks passed: 21");
+var dualSnapshot = new OfficialQuotaSnapshot(start,
+[
+    new QuotaWindow("weekly-pressure", 10_080, 50d, start.AddHours(84)),
+    new QuotaWindow("five-hour-pressure", 300, 50d, start.AddHours(2.5))
+]);
+var dualHistory = Enumerable.Range(0, 7).SelectMany(index => new[]
+{
+    new QuotaHistoryPoint(start.AddHours(-3).AddMinutes(index * 30),
+        "weekly-pressure", 10_080, 51.8d - index * .3d),
+    new QuotaHistoryPoint(start.AddHours(-3).AddMinutes(index * 30),
+        "five-hour-pressure", 300, 56d - index)
+}).ToArray();
+var pressureForecast = QuotaRunwayForecaster.Evaluate(dualSnapshot, dualHistory, start);
+Check.Equal("weekly-pressure", pressureForecast?.WindowId,
+    "dual-window forecast selects the higher relative quota pressure");
+
+Console.WriteLine("Domain checks passed: 22");
 
 static class Check
 {

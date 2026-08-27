@@ -18,6 +18,7 @@ public sealed partial class OrbControl : Control
     public static readonly StyledProperty<string> PrimaryLabelProperty = AvaloniaProperty.Register<OrbControl, string>(nameof(PrimaryLabel), "7D");
     public static readonly StyledProperty<string> SecondaryLabelProperty = AvaloniaProperty.Register<OrbControl, string>(nameof(SecondaryLabel), "5H");
     public static readonly StyledProperty<Color> OrbBackgroundProperty = AvaloniaProperty.Register<OrbControl, Color>(nameof(OrbBackground), Colors.Black);
+    public static readonly StyledProperty<double> OrbBackgroundOpacityProperty = AvaloniaProperty.Register<OrbControl, double>(nameof(OrbBackgroundOpacity), 1d);
     public static readonly StyledProperty<Color> OuterRingColorProperty = AvaloniaProperty.Register<OrbControl, Color>(nameof(OuterRingColor), Color.Parse("#6AE4B0"));
     public static readonly StyledProperty<Color> InnerRingColorProperty = AvaloniaProperty.Register<OrbControl, Color>(nameof(InnerRingColor), Color.Parse("#7EC4FF"));
     public static readonly StyledProperty<double> FeedbackIntensityProperty = AvaloniaProperty.Register<OrbControl, double>(nameof(FeedbackIntensity));
@@ -37,6 +38,7 @@ public sealed partial class OrbControl : Control
     public string PrimaryLabel { get => GetValue(PrimaryLabelProperty); set => SetValue(PrimaryLabelProperty, value); }
     public string SecondaryLabel { get => GetValue(SecondaryLabelProperty); set => SetValue(SecondaryLabelProperty, value); }
     public Color OrbBackground { get => GetValue(OrbBackgroundProperty); set => SetValue(OrbBackgroundProperty, value); }
+    public double OrbBackgroundOpacity { get => GetValue(OrbBackgroundOpacityProperty); set => SetValue(OrbBackgroundOpacityProperty, value); }
     public Color OuterRingColor { get => GetValue(OuterRingColorProperty); set => SetValue(OuterRingColorProperty, value); }
     public Color InnerRingColor { get => GetValue(InnerRingColorProperty); set => SetValue(InnerRingColorProperty, value); }
     public double FeedbackIntensity { get => GetValue(FeedbackIntensityProperty); set => SetValue(FeedbackIntensityProperty, value); }
@@ -48,7 +50,7 @@ public sealed partial class OrbControl : Control
     public bool InteractionPaused { get => GetValue(InteractionPausedProperty); set => SetValue(InteractionPausedProperty, value); }
 
     static OrbControl() => AffectsRender<OrbControl>(RemainingPercentProperty, SecondaryRemainingPercentProperty,
-        CaptionProperty, PrimaryLabelProperty, SecondaryLabelProperty, OrbBackgroundProperty, OuterRingColorProperty,
+        CaptionProperty, PrimaryLabelProperty, SecondaryLabelProperty, OrbBackgroundProperty, OrbBackgroundOpacityProperty, OuterRingColorProperty,
         InnerRingColorProperty, FeedbackIntensityProperty, FeedbackEnabledProperty, FeedbackStyleProperty,
         AnimateFeedbackProperty, ConnectionStateProperty, MoveModeProperty, InteractionPausedProperty);
 
@@ -57,7 +59,8 @@ public sealed partial class OrbControl : Control
         _animationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _animationTimer.Tick += (_, _) =>
         {
-            if (!IsEffectivelyVisible || !FeedbackEnabled || !AnimateFeedback || InteractionPaused)
+            if (!IsEffectivelyVisible) return;
+            if (!FeedbackEnabled || !AnimateFeedback || InteractionPaused)
             {
                 _animationTimer.Stop();
                 _displayIntensity = Math.Clamp(FeedbackIntensity, 0d, 1d);
@@ -65,10 +68,11 @@ public sealed partial class OrbControl : Control
             }
             var target = Math.Clamp(FeedbackIntensity, 0d, 1d);
             _displayIntensity += (target - _displayIntensity) * .18;
-            _phase = (_phase + .16 + _displayIntensity * .12) % (Math.PI * 2);
+            _phase = (_phase + ConsumptionFeedbackIntensity.MotionStep(_displayIntensity)) % (Math.PI * 2);
             if (Math.Abs(target - _displayIntensity) < .002) _displayIntensity = target;
             InvalidateVisual();
-            if (target < .08 && _displayIntensity < .08 && ConnectionState != QuotaConnectionState.Connecting)
+            if (target <= FrozenMaximum && _displayIntensity <= FrozenMaximum &&
+                ConnectionState != QuotaConnectionState.Connecting)
                 _animationTimer.Stop();
         };
     }
@@ -93,7 +97,7 @@ public sealed partial class OrbControl : Control
         base.OnAttachedToVisualTree(e);
         _displayIntensity = Math.Clamp(FeedbackIntensity, 0d, 1d);
         if (!InteractionPaused && AnimateFeedback &&
-            (FeedbackEnabled && _displayIntensity >= .08 || ConnectionState == QuotaConnectionState.Connecting))
+            (FeedbackEnabled && _displayIntensity > FrozenMaximum || ConnectionState == QuotaConnectionState.Connecting))
             _animationTimer.Start();
     }
 
@@ -115,7 +119,8 @@ public sealed partial class OrbControl : Control
         var width = Math.Max(4d, size * (hasSecondary ? 0.065d : 0.082d));
         var outer = rect.Deflate(size * 0.13d);
 
-        context.DrawEllipse(new SolidColorBrush(OrbBackground), new Pen(B("#39443F"), 1d), rect);
+        context.DrawEllipse(new SolidColorBrush(WithAlpha(OrbBackground,
+            Math.Clamp(OrbBackgroundOpacity, 0d, 1d) * 255d)), new Pen(B("#39443F"), 1d), rect);
         DrawRing(context, outer, RemainingPercent, width, B("#34413C"), new SolidColorBrush(OuterRingColor));
         if (hasSecondary)
             DrawRing(context, outer.Deflate(size * 0.13d), SecondaryRemainingPercent, width,

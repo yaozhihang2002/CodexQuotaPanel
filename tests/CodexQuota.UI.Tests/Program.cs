@@ -511,6 +511,29 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     }
     compactDualWindow.Close();
 
+    UsageForecast FeedbackForecast(double rate, double sustainable, string windowId = "7d") =>
+        new(windowId, now.AddHours(12), rate, rate, rate, sustainable,
+            ForecastConfidence.High, ForecastState.Sustainable, 8, 180);
+    var sevenDayMean = ConsumptionFeedbackIntensity.From(FeedbackForecast(100d / 168d, 100d / 168d));
+    var fiveHourMean = ConsumptionFeedbackIntensity.From(FeedbackForecast(20d, 20d, "5h"));
+    Check.True(sevenDayMean > .25 && sevenDayMean <= .52 &&
+               Math.Abs(sevenDayMean - fiveHourMean) < .0001,
+        "feedback maps both window means to the same warm stage");
+    Check.True(ConsumptionFeedbackIntensity.FromPressure(.4) is > .03 and <= .25,
+        "feedback maps a low pressure pace to cool flame");
+    Check.True(ConsumptionFeedbackIntensity.FromPressure(1.5) is > .52 and <= .78,
+        "feedback maps a pace above the sustainable range to hot flame");
+    Check.True(ConsumptionFeedbackIntensity.FromPressure(2.5) > .78,
+        "feedback maps severe quota pressure to intense flame");
+    Check.True(ConsumptionFeedbackIntensity.MotionStep(.9) >
+               ConsumptionFeedbackIntensity.MotionStep(.4) * 2d,
+        "feedback motion accelerates with quota pressure");
+    var motionSteps = new[] { 0d, .14d, .38d, .66d, .9d }
+        .Select(ConsumptionFeedbackIntensity.MotionStep)
+        .ToArray();
+    Check.True(motionSteps.Zip(motionSteps.Skip(1), (left, right) => right > left).All(value => value),
+        "feedback motion increases monotonically from ice to intense fire");
+
     var feedbackGrid = new Grid
     {
         RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),

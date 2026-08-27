@@ -219,6 +219,7 @@ public sealed partial class SettingsWindow : Window
     {
         if (_orbPreview is null) return;
         _orbPreview.OrbBackground = Color.Parse(_draft.OrbBackground);
+        _orbPreview.OrbBackgroundOpacity = _draft.OrbOpacityPercent / 100d;
         _orbPreview.OuterRingColor = Color.Parse(_draft.OuterRingColor);
         _orbPreview.InnerRingColor = Color.Parse(_draft.InnerRingColor);
         _orbPreview.FeedbackEnabled = _draft.ConsumptionFeedbackEnabled;

@@ -18,10 +18,16 @@ public static class QuotaRunwayForecaster
             .Where(result => result is not null)
             .Cast<UsageForecast>()
             .OrderByDescending(result => result.State == ForecastState.Exhausted)
+            .ThenByDescending(PressureRatio)
             .ThenByDescending(result => result.State == ForecastState.AtRisk)
             .ThenBy(result => result.ExhaustsAt ?? DateTimeOffset.MaxValue)
             .FirstOrDefault();
     }
+
+    private static double PressureRatio(UsageForecast forecast) =>
+        forecast.SustainablePercentPerHour is { } sustainable && sustainable > .001d
+            ? forecast.PercentPerHour / sustainable
+            : forecast.PercentPerHour;
 
     private static UsageForecast? EvaluateWindow(
         QuotaWindow window,

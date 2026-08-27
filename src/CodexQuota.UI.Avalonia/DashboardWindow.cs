@@ -181,7 +181,7 @@ public sealed class DashboardWindow : Window
         _summaryOrb.FeedbackEnabled = _settings.ConsumptionFeedbackEnabled;
         _summaryOrb.FeedbackStyle = _settings.ConsumptionFeedbackStyle;
         _summaryOrb.AnimateFeedback = !_settings.ReducedMotion;
-        _summaryOrb.FeedbackIntensity = Math.Clamp((presentation.Forecast?.PercentPerHour ?? 0) / 8d, 0, 1);
+        _summaryOrb.FeedbackIntensity = ConsumptionFeedbackIntensity.From(presentation.Forecast);
         _summaryOrb.ConnectionState = presentation.ConnectionState;
         _forecast.Text = ForecastText(presentation.Forecast, windows, presentation.UpdatedAt);
         _source.Text = presentation.Error is not null

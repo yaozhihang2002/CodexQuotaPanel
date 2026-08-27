@@ -59,9 +59,10 @@ public sealed class OrbWindow : Window
         Width = Height = _settings.OrbSize;
         MinWidth = MinHeight = _settings.OrbSize;
         MaxWidth = MaxHeight = _settings.OrbSize;
-        Opacity = _settings.OrbOpacityPercent / 100d;
+        Opacity = 1d;
         Topmost = _settings.AlwaysOnTop;
         _orb.OrbBackground = Color.Parse(_settings.OrbBackground);
+        _orb.OrbBackgroundOpacity = _settings.OrbOpacityPercent / 100d;
         _orb.OuterRingColor = Color.Parse(_settings.OuterRingColor);
         _orb.InnerRingColor = Color.Parse(_settings.InnerRingColor);
         _orb.FeedbackEnabled = _settings.ConsumptionFeedbackEnabled;
@@ -92,7 +93,7 @@ public sealed class OrbWindow : Window
             _orb.SecondaryLabel = secondary is null ? string.Empty : UiElements.ShortWindowLabel(secondary.WindowMinutes);
             _orb.Caption = _settings.Language == AppLanguage.SimplifiedChinese ? "剩余" : "REMAINING";
         }
-        _orb.FeedbackIntensity = Math.Clamp((presentation.Forecast?.PercentPerHour ?? 0) / 8d, 0, 1);
+        _orb.FeedbackIntensity = ConsumptionFeedbackIntensity.From(presentation.Forecast);
         _orb.ConnectionState = presentation.ConnectionState;
         ToolTip.SetTip(_orb, _settings.HoverPreviewEnabled ? BuildToolTip(presentation) : null);
     }
@@ -162,8 +163,8 @@ public sealed class OrbWindow : Window
     public async Task AnimateInAsync()
     {
         Show();
-        if (_settings.ReducedMotion) { Opacity = _settings.OrbOpacityPercent / 100d; return; }
-        await AnimateAsync(.02, _settings.OrbOpacityPercent / 100d, .72, 1, 105).ConfigureAwait(true);
+        if (_settings.ReducedMotion) { Opacity = 1d; return; }
+        await AnimateAsync(.02, 1d, .72, 1, 105).ConfigureAwait(true);
     }
 
     private async Task AnimateAsync(double fromOpacity, double toOpacity, double fromScale, double toScale, int milliseconds)
