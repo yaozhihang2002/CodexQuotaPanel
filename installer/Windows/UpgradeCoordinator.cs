@@ -7,8 +7,8 @@ using System.Threading;
 [assembly: System.Reflection.AssemblyTitle("CodexQuotaPanel Upgrade Coordinator")]
 [assembly: System.Reflection.AssemblyProduct("CodexQuotaPanel")]
 [assembly: System.Reflection.AssemblyCompany("CodexQuotaPanel")]
-[assembly: System.Reflection.AssemblyVersion("0.6.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.6.1.0")]
+[assembly: System.Reflection.AssemblyVersion("0.6.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.6.2.0")]
 
 namespace CodexQuotaPanelUpgrade
 {

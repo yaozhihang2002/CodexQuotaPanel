@@ -119,8 +119,14 @@ public static class TokenUsageNormalizer
 
 public static class TokenLogContextParser
 {
-    public static void Apply(string line, ref string model, ref string tier, out bool tierSpecified)
+    public static void Apply(
+        string line,
+        ref string model,
+        ref string tier,
+        out bool modelSpecified,
+        out bool tierSpecified)
     {
+        modelSpecified = false;
         tierSpecified = false;
         if (string.IsNullOrWhiteSpace(line) ||
             (!line.Contains("\"turn_context\"", StringComparison.Ordinal) &&
@@ -146,7 +152,10 @@ public static class TokenLogContextParser
             if (settings.TryGetProperty("model", out var modelValue) &&
                 modelValue.ValueKind == JsonValueKind.String &&
                 !string.IsNullOrWhiteSpace(modelValue.GetString()))
+            {
                 model = modelValue.GetString()!;
+                modelSpecified = true;
+            }
             if (settings.TryGetProperty("service_tier", out var tierValue) &&
                 tierValue.ValueKind == JsonValueKind.String &&
                 !string.IsNullOrWhiteSpace(tierValue.GetString()))

@@ -11,6 +11,9 @@ namespace CodexQuota.Infrastructure;
 public sealed class JsonlUsageEventSource : IUsageEventSource
 {
     private const int BatchSize = 256;
+    // Increment when attribution rules change so the finite index worker
+    // replays recent JSONL files and upgrades existing SQLite rows in place.
+    private const int CurrentParserVersion = 2;
     private readonly string[] _sessionRoots;
     private readonly string? _cursorStatePath;
     private readonly TimeSpan _lookback;
@@ -33,7 +36,8 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
                 CursorEnvelope? item;
                 try { item = JsonSerializer.Deserialize<CursorEnvelope>(line); }
                 catch (JsonException) { return false; }
-                if (item is null || string.IsNullOrWhiteSpace(item.Key) || item.Cursor.Length < 0)
+                if (item is null || item.ParserVersion != CurrentParserVersion ||
+                    string.IsNullOrWhiteSpace(item.Key) || item.Cursor.Length < 0)
                     return false;
                 found = true;
             }
@@ -171,9 +175,9 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var inferredTier = await FindFirstExplicitTierAsync(path, 0, "unknown", "default", cancellationToken)
+        var inferred = await FindFirstExplicitContextAsync(path, 0, "unknown", "default", cancellationToken)
             .ConfigureAwait(false);
-        await foreach (var usage in ParseRangeAsync(path, 0, "unknown", inferredTier ?? "default", false, null,
+        await foreach (var usage in ParseRangeAsync(path, 0, inferred.Model ?? "unknown", inferred.Tier ?? "default", false, null,
                            null, cancellationToken).ConfigureAwait(false))
             yield return usage;
     }
@@ -194,23 +198,26 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         var tierExplicit = cursor?.TierExplicit ?? false;
         var previous = cursor?.Previous;
 
-        if (start > 0 && !tierExplicit)
+        if (start > 0 && (ApiCostEstimator.NormalizeModel(model) == "unknown" || !tierExplicit))
         {
-            var lateTier = await FindFirstExplicitTierAsync(path, start, model, tier, cancellationToken)
+            var late = await FindFirstExplicitContextAsync(path, start, model, tier, cancellationToken)
                 .ConfigureAwait(false);
-            if (lateTier is not null)
+            if ((ApiCostEstimator.NormalizeModel(model) == "unknown" && late.Model is not null) ||
+                (!tierExplicit && late.Tier is not null))
             {
                 start = 0;
-                model = "unknown";
-                tier = lateTier;
+                model = late.Model ?? model;
+                tier = late.Tier ?? tier;
                 tierExplicit = false;
                 previous = null;
             }
         }
         else if (start == 0)
         {
-            tier = await FindFirstExplicitTierAsync(path, 0, model, tier, cancellationToken).ConfigureAwait(false)
-                   ?? "default";
+            var inferred = await FindFirstExplicitContextAsync(path, 0, model, tier, cancellationToken)
+                .ConfigureAwait(false);
+            model = inferred.Model ?? model;
+            tier = inferred.Tier ?? "default";
         }
 
         FileCursor? completed = null;
@@ -249,8 +256,8 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
             var previous = initialPrevious;
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
             {
-                TokenLogContextParser.Apply(line, ref model, ref tier, out var specifiedNow);
-                if (specifiedNow) tierExplicit = true;
+                TokenLogContextParser.Apply(line, ref model, ref tier, out _, out var tierSpecifiedNow);
+                if (tierSpecifiedNow) tierExplicit = true;
                 var sample = TokenCountLineParser.Parse(line);
                 if (sample is null) continue;
                 var usage = TokenUsageNormalizer.Normalize(sample, ref previous);
@@ -267,7 +274,7 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         }
     }
 
-    private static async Task<string?> FindFirstExplicitTierAsync(
+    private static async Task<ContextInference> FindFirstExplicitContextAsync(
         string path,
         long start,
         string initialModel,
@@ -275,21 +282,26 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         CancellationToken cancellationToken)
     {
         var stream = TryOpen(path);
-        if (stream is null) return null;
+        if (stream is null) return new(null, null);
         await using (stream.ConfigureAwait(false))
         {
-            if (start > stream.Length) return null;
+            if (start > stream.Length) return new(null, null);
             stream.Position = start;
             using var reader = new StreamReader(stream, Encoding.UTF8,
                 detectEncodingFromByteOrderMarks: start == 0, bufferSize: 64 * 1024, leaveOpen: true);
             var model = initialModel;
             var tier = initialTier;
+            string? firstModel = null;
+            string? firstTier = null;
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
             {
-                TokenLogContextParser.Apply(line, ref model, ref tier, out var specifiedNow);
-                if (specifiedNow) return tier;
+                TokenLogContextParser.Apply(line, ref model, ref tier,
+                    out var modelSpecifiedNow, out var tierSpecifiedNow);
+                if (modelSpecifiedNow && firstModel is null) firstModel = model;
+                if (tierSpecifiedNow && firstTier is null) firstTier = tier;
+                if (firstModel is not null && firstTier is not null) break;
             }
-            return null;
+            return new(firstModel, firstTier);
         }
     }
 
@@ -389,7 +401,8 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
                 try
                 {
                     var item = JsonSerializer.Deserialize<CursorEnvelope>(line);
-                    if (item is not null && !string.IsNullOrWhiteSpace(item.Key))
+                    if (item is not null && item.ParserVersion == CurrentParserVersion &&
+                        !string.IsNullOrWhiteSpace(item.Key))
                         _fileCursors[item.Key] = item.Cursor;
                 }
                 catch (JsonException) { }
@@ -409,7 +422,7 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         {
             var directory = Path.GetDirectoryName(_cursorStatePath);
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-            var line = JsonSerializer.Serialize(new CursorEnvelope(key, cursor)) + Environment.NewLine;
+            var line = JsonSerializer.Serialize(new CursorEnvelope(key, cursor, CurrentParserVersion)) + Environment.NewLine;
             await File.AppendAllTextAsync(_cursorStatePath, line, Encoding.UTF8, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -421,7 +434,7 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         if (string.IsNullOrWhiteSpace(_cursorStatePath)) return;
         var temporary = _cursorStatePath + ".tmp";
         var lines = _fileCursors.Select(pair =>
-            JsonSerializer.Serialize(new CursorEnvelope(pair.Key, pair.Value)));
+            JsonSerializer.Serialize(new CursorEnvelope(pair.Key, pair.Value, CurrentParserVersion)));
         File.WriteAllLines(temporary, lines, new UTF8Encoding(false));
         File.Move(temporary, _cursorStatePath, true);
     }
@@ -434,7 +447,9 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FileNotFoundException) { return 0; }
     }
 
-    private sealed record CursorEnvelope(string Key, FileCursor Cursor);
+    private sealed record CursorEnvelope(string Key, FileCursor Cursor, int ParserVersion = 0);
+
+    private sealed record ContextInference(string? Model, string? Tier);
 
     private sealed record FileCursor(
         long Length,

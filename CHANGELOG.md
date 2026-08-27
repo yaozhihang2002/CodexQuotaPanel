@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.2 — Token model attribution repair
+
+- 当 Token 事件先于 `turn_context` 或 `thread_settings_applied` 模型上下文出现时，使用同一日志中随后出现的首个明确模型回填前段记录，避免把已知会话计入 `Unknown`。
+- 实时追加日志在稍后获得模型证据时会有界重放该文件，依靠稳定事件指纹原位更新 SQLite 聚合，不会重复累计 Token。
+- 游标格式加入解析器版本；从旧版升级后由有限索引进程创建新游标并原子替换，自动修复最近额度周期内已经保存的 `Unknown` 记录。
+- `rate_limits.limit_name` 仍只作为额度桶结构处理，不作为模型归因或价格依据，防止把 Sol、Terra 等记录误归入 Spark。
+- 默认分支 README 同步到跨平台 v0.6.2 下载与功能说明。
+
 ## v0.6.1 — quota-paced feedback refinement
 
 - 火焰阶段改为按“实际消耗速度 ÷ 当前额度窗口可持续均速”判断：五小时和七天窗口在各自均速附近都会稳定显示温焰，避免绝对百分比速度造成误判。

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.1--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.2--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-12%2B%20Apple%20Silicon%20%7C%20Intel-111111">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
@@ -17,7 +17,14 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.6.1 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.6.2 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+
+## v0.6.2 Token 模型归因修复
+
+- Token 事件早于模型上下文写入日志时，会使用同一会话随后出现的首个明确模型进行安全回填，不再无故显示 `Unknown`。
+- 解析规则升级后自动进行一次有限历史重建，以原指纹原位更新最近周期的 SQLite 聚合记录，不删除原始日志、不重复累计 Token。
+- `rate_limits.limit_name` 只代表额度桶，可能与当前模型不同，因此不会被误当作模型或套用错误价格；确实没有模型证据的记录仍保持 `Unknown / Unpriced`。
+- GitHub 默认分支首页同步到当前跨平台版本，不再停留在 v0.5.x 介绍。
 
 ## v0.6.1 反馈动画优化
 
@@ -88,7 +95,7 @@ Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及
 - 五小时与一周额度双环，可选择窗口、内外环角色及自定义颜色。
 - 点击悬浮球展开详情，支持分窗口、逐分钟原始精度的完整 24 小时趋势；趋势同时显示半透明的均匀使用参考线，鼠标悬停可对照当时的实际额度与均匀规划额度。
 - 智能续航估算会计入空闲区间，并融合 90 分钟短期速度、6 小时长期速度与样本置信度；样本不足时保持原有显示，不读取对话内容。
-- 本周期每日图按 API 等价美元估算绘制，悬停仍可核对精确输入、缓存输入、缓存写入、输出与推理用量；点击可展开模型和 `Default` / `Fast` 速率明细。日志未写明速率时会在会话内安全回填；Auto-review 按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算，无法识别或缺少公开费率的模型则保留原始 Token 并标记为“未公开计价”，不会被当作免费或实际账单。
+- 本周期每日图按 API 等价美元估算绘制，悬停仍可核对精确输入、缓存输入、缓存写入、输出与推理用量；点击可展开模型和 `Default` / `Fast` 速率明细。日志较晚写入模型或速率时会在会话内安全回填；Auto-review 按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算，无法识别或缺少公开费率的模型则保留原始 Token 并标记为“未公开计价”，不会被当作免费或实际账单。
 - 每根非零每日柱会直接标出紧凑美元值；设置页同时列明费率日期、Token 组成、Fast、Auto-review 与未计价规则，并提供官方价格入口。
 - 续航预测同时展示风险结论、预计还可使用多久和当前/安全速度；最早到期重置卡使用独立高亮状态条展示剩余时长、到期时刻和可用数量。
 - Token 统计 2.0 同时兼容单次增量与累计记录，识别计数器重置，并对重复快照、归档副本和分叉日志的复制前缀去重；跨重启持久缓存与追加读取减少重复扫描，详情页会显示缓存命中、去重和归因覆盖率。
@@ -116,10 +123,10 @@ Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.1` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.2` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
 
-- Windows：`CodexQuotaPanel-0.6.1-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
-- macOS：`CodexQuotaPanel-0.6.1-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
+- Windows：`CodexQuotaPanel-0.6.2-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
+- macOS：`CodexQuotaPanel-0.6.2-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
 
 不再发布重复的 MSI、便携包、ZIP 或离线 Setup，减少选择成本。预发布版仍可能存在特定显卡、DPI 或系统环境下的兼容性问题。
 
@@ -147,13 +154,13 @@ dotnet run --project tests/CodexQuota.UI.Tests -c Release --no-build
 Windows 本地候选生成唯一的双语联网 Setup：
 
 ```powershell
-installer/Windows/Build-Release.ps1 -Version 0.6.1 -DotNetPath <dotnet.exe>
+installer/Windows/Build-Release.ps1 -Version 0.6.2 -DotNetPath <dotnet.exe>
 ```
 
 macOS 在 Apple runner 或 Mac 上生成唯一的通用 DMG：
 
 ```powershell
-installer/macOS/Build-Package.ps1 -Version 0.6.1 -Runtime osx-universal -DmgOnly
+installer/macOS/Build-Package.ps1 -Version 0.6.2 -Runtime osx-universal -DmgOnly
 ```
 
 ### 现有 Windows 正式分支

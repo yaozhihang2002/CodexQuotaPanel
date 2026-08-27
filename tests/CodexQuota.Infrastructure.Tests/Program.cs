@@ -99,12 +99,17 @@ try
     var streamingState = Path.Combine(streamingRoot, "usage-file-state.jsonl");
     var emptyState = Path.Combine(streamingRoot, "empty-state.jsonl");
     var corruptState = Path.Combine(streamingRoot, "corrupt-state.jsonl");
+    var legacyState = Path.Combine(streamingRoot, "legacy-state.jsonl");
     await File.WriteAllTextAsync(emptyState, string.Empty);
     await File.WriteAllTextAsync(corruptState, "{broken");
+    await File.WriteAllTextAsync(legacyState,
+        """{"Key":"legacy.jsonl","Cursor":{"Length":1,"LastWriteTicks":0,"Model":"unknown","Tier":"default","TierExplicit":false,"Previous":null}}""");
     Check.True(!JsonlUsageEventSource.HasUsableCursorState(emptyState),
         "empty cursor state is rejected");
     Check.True(!JsonlUsageEventSource.HasUsableCursorState(corruptState),
         "corrupt cursor state is rejected");
+    Check.True(!JsonlUsageEventSource.HasUsableCursorState(legacyState),
+        "older parser cursor triggers one-time reindex");
     var streamingSource = new JsonlUsageEventSource(streamingRoot, streamingState);
     var initialBatches = await CollectBatchesAsync(streamingSource, 600);
     Check.Equal(600, initialBatches.Sum(batch => batch.Count), "streaming initial event count");
@@ -149,6 +154,48 @@ try
                        .ScanExistingBatchesAsync(CancellationToken.None))
         finiteEvents.AddRange(batch);
     Check.Equal(3, finiteEvents.Count, "finite index worker scan completes");
+
+    var lateModelRoot = Path.Combine(root, "late-model");
+    var lateModelSessions = Path.Combine(lateModelRoot, "sessions");
+    Directory.CreateDirectory(lateModelSessions);
+    var lateModelTranscript = Path.Combine(lateModelSessions, "late-model.jsonl");
+    await File.WriteAllLinesAsync(lateModelTranscript,
+    [
+        TokenLineWithLimitName("2026-08-26T05:01:00Z", "model-a", 100, 80, 20,
+            "GPT-5.3-Codex-Spark"),
+        """{"timestamp":"2026-08-26T05:02:00Z","type":"turn_context","payload":{"model":"gpt-5.6-sol"}}""",
+        TokenLineWithLimitName("2026-08-26T05:03:00Z", "model-b", 150, 120, 30,
+            "GPT-5.3-Codex-Spark")
+    ]);
+    var lateModelEvents = new List<ObservedUsage>();
+    await foreach (var item in new JsonlUsageEventSource(lateModelRoot).ReadFileAsync(lateModelTranscript))
+        lateModelEvents.Add(item);
+    Check.Equal(2, lateModelEvents.Count, "late model event count");
+    Check.True(lateModelEvents.All(item => item.Model == "gpt-5.6-sol"),
+        "later explicit model backfills earlier token events");
+
+    var lateModelStreamingRoot = Path.Combine(root, "late-model-streaming");
+    var lateModelStreamingSessions = Path.Combine(lateModelStreamingRoot, "sessions");
+    Directory.CreateDirectory(lateModelStreamingSessions);
+    var lateModelStreamingTranscript = Path.Combine(lateModelStreamingSessions, "late-model-streaming.jsonl");
+    await File.WriteAllLinesAsync(lateModelStreamingTranscript,
+    [
+        TokenLine("2026-08-26T06:01:00Z", "stream-model-a", 100, 80, 20),
+        TokenLine("2026-08-26T06:02:00Z", "stream-model-b", 150, 120, 30)
+    ]);
+    var lateModelStreamingState = Path.Combine(lateModelStreamingRoot, "usage-file-state.jsonl");
+    var lateModelStreamingSource = new JsonlUsageEventSource(lateModelStreamingRoot, lateModelStreamingState);
+    var unknownModelBatches = await CollectBatchesAsync(lateModelStreamingSource, 2);
+    Check.True(unknownModelBatches.SelectMany(batch => batch).All(item => item.Model == "unknown"),
+        "model remains unknown until evidence appears");
+    await File.AppendAllTextAsync(lateModelStreamingTranscript, Environment.NewLine +
+        """{"timestamp":"2026-08-26T06:03:00Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}""" +
+        Environment.NewLine + TokenLine("2026-08-26T06:04:00Z", "stream-model-c", 200, 160, 40));
+    var replayedModelBatches = await CollectBatchesAsync(lateModelStreamingSource, 3);
+    var replayedModelEvents = replayedModelBatches.SelectMany(batch => batch).ToArray();
+    Check.Equal(3, replayedModelEvents.Length, "late model triggers bounded replay");
+    Check.True(replayedModelEvents.All(item => item.Model == "gpt-5.6-terra"),
+        "late model replay upgrades prior unknown events");
 
     var quotaSource = new JsonlQuotaSource(root);
     var quota = await quotaSource.ReadAsync(CancellationToken.None);
@@ -206,7 +253,7 @@ finally
     if (Directory.Exists(root)) Directory.Delete(root, true);
 }
 
-Console.WriteLine("Infrastructure checks passed: 43");
+Console.WriteLine("Infrastructure checks passed: 50");
 
 if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
 {
@@ -251,6 +298,30 @@ static string TokenLine(string timestamp, string turn, long total, long input, l
             }
         }
     });
+
+static string TokenLineWithLimitName(
+    string timestamp,
+    string turn,
+    long total,
+    long input,
+    long output,
+    string limitName)
+{
+    using var document = JsonDocument.Parse(TokenLine(timestamp, turn, total, input, output));
+    var root = document.RootElement;
+    return JsonSerializer.Serialize(new
+    {
+        timestamp = root.GetProperty("timestamp").GetString(),
+        type = "event_msg",
+        payload = new
+        {
+            type = "token_count",
+            turn_id = turn,
+            rate_limits = new { limit_name = limitName },
+            info = root.GetProperty("payload").GetProperty("info")
+        }
+    });
+}
 
 static async Task<IReadOnlyList<IReadOnlyList<ObservedUsage>>> CollectBatchesAsync(
     JsonlUsageEventSource source,

@@ -17,10 +17,21 @@ internal static class UsageIndexWorker
             Directory.CreateDirectory(dataRoot);
             var history = new SqliteUsageHistoryStore(Path.Combine(dataRoot, "history-vnext.db"));
             await history.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            var source = new JsonlUsageEventSource(
-                cursorStatePath: Path.Combine(dataRoot, "usage-file-state.jsonl"));
-            await foreach (var batch in source.ScanExistingBatchesAsync(cancellationToken).ConfigureAwait(false))
-                await history.AppendUsageBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            var cursorState = Path.Combine(dataRoot, "usage-file-state.jsonl");
+            var rebuiltCursor = cursorState + $".rebuild-{Environment.ProcessId}.tmp";
+            try
+            {
+                var source = new JsonlUsageEventSource(cursorStatePath: rebuiltCursor);
+                await foreach (var batch in source.ScanExistingBatchesAsync(cancellationToken).ConfigureAwait(false))
+                    await history.AppendUsageBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+                if (!JsonlUsageEventSource.HasUsableCursorState(rebuiltCursor)) return 1;
+                File.Move(rebuiltCursor, cursorState, true);
+            }
+            finally
+            {
+                try { if (File.Exists(rebuiltCursor)) File.Delete(rebuiltCursor); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
             return 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

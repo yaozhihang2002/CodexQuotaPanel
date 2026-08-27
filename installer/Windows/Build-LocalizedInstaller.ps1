@@ -3,7 +3,7 @@
     [string]$DevenvPath,
     [string]$Configuration = 'Release',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.6.1'
+    [string]$Version = '0.6.2'
 )
 
 Set-StrictMode -Version Latest
