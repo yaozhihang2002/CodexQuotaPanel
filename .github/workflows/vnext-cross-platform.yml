@@ -24,6 +24,7 @@ permissions:
 jobs:
   build-and-check:
     name: ${{ matrix.os }}
+    if: github.event_name != 'workflow_dispatch' || !inputs.package_macos
     strategy:
       fail-fast: false
       matrix:
