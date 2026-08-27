@@ -95,11 +95,11 @@ jobs:
       - name: Build one universal app bundle and DMG
         shell: pwsh
         run: |
-          ./installer/macOS/Build-Package.ps1 -Version 0.6.0 -Runtime osx-universal -SkipChecks -DmgOnly
+          ./installer/macOS/Build-Package.ps1 -Version 0.6.1 -Runtime osx-universal -SkipChecks -DmgOnly
       - name: Upload macOS package
         uses: actions/upload-artifact@v7
         with:
-          name: CodexQuotaPanel-0.6.0-macOS-DMG
-          path: artifacts/release-v0.6.0-macos/CodexQuotaPanel-0.6.0-macOS.dmg
+          name: CodexQuotaPanel-0.6.1-macOS-DMG
+          path: artifacts/release-v0.6.1-macos/CodexQuotaPanel-0.6.1-macOS.dmg
           if-no-files-found: error
           retention-days: 1

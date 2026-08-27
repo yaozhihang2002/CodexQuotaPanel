@@ -236,7 +236,7 @@ public sealed partial class SettingsWindow : Window
     private string T(string zh, string en) => _draft.Language == AppLanguage.SimplifiedChinese ? zh : en;
 
     private static string AppVersion => Assembly.GetEntryAssembly()?
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.6.0";
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.6.1";
 
     private sealed record WindowChoice(int Minutes, string Label)
     {

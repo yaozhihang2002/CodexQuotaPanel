@@ -14,8 +14,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("CodexQuotaPanel")]
 [assembly: AssemblyDescription("Bilingual setup launcher for CodexQuotaPanel")]
 [assembly: AssemblyCompany("CodexQuotaPanel")]
-[assembly: AssemblyVersion("0.6.0.0")]
-[assembly: AssemblyFileVersion("0.6.0.0")]
+[assembly: AssemblyVersion("0.6.1.0")]
+[assembly: AssemblyFileVersion("0.6.1.0")]
 
 namespace CodexQuotaPanelSetup
 {
@@ -109,8 +109,8 @@ namespace CodexQuotaPanelSetup
             {
                 AutoSize = true,
                 Text = RequiresDotNetRuntime
-                    ? "CODEX · V0.6.0 WEB SETUP"
-                    : "CODEX · V0.6.0 OFFLINE SETUP",
+                    ? "CODEX · V0.6.1 WEB SETUP"
+                    : "CODEX · V0.6.1 OFFLINE SETUP",
                 ForeColor = Accent,
                 Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
                 Location = new Point(32, 24)
@@ -319,7 +319,7 @@ namespace CodexQuotaPanelSetup
             using (WebClient client = new WebClient())
             {
                 ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
-                client.Headers.Add(HttpRequestHeader.UserAgent, "CodexQuotaPanel-Setup/0.6.0");
+                client.Headers.Add(HttpRequestHeader.UserAgent, "CodexQuotaPanel-Setup/0.6.1");
                 client.DownloadProgressChanged += delegate(object sender, DownloadProgressChangedEventArgs args)
                 {
                     _status.Text = english
