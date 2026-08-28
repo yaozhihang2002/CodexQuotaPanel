@@ -16,9 +16,12 @@ public static class UsageSummaryCalculator
             {
                 var slices = group
                     .GroupBy(item => (item.Model, item.ServiceTier))
-                    .OrderBy(slice => slice.Key.Model, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(slice => slice.Key.ServiceTier, StringComparer.OrdinalIgnoreCase)
                     .Select(slice => BuildSlice(slice.Key.Model, slice.Key.ServiceTier, slice))
+                    .OrderBy(slice => slice.UnpricedEventCount > 0)
+                    .ThenByDescending(slice => slice.EstimatedApiUsd)
+                    .ThenByDescending(slice => slice.Usage.TotalTokens)
+                    .ThenBy(slice => slice.Model, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(slice => slice.ServiceTier, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
                 return new DailyUsageSummary(
                     group.Key,

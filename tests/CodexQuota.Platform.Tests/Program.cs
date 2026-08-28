@@ -4,12 +4,14 @@ using CodexQuota.Platform.Windows;
 using System.Runtime.InteropServices;
 
 IPlatformShell shell = OperatingSystem.IsWindows() ? new WindowsPlatformShell() : new MacOSPlatformShell();
+shell.SetWindowOpacity(0, .5);
 Check.True(shell.SupportsClickThrough, "click-through capability");
 Check.True(shell.SupportsMenuBarOrTray, "tray capability");
 Check.True(shell.SupportsGlobalShortcut, "global shortcut capability");
 shell.SetClickThrough(0, true);
 shell.SetWindowTopMost(0, true);
 shell.SetWindowDarkMode(0, true);
+shell.SetWindowTaskbarVisibility(0, false);
 _ = shell.GetStartWithSystem();
 _ = shell.GetInitialLanguage();
 if (OperatingSystem.IsWindows())
@@ -23,8 +25,13 @@ if (OperatingSystem.IsWindows())
     shell.SetClickThrough(nativeWindow.Handle, false);
     Check.True(!nativeWindow.HasExtendedStyle(NativeWindow.WsExTransparent),
         "Windows click-through style disable");
+    shell.SetWindowTaskbarVisibility(nativeWindow.Handle, false);
+    Check.True(nativeWindow.HasExtendedStyle(NativeWindow.WsExToolWindow),
+        "Windows tool-window style enable");
+    Check.True(!nativeWindow.HasExtendedStyle(NativeWindow.WsExAppWindow),
+        "Windows app-window style disable");
 }
-var checkCount = OperatingSystem.IsWindows() ? 6 : 4;
+var checkCount = OperatingSystem.IsWindows() ? 8 : 4;
 if (string.Equals(Environment.GetEnvironmentVariable("CODEXQUOTA_PLATFORM_MUTATION_TESTS"), "1",
         StringComparison.Ordinal))
 {
@@ -49,6 +56,8 @@ Console.WriteLine($"Platform checks passed: {shell.PlatformName} ({checkCount})"
 sealed class NativeWindow : IDisposable
 {
     public const long WsExTransparent = 0x00000020L;
+    public const long WsExToolWindow = 0x00000080L;
+    public const long WsExAppWindow = 0x00040000L;
     private const int GwlExStyle = -20;
     private const uint WsPopup = 0x80000000;
 

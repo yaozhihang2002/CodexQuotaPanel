@@ -60,7 +60,13 @@ public sealed class UsageDetailsWindow : Window
                 Tokens = group.Sum(item => item.Usage.TotalTokens),
                 Cost = group.Sum(item => item.EstimatedApiUsd),
                 Unpriced = group.Sum(item => item.UnpricedEventCount)
-            }).OrderByDescending(item => item.Tokens).ToArray();
+            })
+            .OrderBy(item => item.Unpriced > 0)
+            .ThenByDescending(item => item.Cost)
+            .ThenByDescending(item => item.Tokens)
+            .ThenBy(item => item.Model, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.ServiceTier, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var priced = days.Sum(day => day.EstimatedApiUsd);
         _summary.Children.Add(UiElements.Text($"{T("本周期 API 估算", "Cycle API estimate")}   ${priced:0.00}", 21,
             FontWeight.Bold, _palette.Mint));

@@ -64,6 +64,17 @@ public sealed class MacOSPlatformShell : IPlatformShell
 
     public void SetWindowDarkMode(nint nativeWindowHandle, bool enabled) { }
 
+    public void SetWindowSystemTransitions(nint nativeWindowHandle, bool enabled) { }
+
+    public void SetWindowTaskbarVisibility(nint nativeWindowHandle, bool visible) { }
+
+    public void SetWindowOpacity(nint nativeWindowHandle, double opacity)
+    {
+        var window = ResolveNativeWindow(nativeWindowHandle, "setAlphaValue:");
+        if (window == 0) return;
+        objc_msgSend_double(window, sel_registerName("setAlphaValue:"), Math.Clamp(opacity, 0d, 1d));
+    }
+
     public IGlobalShortcutRegistration? RegisterRecoveryShortcut(Action callback) => new RecoveryHotkey(callback);
 
     public void PlayAlertSound() => Process.Start("/usr/bin/afplay", "/System/Library/Sounds/Glass.aiff");
@@ -135,6 +146,9 @@ public sealed class MacOSPlatformShell : IPlatformShell
 
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
     private static extern void objc_msgSend_nint(nint receiver, nint selector, nint value);
+
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    private static extern void objc_msgSend_double(nint receiver, nint selector, double value);
 
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
     [return: MarshalAs(UnmanagedType.I1)]

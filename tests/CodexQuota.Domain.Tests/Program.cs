@@ -45,6 +45,18 @@ Check.Equal(220_000L, daily[0].Usage.TotalTokens, "daily token total");
 Check.Equal(0, daily[0].UnpricedEventCount, "daily auto review priced count");
 Check.Equal(0.766m, daily[0].EstimatedApiUsd, "daily API-equivalent total includes auto review");
 Check.Equal(2, daily[0].Slices.Count, "model tier slices");
+Check.Equal("gpt-5.6-sol", daily[0].Slices[0].Model,
+    "daily slices sort by estimated USD descending instead of raw tokens");
+
+var pricedBeforeUnpriced = UsageSummaryCalculator.SummarizeByDay(
+[
+    new ObservedUsage(start, "unlisted-model", "default",
+        new TokenUsageBreakdown(9_000_000, 8_000_000, 0, 1_000_000, 0), "unpriced", true),
+    new ObservedUsage(start, "gpt-5.6-luna", "default",
+        new TokenUsageBreakdown(1_000, 700, 200, 100, 0), "priced", true)
+], TimeZoneInfo.Utc);
+Check.Equal("gpt-5.6-luna", pricedBeforeUnpriced[0].Slices[0].Model,
+    "priced slices remain ahead of unpriced slices");
 
 var history = Enumerable.Range(0, 13)
     .Select(index => new QuotaHistoryPoint(

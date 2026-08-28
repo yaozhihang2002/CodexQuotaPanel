@@ -29,16 +29,22 @@ public sealed class DashboardWindow : Window
     private readonly TextBlock _credit;
     private readonly TextBlock _creditMeta;
     private readonly TextBlock _tokenTotal;
+    private readonly Control _transitionSurface;
     private readonly DispatcherTimer _placementTimer;
     private bool _allowClose;
     private bool _trackPlacement;
     private bool _placementDirty;
+    private bool _presented;
 
     public event EventHandler? CollapseRequested;
     public event EventHandler? RefreshRequested;
     public event EventHandler? SettingsRequested;
     public event EventHandler? UsageDetailsRequested;
     public event Action<PixelPoint, string>? PlacementCommitted;
+    public event Action<double>? TransitionOpacityChanged;
+
+    public bool UseClientOpacityAnimation { get; set; } = true;
+    public bool IsPresented => UseClientOpacityAnimation ? IsVisible : _presented;
 
     internal int WindowCardCount => _windowCards.Children.Count;
     internal int DailyChartDayCount => _dailyUsage.RenderedDayCount;
@@ -76,10 +82,12 @@ public sealed class DashboardWindow : Window
         MaxWidth = 580;
         Background = _palette.Canvas;
         CanResize = true;
+        // This is a tray utility surface. Set the Avalonia hint before the
+        // native HWND is created; changing it during first-show prewarm is too
+        // late for Explorer on some Windows configurations.
+        ShowInTaskbar = false;
         Topmost = _settings.AlwaysOnTop;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        RenderTransformOrigin = RelativePoint.Center;
-        RenderTransform = new ScaleTransform(1, 1);
 
         _summaryOrb = new OrbControl
         {
@@ -130,7 +138,10 @@ public sealed class DashboardWindow : Window
         _tokenTotal = UiElements.Text(T("本周期 API 估算：—", "Cycle API estimate: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
         _placementTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(320) };
         _placementTimer.Tick += (_, _) => FlushPlacement();
-        Content = BuildContent();
+        _transitionSurface = BuildContent();
+        _transitionSurface.RenderTransformOrigin = RelativePoint.Center;
+        _transitionSurface.RenderTransform = new ScaleTransform(1, 1);
+        Content = _transitionSurface;
         Closing += (_, e) => { if (!_allowClose) { e.Cancel = true; CollapseRequested?.Invoke(this, EventArgs.Empty); } };
         PositionChanged += (_, _) =>
         {
@@ -294,16 +305,62 @@ public sealed class DashboardWindow : Window
         return true;
     }
 
+    public async Task PrepareNativeSurfaceAsync()
+    {
+        _trackPlacement = false;
+        // Create and paint the first native surface offscreen. A brand-new HWND
+        // can otherwise expose its title bar and an unpainted white client area
+        // before either native alpha or Avalonia composition is ready. Keep the
+        // surface alive afterwards; Windows clears a hidden HWND again on Show.
+        var needsNativePrerender = !UseClientOpacityAnimation &&
+            (TryGetPlatformHandle()?.Handle ?? IntPtr.Zero) == IntPtr.Zero;
+        if (!needsNativePrerender) return;
+        var intendedPosition = Position;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Position = new PixelPoint(30000, 30000);
+        Show();
+        await Task.Delay(90);
+        SetTransitionOpacity(0);
+        // A tray utility does not need a second taskbar button. Avoid toggling
+        // the native style after prewarm because that can recreate or repaint
+        // the non-client surface.
+        Position = intendedPosition;
+        await Task.Delay(34);
+    }
+
     public async Task AnimateInAsync()
     {
         _trackPlacement = false;
-        if (_settings.ReducedMotion) { Opacity = 1; Show(); Activate(); _trackPlacement = true; return; }
-        Opacity = 0;
-        if (RenderTransform is ScaleTransform start) start.ScaleX = .94;
-        if (RenderTransform is ScaleTransform startY) startY.ScaleY = .88;
-        Show();
+        await PrepareNativeSurfaceAsync();
+
+        SetTransitionOpacity(0);
+        if (UseClientOpacityAnimation) Opacity = 0;
+        if (_transitionSurface.RenderTransform is ScaleTransform start) start.ScaleX = .98;
+        if (_transitionSurface.RenderTransform is ScaleTransform startY) startY.ScaleY = .975;
+        if (!IsVisible) Show();
+        if (!UseClientOpacityAnimation) Opacity = 1;
+        // The native handle is guaranteed to exist after Show. Repeat the
+        // zero-alpha assignment before activation so the whole HWND begins at 0.
+        SetTransitionOpacity(0);
         Activate();
-        await AnimateAsync(0, 1, .94, 1, .88, 1, 125);
+        if (_settings.ReducedMotion)
+        {
+            SetTransitionOpacity(1);
+            if (_transitionSurface.RenderTransform is ScaleTransform reduced)
+            {
+                reduced.ScaleX = 1;
+                reduced.ScaleY = 1;
+            }
+            _presented = true;
+            _trackPlacement = true;
+            return;
+        }
+        // The surface is already fully painted while transparent, so a short
+        // native fade blends one complete frame into the desktop instead of
+        // exposing a white/unpainted client frame. Keep the scale subtle: the
+        // transition should read as a continuous handoff, not a zoom.
+        await AnimateAsync(.04, 1, .98, 1, .975, 1, 155);
+        _presented = true;
         _trackPlacement = true;
     }
 
@@ -311,9 +368,19 @@ public sealed class DashboardWindow : Window
     {
         FlushPlacement();
         _trackPlacement = false;
-        if (_settings.ReducedMotion) { Hide(); return; }
-        await AnimateAsync(1, 0, 1, .94, 1, .88, 105);
-        Hide();
+        if (_settings.ReducedMotion)
+        {
+            SetTransitionOpacity(0);
+            _presented = false;
+            if (UseClientOpacityAnimation) Hide();
+            else Position = new PixelPoint(30000, 30000);
+            return;
+        }
+        await AnimateAsync(1, .04, 1, .98, 1, .975, 125);
+        SetTransitionOpacity(0);
+        _presented = false;
+        if (UseClientOpacityAnimation) Hide();
+        else Position = new PixelPoint(30000, 30000);
     }
 
     public void ClosePermanently()
@@ -571,19 +638,27 @@ public sealed class DashboardWindow : Window
 
     private async Task AnimateAsync(double fromOpacity, double toOpacity, double sx0, double sx1, double sy0, double sy1, int ms)
     {
-        const int frames = 10;
+        var frames = Math.Clamp(ms / 12, 10, 16);
+        var animateOpacity = Math.Abs(toOpacity - fromOpacity) > .0001;
+        if (!animateOpacity) SetTransitionOpacity(toOpacity);
         for (var i = 0; i <= frames; i++)
         {
             var t = i / (double)frames;
             var eased = 1 - Math.Pow(1 - t, 3);
-            Opacity = fromOpacity + (toOpacity - fromOpacity) * eased;
-            if (RenderTransform is ScaleTransform transform)
+            if (animateOpacity) SetTransitionOpacity(fromOpacity + (toOpacity - fromOpacity) * eased);
+            if (_transitionSurface.RenderTransform is ScaleTransform transform)
             {
                 transform.ScaleX = sx0 + (sx1 - sx0) * eased;
                 transform.ScaleY = sy0 + (sy1 - sy0) * eased;
             }
             await Task.Delay(Math.Max(1, ms / frames));
         }
+    }
+
+    private void SetTransitionOpacity(double opacity)
+    {
+        Opacity = UseClientOpacityAnimation ? opacity : 1d;
+        TransitionOpacityChanged?.Invoke(opacity);
     }
 
     private string T(string zh, string en) => _settings.Language == AppLanguage.SimplifiedChinese ? zh : en;

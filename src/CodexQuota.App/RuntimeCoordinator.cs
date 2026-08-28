@@ -43,6 +43,9 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private Task? _topmostLoop;
     private string? _cycleAlertDismissal;
     private bool _temporaryMoveMode;
+    private bool _dashboardOpening;
+    private bool _dashboardHiding;
+    private PixelPoint? _orbPositionBeforeDashboard;
 
     public RuntimeCoordinator(IClassicDesktopStyleApplicationLifetime desktop)
     {
@@ -77,7 +80,21 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         CreateOrb();
         CreateTray();
         ConfigureRecoveryShortcut();
+        var startupView = _settings.StartupView == StartupViewMode.RestorePrevious
+            ? _settings.LastView
+            : _settings.StartupView;
         ShowStartupView();
+        if (startupView != StartupViewMode.Details)
+        {
+            // Pre-create the persistent dashboard surface while the startup orb
+            // (or tray-only state) is idle. The first user click then performs
+            // only compositor work and never waits for an HWND/client repaint.
+            EnsureDashboard();
+            if (_orb is not null)
+                _dashboard!.PlaceNear(_orb.Position, _settings.OrbSize);
+            _dashboard!.ApplyPresentation(_presentation);
+            await _dashboard.PrepareNativeSurfaceAsync().ConfigureAwait(true);
+        }
         _refreshLoop = RefreshLoopAsync(_lifetime.Token);
         _usageLoop = RunUsagePipelineAsync(_lifetime.Token);
         _topmostLoop = TopmostLoopAsync(_lifetime.Token);
@@ -89,7 +106,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (_dashboard?.IsVisible == true) { _dashboard.Activate(); return; }
+            if (_dashboard?.IsPresented == true) { _dashboard.Activate(); return; }
             if (_settingsWindow?.IsVisible == true) { _settingsWindow.Activate(); return; }
             _ = OpenDashboardAsync();
         });
@@ -102,7 +119,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _orb = new OrbWindow();
         _orb.ApplySettings(_settings);
         _orb.ApplyPresentation(_presentation);
-        _orb.RestorePosition(_settings.OrbX, _settings.OrbY);
+        _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
         _orb.OpenDetailsRequested += async (_, _) => await OpenDashboardAsync();
         _orb.MoveCompleted += async (_, _) =>
         {
@@ -172,60 +189,133 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 break;
             default:
                 _orb!.Show();
-                _orb.RestorePosition(_settings.OrbX, _settings.OrbY);
+                _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
                 break;
         }
     }
 
     private async Task OpenDashboardAsync()
     {
-        if (_dashboard?.IsVisible == true) { _dashboard.Activate(); return; }
-        EnsureDashboard();
-        if (!_dashboard!.RestorePosition(_settings.DashboardX, _settings.DashboardY, _settings.DashboardDisplayId) &&
-            _orb is not null)
-            _dashboard.PlaceNear(_orb.Position, _settings.OrbSize);
-        if (_orb?.IsVisible == true) await _orb.AnimateOutAsync();
-        _dashboard!.ApplyPresentation(_presentation);
-        await _dashboard.AnimateInAsync();
-        _settings = _settings with { LastView = StartupViewMode.Details };
-        await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
+        if (_dashboard?.IsPresented == true) { _dashboard.Activate(); return; }
+        if (_dashboardOpening || _dashboardHiding) return;
+        _dashboardOpening = true;
+        try
+        {
+            _orbPositionBeforeDashboard = _orb?.IsVisible == true ? _orb.Position : null;
+            EnsureDashboard();
+            var dashboard = _dashboard!;
+            if (_orb is not null)
+                dashboard.PlaceNear(_orb.Position, _settings.OrbSize);
+            else
+                dashboard.RestorePosition(_settings.DashboardX, _settings.DashboardY, _settings.DashboardDisplayId);
+            dashboard.ApplyPresentation(_presentation);
+            // Warm the persistent native surface while the orb is still fully
+            // visible, so first use has no blank gap between the two surfaces.
+            await dashboard.PrepareNativeSurfaceAsync().ConfigureAwait(true);
+            // Activate the already transparent, fully painted HWND before the
+            // handoff. Activation can cost one compositor cycle on Windows;
+            // paying it while the orb is still opaque prevents a blank frame.
+            dashboard.Activate();
+            await Task.Delay(16).ConfigureAwait(true);
+
+            if (_orb?.IsVisible == true && !_settings.ReducedMotion)
+            {
+                // Cross-fade only in the low-opacity tail. A fully serial
+                // handoff leaves a perceptible empty beat; starting the panel
+                // once the orb is already faint keeps motion continuous while
+                // avoiding a visible duplicate ring.
+                var orbAnimation = _orb.AnimateOutAsync();
+                await Task.Delay(48).ConfigureAwait(true);
+                var panelAnimation = dashboard.AnimateInAsync();
+                await Task.WhenAll(orbAnimation, panelAnimation).ConfigureAwait(true);
+            }
+            else
+            {
+                if (_orb?.IsVisible == true) await _orb.AnimateOutAsync();
+                await dashboard.AnimateInAsync();
+            }
+
+            ApplyNativeOrbSettings();
+            _settings = _settings with { LastView = StartupViewMode.Details };
+            await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _dashboardOpening = false;
+        }
     }
 
     private void EnsureDashboard()
     {
         if (_dashboard is not null) return;
         _dashboard = new DashboardWindow(_settings, IsSystemDark());
+        if (OperatingSystem.IsWindows())
+        {
+            _dashboard.UseClientOpacityAnimation = false;
+            _dashboard.TransitionOpacityChanged += opacity =>
+            {
+                if (_dashboard.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
+                {
+                    if (opacity <= .001) ApplyNativeWindowTheme(_dashboard);
+                    _platform.SetWindowOpacity(handle, opacity);
+                    if (opacity >= .999) ApplyNativeWindowTheme(_dashboard);
+                }
+            };
+        }
         PrepareNativeWindowTheme(_dashboard);
         _dashboard.CollapseRequested += async (_, _) => await CollapseDashboardAsync();
         _dashboard.RefreshRequested += async (_, _) => await RefreshAsync();
         _dashboard.SettingsRequested += (_, _) => ShowSettings();
         _dashboard.UsageDetailsRequested += (_, _) => ShowUsageDetails();
-        _dashboard.PlacementCommitted += (position, displayId) =>
-            _ = SaveDashboardPlacementAsync(position, displayId);
-    }
-
-    private async Task SaveDashboardPlacementAsync(PixelPoint position, string displayId)
-    {
-        _settings = _settings with
-        {
-            DashboardX = position.X,
-            DashboardY = position.Y,
-            DashboardDisplayId = displayId
-        };
-        await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
     }
 
     private async Task CollapseDashboardAsync()
     {
-        if (_dashboard?.IsVisible == true) await _dashboard.AnimateOutAsync();
-        if (_orb is not null)
+        if (_dashboardHiding || _dashboardOpening) return;
+        _dashboardHiding = true;
+        try
         {
-            _orb.RestorePosition(_settings.OrbX, _settings.OrbY);
-            await _orb.AnimateInAsync();
-            ApplyNativeOrbSettings();
+            var orbAnimated = false;
+            if (_dashboard?.IsPresented == true && _orb is not null && !_settings.ReducedMotion)
+            {
+                RestoreOrbPosition();
+                var panelAnimation = _dashboard.AnimateOutAsync();
+                // Mirror the open transition: begin restoring the orb only
+                // after the panel has faded into its low-opacity tail.
+                await Task.Delay(70).ConfigureAwait(true);
+                var orbAnimation = _orb.AnimateInAsync();
+                await Task.WhenAll(panelAnimation, orbAnimation).ConfigureAwait(true);
+                ApplyNativeOrbSettings();
+                orbAnimated = true;
+            }
+            else if (_dashboard?.IsPresented == true)
+            {
+                await _dashboard.AnimateOutAsync();
+            }
+
+            if (_orb is not null && !orbAnimated)
+            {
+                RestoreOrbPosition();
+                await _orb.AnimateInAsync();
+                ApplyNativeOrbSettings();
+            }
+            _orbPositionBeforeDashboard = null;
+            _settings = _settings with { LastView = StartupViewMode.Orb };
+            await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
         }
-        _settings = _settings with { LastView = StartupViewMode.Orb };
-        await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
+        finally
+        {
+            _dashboardHiding = false;
+        }
+    }
+
+    private void RestoreOrbPosition()
+    {
+        if (_orb is null) return;
+        if (_orbPositionBeforeDashboard is { } position)
+            _orb.RestorePosition(position.X, position.Y);
+        else
+            _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
     }
 
     private void ShowUsageDetails()
@@ -251,7 +341,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_orb is null) return;
         if (_orb.IsVisible) _orb.Hide();
-        else { _orb.Show(); _orb.RestorePosition(_settings.OrbX, _settings.OrbY); ApplyNativeOrbSettings(); }
+        else { _orb.Show(); _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId); ApplyNativeOrbSettings(); }
     }
 
     private void BeginOrbMoveMode()
@@ -268,7 +358,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _temporaryMoveMode = true;
         _orb.SetMoveMode(true);
         if (!_orb.IsVisible) _orb.Show();
-        _orb.RestorePosition(_settings.OrbX, _settings.OrbY);
+        _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
         if (_orb.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
         {
             _platform.SetClickThrough(handle, false);
@@ -297,7 +387,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             _platform.SetClickThrough(orbHandle, _settings.ClickThrough && !_temporaryMoveMode);
         }
 
-        if (_dashboard?.IsVisible == true &&
+        if (!_dashboardHiding && _dashboard?.IsPresented == true &&
             _dashboard.TryGetPlatformHandle()?.Handle is { } dashboardHandle && dashboardHandle != 0)
         {
             _dashboard.Topmost = _settings.AlwaysOnTop;
@@ -311,6 +401,11 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         settings ??= _settings;
         var dark = settings.Theme == AppTheme.Dark || settings.Theme == AppTheme.System && IsSystemDark();
         _platform.SetWindowDarkMode(handle, dark);
+        if (ReferenceEquals(window, _dashboard))
+        {
+            _platform.SetWindowTaskbarVisibility(handle, false);
+            _platform.SetWindowSystemTransitions(handle, false);
+        }
     }
 
     private void PrepareNativeWindowTheme(Window window, AppSettings? settings = null)

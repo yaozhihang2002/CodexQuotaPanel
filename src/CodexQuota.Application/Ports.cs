@@ -40,6 +40,9 @@ public interface IPlatformShell
     void SetClickThrough(nint nativeWindowHandle, bool enabled);
     void SetWindowTopMost(nint nativeWindowHandle, bool enabled);
     void SetWindowDarkMode(nint nativeWindowHandle, bool enabled);
+    void SetWindowSystemTransitions(nint nativeWindowHandle, bool enabled);
+    void SetWindowTaskbarVisibility(nint nativeWindowHandle, bool visible);
+    void SetWindowOpacity(nint nativeWindowHandle, double opacity);
     IGlobalShortcutRegistration? RegisterRecoveryShortcut(Action callback);
     void PlayAlertSound();
     void OpenUri(Uri uri);

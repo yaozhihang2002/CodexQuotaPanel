@@ -336,9 +336,18 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     lifecycleOrb.Show();
     var positionBeforeTransition = lifecycleOrb.Position;
     PumpAnimation(lifecycleOrb.AnimateOutAsync(), "orb animate out");
+    Check.True(!lifecycleOrb.IsVisible, "orb is fully hidden before its replacement surface appears");
     PumpAnimation(lifecycleOrb.AnimateInAsync(), "orb animate in");
     Check.True(lifecycleOrb.Position == positionBeforeTransition, "orb transition preserves position");
     Check.True(lifecycleOrb.Opacity > .99, "orb transition restores opacity");
+    if (lifecycleOrb.Screens.Primary is { } orbScreen)
+    {
+        var target = new PixelPoint(orbScreen.WorkingArea.X + 34, orbScreen.WorkingArea.Y + 29);
+        lifecycleOrb.RestorePosition(target.X, target.Y,
+            $"{orbScreen.Bounds.X},{orbScreen.Bounds.Y},{orbScreen.Bounds.Width},{orbScreen.Bounds.Height}");
+        Check.True(lifecycleOrb.Position == target,
+            "orb restores the exact saved position on the matching display");
+    }
     lifecycleOrb.Close();
 
     var clickableOrb = new OrbWindow();
@@ -347,6 +356,8 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = false, PositionLocked = false });
     Check.True(clickableOrb.HasInteractiveCursor,
         "orb shows an interactive cursor when click-through is disabled");
+    Check.True(clickableOrb.UsesClickCursor && !clickableOrb.UsesMoveCursor,
+        "clickable orb uses the hand cursor outside explicit move mode");
     clickableOrb.Show();
     clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
     clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
@@ -360,6 +371,8 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     clickableOrb.ApplySettings(new AppSettings { OrbSize = 96, ClickThrough = false, PositionLocked = true });
     Check.True(clickableOrb.HasInteractiveCursor,
         "locked clickable orb still shows an interactive cursor");
+    Check.True(clickableOrb.UsesClickCursor,
+        "locked clickable orb keeps the hand cursor");
     clickableOrb.MouseDown(new Point(48, 48), MouseButton.Left);
     clickableOrb.MouseUp(new Point(48, 48), MouseButton.Left);
     Check.True(openRequests == 2, "position lock keeps click-to-open available");
@@ -386,7 +399,11 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         "adaptive orb detects 5H-only and connection transition");
     adaptiveOrb.SetMoveMode(true);
     Check.True(adaptiveOrb.IsMoveMode, "orb temporary move mode overrides interaction block");
+    Check.True(adaptiveOrb.UsesMoveCursor && !adaptiveOrb.UsesClickCursor,
+        "explicit move mode uses the four-way move cursor");
     adaptiveOrb.SetMoveMode(false);
+    Check.True(adaptiveOrb.UsesClickCursor && !adaptiveOrb.UsesMoveCursor,
+        "leaving move mode restores the hand cursor");
 
     var adaptiveDashboard = new DashboardWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
     adaptiveDashboard.ApplyPresentation(presentation with
@@ -443,7 +460,25 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         adaptiveDashboard.CommitPlacementForTest();
         Check.True(committedPosition == moved, "dashboard commits a manually adjusted position");
     }
+    PumpAnimation(adaptiveDashboard.AnimateOutAsync(), "dashboard animate out");
+    Check.True(!adaptiveDashboard.IsVisible && adaptiveDashboard.Opacity <= .001,
+        "dashboard retires its transparent final frame before the orb is shown");
+    PumpAnimation(adaptiveDashboard.AnimateInAsync(), "dashboard animate in");
     adaptiveDashboard.ClosePermanently();
+
+    var persistentDashboard = new DashboardWindow(new AppSettings
+    {
+        Theme = AppTheme.Dark,
+        Language = AppLanguage.SimplifiedChinese
+    }) { UseClientOpacityAnimation = false };
+    PumpAnimation(persistentDashboard.PrepareNativeSurfaceAsync(), "dashboard native surface prewarm");
+    PumpAnimation(persistentDashboard.AnimateInAsync(), "dashboard persistent animate in");
+    Check.True(persistentDashboard.IsVisible && persistentDashboard.IsPresented,
+        "persistent dashboard presents its prewarmed native surface");
+    PumpAnimation(persistentDashboard.AnimateOutAsync(), "dashboard persistent animate out");
+    Check.True(persistentDashboard.IsVisible && !persistentDashboard.IsPresented,
+        "persistent dashboard parks instead of hiding its native surface");
+    persistentDashboard.ClosePermanently();
 
     var usageCycle = new UsageDetailsWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
     usageCycle.ApplyUsage(usage, now.Date.AddDays(-6), now.Date.AddDays(1));
@@ -465,6 +500,26 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     usageCycle.Close();
+
+    var costSortedUsage = new UsageDetailsWindow(new AppSettings
+        { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
+    costSortedUsage.ApplyUsage(
+    [
+        new ObservedUsage(now, "codex-auto-review", "default",
+            new TokenUsageBreakdown(2_000_000, 2_000_000, 0, 0, 0), "auto", true),
+        new ObservedUsage(now, "gpt-5.6-sol", "default",
+            new TokenUsageBreakdown(1_000_000, 0, 0, 1_000_000, 0), "sol", true)
+    ], now.Date, now.Date.AddDays(1));
+    costSortedUsage.Show();
+    costSortedUsage.UpdateLayout();
+    Dispatcher.UIThread.RunJobs();
+    var usageLabels = costSortedUsage.GetVisualDescendants().OfType<TextBlock>()
+        .Select(text => text.Text ?? string.Empty).ToArray();
+    var solIndex = Array.IndexOf(usageLabels, "GPT-5.6 Sol · Default");
+    var autoReviewIndex = Array.IndexOf(usageLabels, "Auto-review · Default");
+    Check.True(solIndex >= 0 && autoReviewIndex >= 0 && solIndex < autoReviewIndex,
+        "usage details sort higher estimated USD above higher raw-token rows");
+    costSortedUsage.Close();
 
     var compactDualRow = new StackPanel
     {

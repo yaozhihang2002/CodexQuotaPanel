@@ -11,6 +11,8 @@ public sealed class WindowsPlatformShell : IPlatformShell
 {
     private const int GwlExStyle = -20;
     private const long WsExTransparent = 0x00000020L;
+    private const long WsExToolWindow = 0x00000080L;
+    private const long WsExAppWindow = 0x00040000L;
     private const long WsExLayered = 0x00080000L;
     private const int HwndTopmost = -1;
     private const int HwndNotTopmost = -2;
@@ -19,6 +21,7 @@ public sealed class WindowsPlatformShell : IPlatformShell
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
+    private const uint LwaAlpha = 0x00000002;
     private const string StartupKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupValue = "CodexQuotaPanel";
     private const string PreferencesKey = @"Software\CodexQuotaPanel";
@@ -76,6 +79,51 @@ public sealed class WindowsPlatformShell : IPlatformShell
         var value = enabled ? 1 : 0;
         if (DwmSetWindowAttribute(nativeWindowHandle, 20, ref value, sizeof(int)) != 0)
             _ = DwmSetWindowAttribute(nativeWindowHandle, 19, ref value, sizeof(int));
+    }
+
+    public void SetWindowSystemTransitions(nint nativeWindowHandle, bool enabled)
+    {
+        if (nativeWindowHandle == 0) return;
+        // DWMWA_TRANSITIONS_FORCEDISABLED = 3. The dashboard owns its short
+        // compositor transition; letting DWM also fade Show/Hide produces a
+        // second grey/white intermediate sequence on light desktops.
+        var forcedDisabled = enabled ? 0 : 1;
+        _ = DwmSetWindowAttribute(nativeWindowHandle, 3, ref forcedDisabled, sizeof(int));
+    }
+
+    public void SetWindowTaskbarVisibility(nint nativeWindowHandle, bool visible)
+    {
+        if (nativeWindowHandle == 0) return;
+        var style = GetWindowLongPtr(nativeWindowHandle, GwlExStyle).ToInt64();
+        style = visible
+            ? (style | WsExAppWindow) & ~WsExToolWindow
+            : (style | WsExToolWindow) & ~WsExAppWindow;
+        SetWindowLongPtr(nativeWindowHandle, GwlExStyle, new IntPtr(style));
+        SetWindowPos(nativeWindowHandle, IntPtr.Zero, 0, 0, 0, 0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+    }
+
+    public void SetWindowOpacity(nint nativeWindowHandle, double opacity)
+    {
+        if (nativeWindowHandle == 0) return;
+        var alpha = (byte)Math.Round(Math.Clamp(opacity, 0d, 1d) * byte.MaxValue);
+        var style = GetWindowLongPtr(nativeWindowHandle, GwlExStyle).ToInt64();
+        if (alpha < byte.MaxValue)
+        {
+            if ((style & WsExLayered) == 0)
+            {
+                style |= WsExLayered;
+                SetWindowLongPtr(nativeWindowHandle, GwlExStyle, new IntPtr(style));
+            }
+            SetLayeredWindowAttributes(nativeWindowHandle, 0, alpha, LwaAlpha);
+            if (alpha == 0) _ = DwmFlush();
+            return;
+        }
+
+        SetLayeredWindowAttributes(nativeWindowHandle, 0, byte.MaxValue, LwaAlpha);
+        // Keep WS_EX_LAYERED after the transition. Removing and re-adding it on
+        // every open forces a non-client/title-bar redraw and can produce an
+        // intermittent bright flash depending on compositor load.
     }
 
     public IGlobalShortcutRegistration? RegisterRecoveryShortcut(Action callback) => new RecoveryHotkey(callback);
@@ -157,6 +205,10 @@ public sealed class WindowsPlatformShell : IPlatformShell
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint colorKey, byte alpha, uint flags);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool MessageBeep(uint type);
@@ -181,6 +233,9 @@ public sealed class WindowsPlatformShell : IPlatformShell
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeMessage

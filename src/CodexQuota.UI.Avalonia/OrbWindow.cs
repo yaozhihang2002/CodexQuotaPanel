@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.VisualTree;
 using CodexQuota.Application;
 
@@ -30,6 +31,8 @@ public sealed class OrbWindow : Window
     internal QuotaConnectionState RenderedConnectionState => _orb.ConnectionState;
     internal bool IsMoveMode => _moveMode;
     internal bool HasInteractiveCursor => _orb.Cursor is not null;
+    internal bool UsesClickCursor => ReferenceEquals(_orb.Cursor, ClickCursor);
+    internal bool UsesMoveCursor => ReferenceEquals(_orb.Cursor, DragCursor);
 
     public OrbWindow()
     {
@@ -38,8 +41,10 @@ public sealed class OrbWindow : Window
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
         Background = Brushes.Transparent;
         ShowInTaskbar = false;
+        ShowActivated = false;
         CanResize = false;
         Topmost = true;
+        WindowStartupLocation = WindowStartupLocation.Manual;
         SizeToContent = SizeToContent.Manual;
         RenderTransformOrigin = RelativePoint.Center;
         RenderTransform = new ScaleTransform(1, 1);
@@ -117,19 +122,21 @@ public sealed class OrbWindow : Window
             _orb.Cursor = null;
             return;
         }
-        _orb.Cursor = _moveMode || !_settings.PositionLocked ? DragCursor : ClickCursor;
+        _orb.Cursor = _moveMode ? DragCursor : ClickCursor;
     }
 
-    public void RestorePosition(double? x, double? y)
+    public void RestorePosition(double? x, double? y, string? displayId = null)
     {
         if (x is null || y is null) return;
         var desired = new PixelPoint((int)Math.Round(x.Value), (int)Math.Round(y.Value));
-        var screen = Screens.ScreenFromPoint(desired) ?? Screens.Primary;
+        var screen = Screens.All.FirstOrDefault(item => DisplayId(item) == displayId) ??
+                     Screens.ScreenFromPoint(desired) ?? Screens.Primary;
         if (screen is null) return;
         var area = screen.WorkingArea;
+        var orbSize = (int)Math.Ceiling(Width * screen.Scaling);
         Position = new PixelPoint(
-            Math.Clamp(desired.X, area.X, Math.Max(area.X, area.Right - (int)Math.Ceiling(Width))),
-            Math.Clamp(desired.Y, area.Y, Math.Max(area.Y, area.Bottom - (int)Math.Ceiling(Height))));
+            Math.Clamp(desired.X, area.X, Math.Max(area.X, area.Right - orbSize)),
+            Math.Clamp(desired.Y, area.Y, Math.Max(area.Y, area.Bottom - orbSize)));
     }
 
     public (PixelPoint Position, string DisplayId) ConstrainPosition(bool snapToEdge)
@@ -137,21 +144,25 @@ public sealed class OrbWindow : Window
         var screen = Screens.ScreenFromPoint(Position) ?? Screens.Primary;
         if (screen is null) return (Position, string.Empty);
         var area = screen.WorkingArea;
-        var x = Math.Clamp(Position.X, area.X, Math.Max(area.X, area.Right - (int)Math.Ceiling(Width)));
-        var y = Math.Clamp(Position.Y, area.Y, Math.Max(area.Y, area.Bottom - (int)Math.Ceiling(Height)));
+        var orbSize = (int)Math.Ceiling(Width * screen.Scaling);
+        var x = Math.Clamp(Position.X, area.X, Math.Max(area.X, area.Right - orbSize));
+        var y = Math.Clamp(Position.Y, area.Y, Math.Max(area.Y, area.Bottom - orbSize));
         if (snapToEdge)
         {
-            const int threshold = 18;
-            var right = area.Right - (int)Math.Ceiling(Width);
-            var bottom = area.Bottom - (int)Math.Ceiling(Height);
+            var threshold = (int)Math.Ceiling(18 * screen.Scaling);
+            var right = area.Right - orbSize;
+            var bottom = area.Bottom - orbSize;
             if (Math.Abs(x - area.X) <= threshold) x = area.X;
             else if (Math.Abs(x - right) <= threshold) x = right;
             if (Math.Abs(y - area.Y) <= threshold) y = area.Y;
             else if (Math.Abs(y - bottom) <= threshold) y = bottom;
         }
         Position = new PixelPoint(x, y);
-        return (Position, $"{screen.Bounds.X},{screen.Bounds.Y},{screen.Bounds.Width},{screen.Bounds.Height}");
+        return (Position, DisplayId(screen));
     }
+
+    private static string DisplayId(Screen screen) =>
+        $"{screen.Bounds.X},{screen.Bounds.Y},{screen.Bounds.Width},{screen.Bounds.Height}";
 
     public async Task AnimateOutAsync()
     {
@@ -162,8 +173,11 @@ public sealed class OrbWindow : Window
 
     public async Task AnimateInAsync()
     {
+        if (_settings.ReducedMotion) { Opacity = 1d; Show(); return; }
+        Opacity = .02;
+        if (RenderTransform is ScaleTransform start)
+            start.ScaleX = start.ScaleY = .72;
         Show();
-        if (_settings.ReducedMotion) { Opacity = 1d; return; }
         await AnimateAsync(.02, 1d, .72, 1, 105).ConfigureAwait(true);
     }
 

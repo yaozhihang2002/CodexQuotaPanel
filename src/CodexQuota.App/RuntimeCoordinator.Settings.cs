@@ -91,7 +91,7 @@ internal sealed partial class RuntimeCoordinator
 
     private void RecreateSecondaryWindows()
     {
-        var dashboardVisible = _dashboard?.IsVisible == true;
+        var dashboardVisible = _dashboard?.IsPresented == true;
         _dashboard?.ClosePermanently();
         _dashboard = null;
         _usageWindow?.Close();
@@ -100,9 +100,10 @@ internal sealed partial class RuntimeCoordinator
         {
             EnsureDashboard();
             _dashboard!.ApplyPresentation(_presentation);
-            if (!_dashboard.RestorePosition(_settings.DashboardX, _settings.DashboardY, _settings.DashboardDisplayId) &&
-                _orb is not null)
+            if (_orb is not null)
                 _dashboard.PlaceNear(_orb.Position, _settings.OrbSize);
+            else
+                _dashboard.RestorePosition(_settings.DashboardX, _settings.DashboardY, _settings.DashboardDisplayId);
             _ = _dashboard.AnimateInAsync();
         }
     }
@@ -120,7 +121,7 @@ internal sealed partial class RuntimeCoordinator
         var desired = !_settings.ClickThrough;
         if (desired && _settings.ShowClickThroughReminder)
         {
-            Window? owner = _dashboard?.IsVisible == true ? _dashboard : _settingsWindow?.IsVisible == true ? _settingsWindow : null;
+            Window? owner = _dashboard?.IsPresented == true ? _dashboard : _settingsWindow?.IsVisible == true ? _settingsWindow : null;
             if (owner is null && _orb is not null)
             {
                 if (!_orb.IsVisible) _orb.Show();
@@ -286,7 +287,7 @@ internal sealed partial class RuntimeCoordinator
     {
         var dialog = new MessageWindow(_settings, title, message, open);
         PrepareNativeWindowTheme(dialog);
-        Window? owner = _settingsWindow?.IsVisible == true ? _settingsWindow : _dashboard?.IsVisible == true ? _dashboard : null;
+        Window? owner = _settingsWindow?.IsVisible == true ? _settingsWindow : _dashboard?.IsPresented == true ? _dashboard : null;
         if (owner is null && _orb is not null)
         {
             if (!_orb.IsVisible) _orb.Show();
