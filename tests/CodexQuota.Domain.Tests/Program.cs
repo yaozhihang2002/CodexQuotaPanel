@@ -23,6 +23,8 @@ Check.Equal(0.456m, standardCost.Usd, "standard cost");
 Check.Equal(0.912m, ApiCostEstimator.Estimate("gpt-5.6-sol", "fast", usage).Usd, "fast cost");
 Check.Equal(0.31m, ApiCostEstimator.Estimate("codex-auto-review", "default", usage).Usd,
     "auto review uses the official GPT-5.4 API-equivalent rate");
+Check.Equal(0.62m, ApiCostEstimator.Estimate("codex-auto-review", "fast", usage).Usd,
+    "auto review fast uses the official GPT-5.4 two-times multiplier");
 Check.Equal(0.62m, ApiCostEstimator.Estimate("gpt-5.5", "default", usage).Usd,
     "gpt-5.5 official API rate");
 Check.Equal(0.093m, ApiCostEstimator.Estimate("gpt-5.4-mini", "default", usage).Usd,
@@ -58,6 +60,19 @@ var pricedBeforeUnpriced = UsageSummaryCalculator.SummarizeByDay(
 Check.Equal("gpt-5.6-luna", pricedBeforeUnpriced[0].Slices[0].Model,
     "priced slices remain ahead of unpriced slices");
 
+var exactCycleStart = start.AddHours(3).AddMinutes(17);
+var exactCycleEnd = exactCycleStart.AddDays(7);
+var exactCycle = UsageCycleSelector.Select(
+[
+    new ObservedUsage(exactCycleStart.AddMinutes(-1), "gpt-5.6-sol", "default", usage, "before", true),
+    new ObservedUsage(exactCycleStart, "gpt-5.6-sol", "default", usage, "start", true),
+    new ObservedUsage(exactCycleEnd.AddTicks(-1), "gpt-5.6-sol", "default", usage, "before-end", true),
+    new ObservedUsage(exactCycleEnd, "gpt-5.6-sol", "default", usage, "end", true)
+], exactCycleStart, exactCycleEnd);
+Check.Equal(2, exactCycle.Count, "cycle uses exact timestamps rather than calendar days");
+Check.Equal("start", exactCycle[0].Fingerprint, "cycle includes the exact reset instant");
+Check.Equal("before-end", exactCycle[1].Fingerprint, "cycle excludes the next reset instant");
+
 var history = Enumerable.Range(0, 13)
     .Select(index => new QuotaHistoryPoint(
         start.AddHours(-6).AddMinutes(index * 30), "weekly", 10_080, 64.4d - index * 0.2d))
@@ -91,7 +106,32 @@ var pressureForecast = QuotaRunwayForecaster.Evaluate(dualSnapshot, dualHistory,
 Check.Equal("weekly-pressure", pressureForecast?.WindowId,
     "dual-window forecast selects the higher relative quota pressure");
 
-Console.WriteLine("Domain checks passed: 22");
+var sourceSwitchSpikes = new[]
+{
+    new QuotaHistoryPoint(start, "weekly", 10_080, 15d),
+    new QuotaHistoryPoint(start.AddMinutes(1), "weekly", 10_080, 100d),
+    new QuotaHistoryPoint(start.AddMinutes(2), "weekly", 10_080, 15d),
+    new QuotaHistoryPoint(start.AddMinutes(3), "weekly", 10_080, 100d),
+    new QuotaHistoryPoint(start.AddMinutes(4), "weekly", 10_080, 100d),
+    new QuotaHistoryPoint(start.AddMinutes(5), "weekly", 10_080, 100d),
+    new QuotaHistoryPoint(start.AddMinutes(6), "weekly", 10_080, 14d)
+};
+var stableHistory = QuotaHistoryContinuity.RemoveTransientSourceSpikes(sourceSwitchSpikes);
+Check.Equal(3, stableHistory.Count, "single and short-run fallback spikes are hidden");
+Check.True(stableHistory.All(point => point.RemainingPercent < 100d),
+    "fallback spike does not reach chart or forecast");
+
+var realReset = new[]
+{
+    new QuotaHistoryPoint(start, "weekly", 10_080, 15d),
+    new QuotaHistoryPoint(start.AddMinutes(1), "weekly", 10_080, 100d),
+    new QuotaHistoryPoint(start.AddMinutes(2), "weekly", 10_080, 100d),
+    new QuotaHistoryPoint(start.AddMinutes(3), "weekly", 10_080, 100d)
+};
+Check.Equal(4, QuotaHistoryContinuity.RemoveTransientSourceSpikes(realReset).Count,
+    "sustained reset value is preserved");
+
+Console.WriteLine("Domain checks passed: 29");
 
 static class Check
 {

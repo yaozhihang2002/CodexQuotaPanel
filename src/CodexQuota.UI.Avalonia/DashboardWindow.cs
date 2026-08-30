@@ -121,7 +121,7 @@ public sealed class DashboardWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         _trend = new TrendChartControl { Height = 46, IsDark = _settings.Theme != AppTheme.Light };
-        ToolTip.SetTip(_trend, T("悬停曲线可对照实际与均匀额度", "Hover to compare actual and even-use quota"));
+        ToolTip.SetTip(_trend, T("在绘图区移动鼠标可对照实际与均匀额度", "Move across the plot to compare actual and even-use quota"));
         _dailyUsage = new DailyUsageChartControl
         {
             Height = 70,
@@ -228,10 +228,7 @@ public sealed class DashboardWindow : Window
         _trend.ResetAt = selected?.ResetsAt;
         _trend.WindowMinutes = selected?.WindowMinutes ?? 0;
         var cycleStart = selected?.ResetsAt?.AddMinutes(-selected.WindowMinutes);
-        var cycleUsage = presentation.Usage.Where(item =>
-                (cycleStart is null || item.ObservedAt >= cycleStart) &&
-                (selected?.ResetsAt is null || item.ObservedAt <= selected.ResetsAt))
-            .ToArray();
+        var cycleUsage = UsageCycleSelector.Select(presentation.Usage, cycleStart, selected?.ResetsAt);
         var days = UsageSummaryCalculator.SummarizeByDay(cycleUsage, TimeZoneInfo.Local);
         _dailyUsage.Days = days;
         _dailyUsage.CycleStart = cycleStart;
@@ -626,7 +623,7 @@ public sealed class DashboardWindow : Window
         {
             QuotaConnectionState.Live => (T("实时", "LIVE"), _palette.Mint, _palette.Active),
             QuotaConnectionState.LocalFallback => (T("本地回退", "LOCAL"), _palette.Blue, _palette.SurfaceRaised),
-            QuotaConnectionState.Stale => (T("数据陈旧", "STALE"), _palette.Amber, _palette.SurfaceRaised),
+            QuotaConnectionState.Stale => (T("断联", "OFFLINE"), _palette.Amber, _palette.SurfaceRaised),
             QuotaConnectionState.Offline => (T("未连接", "OFFLINE"), _palette.Red, _palette.SurfaceRaised),
             _ => (T("连接中", "CONNECTING"), _palette.Amber, _palette.SurfaceRaised)
         };

@@ -13,7 +13,7 @@ public sealed class JsonlUsageEventSource : IUsageEventSource
     private const int BatchSize = 256;
     // Increment when attribution rules change so the finite index worker
     // replays recent JSONL files and upgrades existing SQLite rows in place.
-    private const int CurrentParserVersion = 2;
+    private const int CurrentParserVersion = 3;
     private readonly string[] _sessionRoots;
     private readonly string? _cursorStatePath;
     private readonly TimeSpan _lookback;

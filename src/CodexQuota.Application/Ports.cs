@@ -7,6 +7,12 @@ public interface IQuotaSource
     Task<OfficialQuotaSnapshot?> ReadAsync(CancellationToken cancellationToken);
 }
 
+public interface ITrustedQuotaSnapshotStore
+{
+    Task<OfficialQuotaSnapshot?> ReadAsync(CancellationToken cancellationToken);
+    Task WriteAsync(OfficialQuotaSnapshot snapshot, CancellationToken cancellationToken);
+}
+
 public interface IUsageEventSource
 {
     IAsyncEnumerable<ObservedUsage> WatchAsync(CancellationToken cancellationToken);

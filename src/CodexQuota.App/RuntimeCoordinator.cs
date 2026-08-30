@@ -25,11 +25,13 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly string _dataRoot;
     private readonly JsonSettingsStore _settingsStore;
+    private readonly JsonTrustedQuotaSnapshotStore _trustedQuotaStore;
     private readonly SqliteUsageHistoryStore _history;
     private readonly JsonlQuotaSource _localQuota = new();
     private readonly CodexAppServerQuotaSource _liveQuota = new();
     private AppSettings _settings = AppSettings.Default;
     private QuotaPresentation _presentation = QuotaPresentation.Empty;
+    private OfficialQuotaSnapshot? _lastTrustedQuotaSnapshot;
     private OrbWindow? _orb;
     private DashboardWindow? _dashboard;
     private SettingsWindow? _settingsWindow;
@@ -61,6 +63,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             : Path.GetFullPath(isolatedDataRoot);
         _settingsStore = new JsonSettingsStore(Path.Combine(_dataRoot, "settings-vnext.json"),
             Path.Combine(_dataRoot, "preferences.json"));
+        _trustedQuotaStore = new JsonTrustedQuotaSnapshotStore(Path.Combine(_dataRoot, "trusted-quota-v1.json"));
         _history = new SqliteUsageHistoryStore(Path.Combine(_dataRoot, "history-vnext.db"));
     }
 
@@ -76,6 +79,15 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         if (storedSettings is null)
             await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(true);
         await _history.InitializeAsync(_lifetime.Token).ConfigureAwait(true);
+        _lastTrustedQuotaSnapshot = await _trustedQuotaStore.ReadAsync(_lifetime.Token).ConfigureAwait(true);
+        if (_lastTrustedQuotaSnapshot is { } trustedSnapshot)
+        {
+            _presentation = new QuotaPresentation(trustedSnapshot, [], [], null, false, null, DateTimeOffset.Now)
+            {
+                ConnectionState = QuotaConnectionState.Stale,
+                ConnectionDetail = DisconnectedDetail(trustedSnapshot)
+            };
+        }
         ApplyApplicationTheme(_settings);
         CreateOrb();
         CreateTray();

@@ -63,7 +63,7 @@ public sealed class CodexAppServerQuotaSource : IQuotaSource, IAsyncDisposable
             _errorTask = Task.Run(() => DrainErrorAsync(_process, _lifetime.Token), CancellationToken.None);
             await SendRequestAsync("initialize", new
             {
-                clientInfo = new { name = "codex_quota_panel_vnext", title = "Codex Quota Panel", version = "0.6.3" }
+                clientInfo = new { name = "codex_quota_panel_vnext", title = "Codex Quota Panel", version = "0.6.4" }
             }, timeout.Token).ConfigureAwait(false);
             await SendNotificationAsync("initialized", timeout.Token).ConfigureAwait(false);
             _initialized = true;

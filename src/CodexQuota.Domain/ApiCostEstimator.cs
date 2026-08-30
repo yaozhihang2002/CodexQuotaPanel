@@ -22,7 +22,7 @@ public static class ApiCostEstimator
             ["gpt-5.3-codex"] = new(1.75m, 0.175m, 14.00m, 2m),
             // Codex reports the reviewer as a workload label rather than its backing model.
             // The current official Codex rate card maps Auto-review to GPT-5.4.
-            ["codex-auto-review"] = new(2.50m, 0.25m, 15.00m, null, true)
+            ["codex-auto-review"] = new(2.50m, 0.25m, 15.00m, 2m, true)
         };
 
     public static ApiCostEstimate Estimate(string? model, string? serviceTier, TokenUsageBreakdown usage)

@@ -521,6 +521,39 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         "usage details sort higher estimated USD above higher raw-token rows");
     costSortedUsage.Close();
 
+    var chartNow = new DateTimeOffset(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
+    var hoverChart = new TrendChartControl
+    {
+        Width = 420,
+        Height = 90,
+        Points =
+        [
+            new QuotaHistoryPoint(chartNow.AddHours(-24), "weekly", 10_080, 80),
+            new QuotaHistoryPoint(chartNow, "weekly", 10_080, 60)
+        ],
+        ResetAt = chartNow.AddDays(5),
+        WindowMinutes = 10_080,
+        IsDark = true
+    };
+    var hoverHost = new Window { Width = 440, Height = 110, Content = hoverChart };
+    hoverHost.Show();
+    hoverHost.UpdateLayout();
+    hoverChart.SetHoverPositionForTest(new Point(hoverChart.Bounds.Width / 2, hoverChart.Bounds.Height - 2));
+    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    Dispatcher.UIThread.RunJobs();
+    Check.True(hoverChart.HasHoverSample,
+        "trend chart accepts hover across the full plot height, not only over the line");
+    Check.True(hoverChart.HoverTime is not null &&
+               Math.Abs((hoverChart.HoverTime.Value - chartNow.AddHours(-12)).TotalMinutes) < 1,
+        "trend chart maps hover by horizontal time position");
+    Check.True(hoverChart.HoverActualPercent is not null &&
+               Math.Abs(hoverChart.HoverActualPercent.Value - 70) < .1,
+        "trend chart interpolates actual quota at the hovered time");
+    Check.True(hoverChart.HoverLabelBounds is { } labelBounds &&
+               labelBounds.Bottom <= hoverChart.PlotBounds.Top,
+        "trend hover label stays in the fixed information band outside the plot");
+    hoverHost.Close();
+
     var compactDualRow = new StackPanel
     {
         Orientation = Orientation.Horizontal,

@@ -1,4 +1,5 @@
 using CodexQuota.Application;
+using CodexQuota.Domain;
 
 var original = AppState.Create();
 var draft = new SettingsDraftSession(original);
@@ -26,7 +27,27 @@ Check.Equal(30, committed.Settings.Persisted.OrbOpacityPercent, "opacity normali
 Check.True(committed.Settings.IsEditing, "save keeps editor open");
 Check.False(committed.Settings.HasUnsavedChanges, "save clears dirty flag");
 
-Console.WriteLine("Application checks passed: 10");
+var now = DateTimeOffset.UtcNow;
+var liveQuota = Snapshot(now, 63, "App Server");
+var retainedQuota = Snapshot(now.AddMinutes(-1), 64, "App Server");
+var localQuota = Snapshot(now.AddMinutes(-2), 81, "Local session");
+var liveSelection = QuotaSnapshotContinuity.Select(liveQuota, retainedQuota, localQuota);
+Check.Equal(QuotaSnapshotSelectionKind.Live, liveSelection.Kind, "live snapshot wins");
+Check.Equal(liveQuota, liveSelection.Snapshot, "live snapshot selected");
+var retainedSelection = QuotaSnapshotContinuity.Select(null, retainedQuota, localQuota);
+Check.Equal(QuotaSnapshotSelectionKind.Retained, retainedSelection.Kind, "retained snapshot beats fallback");
+Check.Equal(retainedQuota, retainedSelection.Snapshot, "retained snapshot stays stable");
+Check.False(retainedSelection.IsFresh, "retained snapshot is not recorded again");
+var localSelection = QuotaSnapshotContinuity.Select(null, null, localQuota);
+Check.Equal(QuotaSnapshotSelectionKind.Local, localSelection.Kind, "local snapshot is first-start fallback");
+Check.True(localSelection.IsFresh, "new local fallback may be recorded");
+var emptySelection = QuotaSnapshotContinuity.Select(null, null, null);
+Check.Equal(QuotaSnapshotSelectionKind.None, emptySelection.Kind, "missing sources stay empty");
+
+Console.WriteLine("Application checks passed: 18");
+
+static OfficialQuotaSnapshot Snapshot(DateTimeOffset observedAt, double remaining, string source) =>
+    new(observedAt, [new QuotaWindow("7d", 10_080, remaining, observedAt.AddDays(5))], Source: source);
 
 static class Check
 {

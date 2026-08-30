@@ -64,6 +64,26 @@ try
         "legacy flame migration");
     Check.True(File.Exists(migratedPath), "migrated settings persisted");
 
+    var trustedQuotaPath = Path.Combine(root, "trusted-quota.json");
+    var trustedQuotaStore = new JsonTrustedQuotaSnapshotStore(trustedQuotaPath);
+    var trustedQuota = new OfficialQuotaSnapshot(DateTimeOffset.UtcNow,
+        [new QuotaWindow("7d", 10_080, 13d, DateTimeOffset.UtcNow.AddDays(5))],
+        Source: "App Server", PlanType: "pro");
+    await trustedQuotaStore.WriteAsync(trustedQuota, CancellationToken.None);
+    Check.SnapshotEqual(trustedQuota, await trustedQuotaStore.ReadAsync(CancellationToken.None),
+        "trusted quota cache round trip");
+    await trustedQuotaStore.WriteAsync(trustedQuota with
+    {
+        ObservedAt = trustedQuota.ObservedAt.AddMinutes(1),
+        Windows = [trustedQuota.Windows[0] with { RemainingPercent = 12d }]
+    }, CancellationToken.None);
+    await File.WriteAllTextAsync(trustedQuotaPath, "{broken", CancellationToken.None);
+    Check.SnapshotEqual(trustedQuota, await trustedQuotaStore.ReadAsync(CancellationToken.None),
+        "trusted quota cache backup recovery");
+    await File.WriteAllTextAsync(trustedQuotaPath, "{broken-again", CancellationToken.None);
+    Check.SnapshotEqual(trustedQuota, await trustedQuotaStore.ReadAsync(CancellationToken.None),
+        "trusted quota backup remains valid after recovery");
+
     var lines = new[]
     {
         """{"timestamp":"2026-08-26T01:00:00Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}""",
@@ -222,12 +242,25 @@ try
     quota = await quotaSource.ReadAsync(CancellationToken.None);
     Check.Equal(53d, quota?.VisibleWindows[0].RemainingPercent, "reverse quota scan returns newest event");
 
-    using var appServerDocument = JsonDocument.Parse("""
-        {"rateLimits":{"limitId":"codex","planType":"pro","secondary":{"usedPercent":12,"windowDurationMins":10080,"resetsAt":1788050820}},
-         "rateLimitResetCredits":{"availableCount":2,"credits":[
-           {"id":"late","status":"available","title":"Full reset","expiresAt":1789000000},
-           {"id":"soon","status":"available","title":"Full reset","expiresAt":1788100000}]}}
-        """);
+    var soonExpiry = DateTimeOffset.UtcNow.AddDays(1).ToUnixTimeSeconds();
+    var lateExpiry = DateTimeOffset.UtcNow.AddDays(10).ToUnixTimeSeconds();
+    using var appServerDocument = JsonDocument.Parse(JsonSerializer.Serialize(new
+    {
+        rateLimits = new
+        {
+            limitId = "codex", planType = "pro",
+            secondary = new { usedPercent = 12, windowDurationMins = 10_080, resetsAt = 1_788_050_820 }
+        },
+        rateLimitResetCredits = new
+        {
+            availableCount = 2,
+            credits = new[]
+            {
+                new { id = "late", status = "available", title = "Full reset", expiresAt = lateExpiry },
+                new { id = "soon", status = "available", title = "Full reset", expiresAt = soonExpiry }
+            }
+        }
+    }));
     var appServerQuota = QuotaPayloadParser.ParseAppServerResult(appServerDocument.RootElement);
     Check.Equal("App Server", appServerQuota?.Source, "app-server source metadata");
     Check.Equal("pro", appServerQuota?.PlanType, "app-server plan metadata");
@@ -244,6 +277,36 @@ try
     Check.Equal(1, usageHistory.Count, "SQLite fingerprint deduplication");
     Check.True(usageHistory[0].IsServiceTierExplicit, "SQLite inference upgrade");
     Check.Equal(events[0] with { IsServiceTierExplicit = true }, usageHistory[0], "SQLite usage round trip");
+
+    var knownDuplicate = new ObservedUsage(
+        new DateTimeOffset(2026, 8, 26, 7, 0, 0, TimeSpan.Zero),
+        "gpt-5.6-sol", "priority", events[0].Usage, "merge-known-first", true);
+    await store.AppendUsageAsync(knownDuplicate, CancellationToken.None);
+    await store.AppendUsageAsync(knownDuplicate with
+    {
+        Model = "unknown", ServiceTier = "default", IsServiceTierExplicit = false
+    }, CancellationToken.None);
+    var merged = (await store.ReadUsageAsync(DateTimeOffset.MinValue, CancellationToken.None))
+        .Single(item => item.Fingerprint == knownDuplicate.Fingerprint);
+    Check.Equal("gpt-5.6-sol", merged.Model, "SQLite duplicate cannot downgrade a known model");
+    Check.Equal("priority", merged.ServiceTier, "SQLite duplicate cannot downgrade an explicit tier");
+    Check.True(merged.IsServiceTierExplicit, "SQLite duplicate preserves explicit tier provenance");
+
+    var lateKnown = knownDuplicate with
+    {
+        Fingerprint = "merge-known-last", Model = "unknown", ServiceTier = "default",
+        IsServiceTierExplicit = false
+    };
+    await store.AppendUsageAsync(lateKnown, CancellationToken.None);
+    await store.AppendUsageAsync(lateKnown with
+    {
+        Model = "gpt-5.6-terra", ServiceTier = "priority", IsServiceTierExplicit = true
+    }, CancellationToken.None);
+    merged = (await store.ReadUsageAsync(DateTimeOffset.MinValue, CancellationToken.None))
+        .Single(item => item.Fingerprint == lateKnown.Fingerprint);
+    Check.Equal("gpt-5.6-terra", merged.Model, "SQLite duplicate upgrades an unknown model");
+    Check.Equal("priority", merged.ServiceTier, "SQLite duplicate upgrades an inferred tier");
+    Check.True(merged.IsServiceTierExplicit, "SQLite tier upgrade records explicit provenance");
     await store.ClearAsync(CancellationToken.None);
     Check.Equal(0, (await store.ReadQuotaAsync(DateTimeOffset.MinValue, CancellationToken.None)).Count, "SQLite quota clear");
     Check.Equal(0, (await store.ReadUsageAsync(DateTimeOffset.MinValue, CancellationToken.None)).Count, "SQLite usage clear");
@@ -253,7 +316,7 @@ finally
     if (Directory.Exists(root)) Directory.Delete(root, true);
 }
 
-Console.WriteLine("Infrastructure checks passed: 50");
+Console.WriteLine("Infrastructure checks passed: 59");
 
 if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
 {
@@ -343,6 +406,18 @@ static async Task<IReadOnlyList<IReadOnlyList<ObservedUsage>>> CollectBatchesAsy
 
 static class Check
 {
+    public static void SnapshotEqual(
+        OfficialQuotaSnapshot expected,
+        OfficialQuotaSnapshot? actual,
+        string name)
+    {
+        if (actual is null || expected.ObservedAt != actual.ObservedAt ||
+            expected.IsStale != actual.IsStale || expected.Source != actual.Source ||
+            expected.PlanType != actual.PlanType || expected.Windows.Count != actual.Windows.Count ||
+            !expected.Windows.SequenceEqual(actual.Windows))
+            throw new InvalidOperationException($"{name}: snapshot fields differ");
+    }
+
     public static void Equal(double expected, double? actual, string name)
     {
         if (actual is null || Math.Abs(expected - actual.Value) > 0.000_001d)

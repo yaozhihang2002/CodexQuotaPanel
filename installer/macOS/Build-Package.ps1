@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.3',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.4',
     [ValidateSet('osx-arm64','osx-x64','osx-universal')][string]$Runtime = 'osx-universal',
     [string]$OutputDirectory,
     [switch]$SkipChecks,

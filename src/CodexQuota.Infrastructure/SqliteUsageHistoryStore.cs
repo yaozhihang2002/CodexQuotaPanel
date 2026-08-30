@@ -124,8 +124,19 @@ public sealed class SqliteUsageHistoryStore : IUsageHistoryStore
             VALUES($fingerprint, $time, $model, $tier, $explicit,
                 $total, $input, $cached, $output, $reasoning, $cacheWrite)
             ON CONFLICT(fingerprint) DO UPDATE SET
-                model = excluded.model,
-                service_tier = excluded.service_tier,
+                model = CASE
+                    WHEN lower(excluded.model) <> 'unknown' THEN excluded.model
+                    ELSE usage_events.model
+                END,
+                service_tier = CASE
+                    WHEN excluded.service_tier_explicit > usage_events.service_tier_explicit
+                        THEN excluded.service_tier
+                    WHEN excluded.service_tier_explicit < usage_events.service_tier_explicit
+                        THEN usage_events.service_tier
+                    WHEN lower(excluded.service_tier) <> 'unknown'
+                        THEN excluded.service_tier
+                    ELSE usage_events.service_tier
+                END,
                 service_tier_explicit = MAX(service_tier_explicit, excluded.service_tier_explicit),
                 total_tokens = excluded.total_tokens,
                 input_tokens = excluded.input_tokens,

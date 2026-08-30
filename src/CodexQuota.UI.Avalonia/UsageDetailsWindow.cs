@@ -44,8 +44,7 @@ public sealed class UsageDetailsWindow : Window
     {
         _summary.Children.Clear();
         _daily.Children.Clear();
-        var filtered = usage.Where(item => cycleStart is null || item.ObservedAt >= cycleStart)
-            .Where(item => cycleEnd is null || item.ObservedAt <= cycleEnd).ToArray();
+        var filtered = UsageCycleSelector.Select(usage, cycleStart, cycleEnd);
         var days = UsageSummaryCalculator.SummarizeByDay(filtered, TimeZoneInfo.Local);
         _dailyChart.Days = days;
         _dailyChart.CycleStart = cycleStart;

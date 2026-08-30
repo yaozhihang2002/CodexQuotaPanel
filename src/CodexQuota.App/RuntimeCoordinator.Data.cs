@@ -39,8 +39,11 @@ internal sealed partial class RuntimeCoordinator
         // A crash can leave the cursor file present but empty or truncated.
         // Treat that state exactly like a first launch so the finite worker,
         // rather than the resident UI process, repairs the historical index.
+        var rebuilt = false;
         if (!JsonlUsageEventSource.HasUsableCursorState(cursorState))
-            await UsageIndexWorker.RunChildAsync(_dataRoot, cancellationToken).ConfigureAwait(false);
+            rebuilt = await UsageIndexWorker.RunChildAsync(_dataRoot, cancellationToken).ConfigureAwait(false);
+        if (rebuilt)
+            await RefreshAsync().ConfigureAwait(false);
         var source = new JsonlUsageEventSource(cursorStatePath: cursorState);
         await WatchUsageAsync(source, cancellationToken).ConfigureAwait(false);
     }
@@ -74,51 +77,83 @@ internal sealed partial class RuntimeCoordinator
         {
             await Dispatcher.UIThread.InvokeAsync(() => SetRefreshing(true));
             OfficialQuotaSnapshot? snapshot = null;
+            var retained = _lastTrustedQuotaSnapshot ?? _presentation.Snapshot;
+            var freshSnapshot = false;
             string? error = null;
             var connectionState = QuotaConnectionState.Connecting;
             string? connectionDetail = null;
             try
             {
                 var live = await _liveQuota.ReadAsync(_lifetime.Token).ConfigureAwait(false);
-                if (live is not null)
+                // Once this process has displayed a trustworthy snapshot, never
+                // replace it with a different fallback source during a transient
+                // App Server outage. Alternating live and JSONL snapshots caused
+                // visible quota jumps and vertical spikes in the trend chart.
+                var local = live is null && retained is null
+                    ? await _localQuota.ReadAsync(_lifetime.Token).ConfigureAwait(false)
+                    : null;
+                var selection = QuotaSnapshotContinuity.Select(live, retained, local);
+                snapshot = selection.Snapshot;
+                freshSnapshot = selection.IsFresh;
+                if (selection.Kind == QuotaSnapshotSelectionKind.Live)
                 {
-                    snapshot = live;
+                    _lastTrustedQuotaSnapshot = snapshot;
+                    try
+                    {
+                        await _trustedQuotaStore.WriteAsync(snapshot!, _lifetime.Token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                    {
+                        // A cache write failure must never downgrade a valid live reading.
+                    }
                     connectionState = QuotaConnectionState.Live;
                     connectionDetail = T("已连接 Codex 实时额度服务", "Connected to Codex live quota service");
                 }
+                else if (selection.Kind == QuotaSnapshotSelectionKind.Retained)
+                {
+                    connectionState = QuotaConnectionState.Stale;
+                    connectionDetail = DisconnectedDetail(snapshot!);
+                }
+                else if (selection.Kind == QuotaSnapshotSelectionKind.Local)
+                {
+                    _lastTrustedQuotaSnapshot = snapshot;
+                    var age = DateTimeOffset.UtcNow - snapshot!.ObservedAt;
+                    connectionState = snapshot.IsStale || age > TimeSpan.FromMinutes(3)
+                        ? QuotaConnectionState.Stale
+                        : QuotaConnectionState.LocalFallback;
+                    connectionDetail = connectionState == QuotaConnectionState.Stale
+                        ? T($"实时服务暂不可用；首次启动使用 {Math.Max(1, (int)age.TotalMinutes)} 分钟前的本地快照",
+                            $"Live service unavailable; first-start local snapshot is {Math.Max(1, (int)age.TotalMinutes)} minutes old")
+                        : T("实时服务暂不可用，首次启动使用本地 Codex 会话快照",
+                            "Live service unavailable; using a local Codex session snapshot on first start");
+                }
                 else
                 {
-                    snapshot = await _localQuota.ReadAsync(_lifetime.Token).ConfigureAwait(false);
-                    if (snapshot is not null)
-                    {
-                        var age = DateTimeOffset.UtcNow - snapshot.ObservedAt;
-                        connectionState = snapshot.IsStale || age > TimeSpan.FromMinutes(3)
-                            ? QuotaConnectionState.Stale
-                            : QuotaConnectionState.LocalFallback;
-                        connectionDetail = connectionState == QuotaConnectionState.Stale
-                            ? T($"实时服务暂不可用；本地快照已过去 {Math.Max(1, (int)age.TotalMinutes)} 分钟",
-                                $"Live service unavailable; local snapshot is {Math.Max(1, (int)age.TotalMinutes)} minutes old")
-                            : T("实时服务暂不可用，正在使用本地 Codex 会话快照",
-                                "Live service unavailable; using a local Codex session snapshot");
-                    }
-                    else
-                    {
-                        connectionState = QuotaConnectionState.Offline;
-                        connectionDetail = T("尚未发现可用的 Codex 实时服务或本地额度快照",
-                            "No Codex live service or local quota snapshot is available");
-                    }
+                    connectionState = QuotaConnectionState.Offline;
+                    connectionDetail = T("尚未发现可用的 Codex 实时服务或本地额度快照",
+                        "No Codex live service or local quota snapshot is available");
                 }
-                if (snapshot is not null && _settings.TrendRecordingEnabled)
+                if (freshSnapshot && snapshot is not null && _settings.TrendRecordingEnabled)
                     await _history.AppendQuotaAsync(snapshot, _lifetime.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
-                error = T("暂时无法读取 Codex 额度数据", "Codex quota data is temporarily unavailable");
-                connectionState = QuotaConnectionState.Offline;
-                connectionDetail = error;
+                if (retained is not null)
+                {
+                    snapshot = retained;
+                    connectionState = QuotaConnectionState.Stale;
+                    connectionDetail = DisconnectedDetail(retained);
+                }
+                else
+                {
+                    error = T("暂时无法读取 Codex 额度数据", "Codex quota data is temporarily unavailable");
+                    connectionState = QuotaConnectionState.Offline;
+                    connectionDetail = error;
+                }
             }
 
-            var history = await _history.ReadQuotaAsync(DateTimeOffset.UtcNow.AddHours(-24), _lifetime.Token).ConfigureAwait(false);
+            var rawHistory = await _history.ReadQuotaAsync(DateTimeOffset.UtcNow.AddHours(-24), _lifetime.Token).ConfigureAwait(false);
+            var history = QuotaHistoryContinuity.RemoveTransientSourceSpikes(rawHistory);
             var usageSince = snapshot?.VisibleWindows.OrderByDescending(window => window.WindowMinutes).FirstOrDefault() is { } longest
                 ? longest.ResetsAt?.AddMinutes(-longest.WindowMinutes) ?? DateTimeOffset.UtcNow.AddDays(-7)
                 : DateTimeOffset.UtcNow.AddDays(-7);
@@ -136,6 +171,16 @@ internal sealed partial class RuntimeCoordinator
             });
         }
         finally { _refreshGate.Release(); }
+    }
+
+    private string DisconnectedDetail(OfficialQuotaSnapshot snapshot)
+    {
+        var age = DateTimeOffset.UtcNow - snapshot.ObservedAt;
+        return age < TimeSpan.FromMinutes(1)
+            ? T("实时服务断联，继续显示最近一次可信额度（不到 1 分钟前）",
+                "Live service disconnected; showing the last trusted quota from less than a minute ago")
+            : T($"实时服务断联，继续显示 {Math.Max(1, (int)age.TotalMinutes)} 分钟前的可信额度",
+                $"Live service disconnected; showing trusted quota from {Math.Max(1, (int)age.TotalMinutes)} minutes ago");
     }
 
     private void SetRefreshing(bool refreshing)
@@ -166,7 +211,7 @@ internal sealed partial class RuntimeCoordinator
             {
                 QuotaConnectionState.Live => T("实时", "live"),
                 QuotaConnectionState.LocalFallback => T("本地回退", "local fallback"),
-                QuotaConnectionState.Stale => T("数据陈旧", "stale"),
+                QuotaConnectionState.Stale => T("断联", "offline"),
                 QuotaConnectionState.Offline => T("未连接", "offline"),
                 _ => T("连接中", "connecting")
             };
