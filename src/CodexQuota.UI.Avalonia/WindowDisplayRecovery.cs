@@ -18,6 +18,18 @@ public sealed class WindowDisplayRecovery
     private Size _preferredSize;
     private bool _fitting;
     private bool _closed;
+    // Optional platform measurement, in physical pixels (not logical DIPs).
+    public Func<Thickness>? InvisibleFrameInsetsProvider { get; set; }
+
+    internal PixelPoint ConstrainPosition(PixelPoint desired, PixelRect work, PixelSize outer)
+    {
+        var invisible = InvisibleFrameInsetsProvider?.Invoke() ?? default;
+        var left = work.X - (int)invisible.Left;
+        var top = work.Y - (int)invisible.Top;
+        return new PixelPoint(
+            Math.Clamp(desired.X, left, Math.Max(left, work.Right - outer.Width + (int)invisible.Right)),
+            Math.Clamp(desired.Y, top, Math.Max(top, work.Bottom - outer.Height + (int)invisible.Bottom)));
+    }
 
     public WindowDisplayRecovery(Window window, Func<bool>? isPresented = null, Action? redrawNativeFrame = null)
     {
@@ -83,10 +95,7 @@ public sealed class WindowDisplayRecovery
             _window.Height = Math.Min(_preferredSize.Height, availableHeight);
             var outer = new PixelSize((int)Math.Ceiling((_window.Width + frame.Width) * scale),
                 (int)Math.Ceiling((_window.Height + frame.Height) * scale));
-            var pos = _window.Position;
-            _window.Position = new PixelPoint(
-                Math.Clamp(pos.X, work.X, Math.Max(work.X, work.Right - outer.Width)),
-                Math.Clamp(pos.Y, work.Y, Math.Max(work.Y, work.Bottom - outer.Height)));
+            _window.Position = ConstrainPosition(_window.Position, work, outer);
             return outer;
         }
         finally { _fitting = false; }

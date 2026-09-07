@@ -35,6 +35,7 @@ public sealed class DashboardWindow : Window
     private bool _trackPlacement;
     private bool _placementDirty;
     private bool _presented;
+    private bool _nativeSurfacePrepared;
     private readonly WindowDisplayRecovery _displayRecovery;
     private PixelPoint? _openingOrbPosition;
     private double _openingOrbSize;
@@ -48,6 +49,11 @@ public sealed class DashboardWindow : Window
     public event Action<double>? TransitionOpacityChanged;
 
     public bool UseClientOpacityAnimation { get; set; } = true;
+    public Func<Thickness>? InvisibleFrameInsetsProvider
+    {
+        get => _displayRecovery.InvisibleFrameInsetsProvider;
+        set => _displayRecovery.InvisibleFrameInsetsProvider = value;
+    }
     public bool IsPresented => UseClientOpacityAnimation ? IsVisible : _presented;
 
     internal int WindowCardCount => _windowCards.Children.Count;
@@ -289,9 +295,7 @@ public sealed class DashboardWindow : Window
         var orbSize = (int)Math.Ceiling(orbLogicalSize * scale);
         var x = (int)Math.Round(orbPosition.X + orbSize / 2d - panelWidth / 2d);
         var y = (int)Math.Round(orbPosition.Y + orbSize / 2d - panelHeight / 2d);
-        x = Math.Clamp(x, work.X, Math.Max(work.X, work.Right - panelWidth));
-        y = Math.Clamp(y, work.Y, Math.Max(work.Y, work.Bottom - panelHeight));
-        SetAutomaticPosition(new PixelPoint(x, y));
+        SetAutomaticPosition(_displayRecovery.ConstrainPosition(new PixelPoint(x, y), work, outer));
     }
 
     public bool RestorePosition(double? x, double? y, string? displayId = null)
@@ -303,11 +307,7 @@ public sealed class DashboardWindow : Window
         if (screen is null) return false;
         var work = screen.WorkingArea;
         var outer = _displayRecovery.Fit(screen);
-        var panelWidth = outer.Width;
-        var panelHeight = outer.Height;
-        var restored = new PixelPoint(
-            Math.Clamp(desired.X, work.X, Math.Max(work.X, work.Right - panelWidth)),
-            Math.Clamp(desired.Y, work.Y, Math.Max(work.Y, work.Bottom - panelHeight)));
+        var restored = _displayRecovery.ConstrainPosition(desired, work, outer);
         SetAutomaticPosition(restored);
         return true;
     }
@@ -319,8 +319,9 @@ public sealed class DashboardWindow : Window
         // can otherwise expose its title bar and an unpainted white client area
         // before either native alpha or Avalonia composition is ready. Keep the
         // surface alive afterwards; Windows clears a hidden HWND again on Show.
-        var needsNativePrerender = !UseClientOpacityAnimation &&
-            (TryGetPlatformHandle()?.Handle ?? IntPtr.Zero) == IntPtr.Zero;
+        // Avalonia may allocate an HWND before Show, so a nonzero handle does
+        // not prove the native frame has been laid out or painted yet.
+        var needsNativePrerender = !UseClientOpacityAnimation && !_nativeSurfacePrepared;
         if (!needsNativePrerender) return;
         var intendedPosition = Position;
         WindowStartupLocation = WindowStartupLocation.Manual;
@@ -333,9 +334,10 @@ public sealed class DashboardWindow : Window
         // the non-client surface.
         Position = intendedPosition;
         await Task.Delay(34);
+        _nativeSurfacePrepared = true;
     }
 
-    public async Task AnimateInAsync()
+    public async Task AnimateInAsync(bool animate = true)
     {
         _trackPlacement = false;
         await PrepareNativeSurfaceAsync();
@@ -353,7 +355,7 @@ public sealed class DashboardWindow : Window
         // zero-alpha assignment before activation so the whole HWND begins at 0.
         SetTransitionOpacity(0);
         Activate();
-        if (_settings.ReducedMotion)
+        if (_settings.ReducedMotion || !animate)
         {
             SetTransitionOpacity(1);
             if (_transitionSurface.RenderTransform is ScaleTransform reduced)

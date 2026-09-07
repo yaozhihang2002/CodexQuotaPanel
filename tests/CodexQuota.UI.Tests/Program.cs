@@ -452,6 +452,15 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         Check.True(adaptiveDashboard.Position.X == work.Right - panelWidth &&
                    adaptiveDashboard.Position.Y == work.Bottom - panelHeight,
             "dashboard clamps flush to the work-area edge");
+        adaptiveDashboard.InvisibleFrameInsetsProvider = () => new Thickness(8, 0, 8, 8);
+        adaptiveDashboard.PlaceNear(edgeOrb, 88);
+        Check.True(adaptiveDashboard.Position.X + panelWidth - 8 == work.Right &&
+                   adaptiveDashboard.Position.Y + panelHeight - 8 == work.Bottom,
+            "dashboard aligns visible right and bottom edges, not invisible resize borders");
+        adaptiveDashboard.PlaceNear(new PixelPoint(work.X, work.Y), 88);
+        Check.True(adaptiveDashboard.Position.X + 8 == work.X && adaptiveDashboard.Position.Y == work.Y,
+            "dashboard aligns visible left edge without hiding title bar");
+        adaptiveDashboard.InvisibleFrameInsetsProvider = null;
         Check.True(adaptiveDashboard.RestorePosition(work.X + 42, work.Y + 38,
                        $"{placementScreen.Bounds.X},{placementScreen.Bounds.Y},{placementScreen.Bounds.Width},{placementScreen.Bounds.Height}") &&
                    adaptiveDashboard.Position == new PixelPoint(work.X + 42, work.Y + 38),
@@ -475,6 +484,22 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     dpiDashboard.Show();
     var recovery = new WindowDisplayRecovery(dpiDashboard);
     var preferred = new Size(dpiDashboard.Width, dpiDashboard.Height);
+    foreach (var dpi in new[] { 1d, 1.25d, 1.5d, 2d })
+    {
+        var border = (int)(8 * dpi);
+        recovery.InvisibleFrameInsetsProvider = () => new Thickness(border, 0, border, border);
+        var area = new PixelRect(-1920, -240, 1920, 1080);
+        var outer = new PixelSize((int)(480 * dpi), (int)(710 * dpi));
+        // Sizing is covered below; position checks use a fitting height.
+        outer = new PixelSize(outer.Width, Math.Min(outer.Height, area.Height));
+        var right = recovery.ConstrainPosition(new PixelPoint(10000, 10000), area, outer);
+        var left = recovery.ConstrainPosition(new PixelPoint(-10000, -10000), area, outer);
+        Check.True(right.X + outer.Width - border == area.Right &&
+                   right.Y + outer.Height - border == area.Bottom &&
+                   left.X + border == area.X && left.Y == area.Y,
+            $"physical visible edge compensation at {dpi} on a negative-origin monitor");
+    }
+    recovery.InvisibleFrameInsetsProvider = null;
     foreach (var dpi in new[] { 1d, 1.5d, 2d, 1d })
     {
         dpiDashboard.SetRenderScaling(dpi);
@@ -523,6 +548,10 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     PumpAnimation(persistentDashboard.AnimateOutAsync(), "dashboard persistent animate out");
     Check.True(persistentDashboard.IsVisible && !persistentDashboard.IsPresented,
         "persistent dashboard parks instead of hiding its native surface");
+    PumpAnimation(persistentDashboard.AnimateInAsync(animate: false), "dashboard recovery without entrance animation");
+    Check.True(persistentDashboard.IsPresented &&
+               persistentDashboard.Content is Control { RenderTransform: ScaleTransform { ScaleX: 1, ScaleY: 1 } },
+        "recovery presents the full-size surface without an extra zoom transition");
     persistentDashboard.ClosePermanently();
 
     var usageCycle = new UsageDetailsWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });

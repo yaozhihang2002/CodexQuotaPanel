@@ -30,8 +30,27 @@ if (OperatingSystem.IsWindows())
         "Windows tool-window style enable");
     Check.True(!nativeWindow.HasExtendedStyle(NativeWindow.WsExAppWindow),
         "Windows app-window style disable");
+    var displayEvents = new List<(uint Message, int Value)>();
+    var monitor = new DisplaySessionMonitor((message, value) => displayEvents.Add((message, value)));
+    var monitorHandle = monitor.Handle;
+    Check.True(monitorHandle != 0 && NativeWindow.Exists(monitorHandle), "display monitor owns a native window");
+    NativeWindow.Send(monitorHandle, 0x02B1, 3);
+    NativeWindow.Send(monitorHandle, 0x007E, 32);
+    NativeWindow.Send(monitorHandle, 0x001A, 47);
+    NativeWindow.Send(monitorHandle, 0x001A, 1);
+    Check.True(displayEvents.SequenceEqual(new[] { (0x02B1u, 3), (0x007Eu, 32), (0x001Au, 47) }),
+        "session connect, display and work-area notifications are forwarded without unrelated settings");
+    Check.True(DisplaySessionMonitor.ReadGeometry(nativeWindow.Handle) is { Dpi: > 0, ClientWidth: > 0 },
+        "native geometry exposes DPI and client size");
+    Check.True(VisibleWindowFrame.ReadInsets(0) == default, "missing native frame has no guessed inset");
+    var frameInsets = VisibleWindowFrame.ReadInsets(nativeWindow.Handle);
+    Check.True(frameInsets.Left >= 0 && frameInsets.Top >= 0 && frameInsets.Right >= 0 && frameInsets.Bottom >= 0,
+        "native invisible frame measurement is nonnegative");
+    monitor.Dispose();
+    monitor.Dispose();
+    Check.True(!NativeWindow.Exists(monitorHandle), "display monitor disposes its HWND idempotently");
 }
-var checkCount = OperatingSystem.IsWindows() ? 8 : 4;
+var checkCount = OperatingSystem.IsWindows() ? 14 : 4;
 if (string.Equals(Environment.GetEnvironmentVariable("CODEXQUOTA_PLATFORM_MUTATION_TESTS"), "1",
         StringComparison.Ordinal))
 {
@@ -76,6 +95,10 @@ sealed class NativeWindow : IDisposable
     public bool HasExtendedStyle(long style) => (GetWindowLongPtrW(Handle, GwlExStyle).ToInt64() & style) != 0;
 
     public void Dispose() => _ = DestroyWindow(Handle);
+    public static bool Exists(nint handle) => IsWindow(handle);
+    public static void Send(nint handle, uint message, int value) => SendMessageW(handle, message, value, 0);
+    [DllImport("user32.dll")] private static extern bool IsWindow(nint handle);
+    [DllImport("user32.dll")] private static extern nint SendMessageW(nint handle, uint message, nint wParam, nint lParam);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint CreateWindowExW(uint extendedStyle, string className, string windowName,

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.6.5 — Model pricing and display recovery (same-version update)
+
+- 支持 GPT-6 Astra Default/Fast API 等价美元估算、缓存写入和长上下文规则，并补齐 GPT-5.5 长上下文计价；金额不代表订阅账单。
+- Windows 监听当前 RDP 会话和显示环境变化，合并通知后自动重建失效的详情窗口，不重启数据进程、不改变悬浮球位置，不增加托盘入口。
+- 贴边定位读取 DWM 可见边框，按当前 DPI 补偿不可见缩放边框，消除左右及底部壁纸缝隙；窗口重建时保留正确的显示器归属。
+- 原生窗口准备以实际完成状态为准，不再把非零 HWND 当成首帧已就绪；新窗口就绪后接替旧窗口。
+- 本次保持版本号 0.6.5，替换 Windows 双语联网 Setup 与通用 macOS DMG。Windows Setup 支持同版本重新安装，设置和本地数据保留。
+- 本地 40 项 UI 场景及五轮原生贴边/重建/坐标点击验证通过；真实跨 DPI RDP 重连与 macOS 真人 Retina 验收不由模拟测试替代。
+
 ## v0.6.4 — Usage attribution and chart interaction repair
 
 - 重复 Token 指纹按信息质量合并，缺少模型上下文的副本不再把已识别模型覆盖为 `Unknown`；解析器版本升级后自动重建近期索引并原位回填。

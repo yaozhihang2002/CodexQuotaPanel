@@ -96,7 +96,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             ? _settings.LastView
             : _settings.StartupView;
         ShowStartupView();
-        if (startupView != StartupViewMode.Details)
+        if (startupView != StartupViewMode.Details && !IsRemoteDesktop)
         {
             // Pre-create the persistent dashboard surface while the startup orb
             // (or tray-only state) is idle. The first user click then performs
@@ -107,6 +107,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             _dashboard!.ApplyPresentation(_presentation);
             await _dashboard.PrepareNativeSurfaceAsync().ConfigureAwait(true);
         }
+        StartDisplayRecovery();
         _refreshLoop = RefreshLoopAsync(_lifetime.Token);
         _usageLoop = RunUsagePipelineAsync(_lifetime.Token);
         _topmostLoop = TopmostLoopAsync(_lifetime.Token);
@@ -208,12 +209,21 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private async Task OpenDashboardAsync()
     {
+        if (_displayRebuilding) return;
+        if (_displaySurfaceInvalid) await RecoverDisplaySurfaceAsync();
         if (_dashboard?.IsPresented == true) { _dashboard.Activate(); return; }
         if (_dashboardOpening || _dashboardHiding) return;
         _dashboardOpening = true;
         try
         {
             _orbPositionBeforeDashboard = _orb?.IsVisible == true ? _orb.Position : null;
+            if (IsRemoteDesktop || _displaySurfaceInvalid)
+            {
+                LogSurface("discard-before-open");
+                _dashboard?.ClosePermanently();
+                _dashboard = null;
+                _displaySurfaceInvalid = false;
+            }
             EnsureDashboard();
             var dashboard = _dashboard!;
             if (_orb is not null)
@@ -248,6 +258,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             }
 
             ApplyNativeOrbSettings();
+            LogSurface("opened");
             _settings = _settings with { LastView = StartupViewMode.Details };
             await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
         }
@@ -260,22 +271,33 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private void EnsureDashboard()
     {
         if (_dashboard is not null) return;
-        _dashboard = new DashboardWindow(_settings, IsSystemDark());
+        var dashboard = new DashboardWindow(_settings, IsSystemDark());
+        _dashboard = dashboard;
         if (OperatingSystem.IsWindows())
         {
-            _dashboard.UseClientOpacityAnimation = false;
-            _dashboard.TransitionOpacityChanged += opacity =>
+            dashboard.InvisibleFrameInsetsProvider = () =>
             {
-                if (_dashboard.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
+                if (!OperatingSystem.IsWindows()) return default;
+                var frame = VisibleWindowFrame.ReadInsets(dashboard.TryGetPlatformHandle()?.Handle ?? 0);
+                return new Thickness(frame.Left, frame.Top, frame.Right, frame.Bottom);
+            };
+            dashboard.UseClientOpacityAnimation = false;
+            dashboard.TransitionOpacityChanged += opacity =>
+            {
+                if (dashboard.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
                 {
-                    if (opacity <= .001) ApplyNativeWindowTheme(_dashboard);
+                    if (opacity <= .001) ApplyNativeWindowTheme(dashboard);
                     _platform.SetWindowOpacity(handle, opacity);
-                    if (opacity >= .999) ApplyNativeWindowTheme(_dashboard);
+                    if (opacity >= .999) ApplyNativeWindowTheme(dashboard);
                 }
             };
         }
         PrepareNativeWindowTheme(_dashboard);
-        _dashboard.DisplayRecovered += () => RedrawNativeWindow(_dashboard);
+        dashboard.DisplayRecovered += () => RedrawNativeWindow(dashboard);
+        dashboard.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, (_, e) =>
+        {
+            if (ReferenceEquals(_dashboard, dashboard)) LogSurface("pointer-pressed", e.GetPosition(dashboard));
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
         _dashboard.CollapseRequested += async (_, _) => await CollapseDashboardAsync();
         _dashboard.RefreshRequested += async (_, _) => await RefreshAsync();
         _dashboard.SettingsRequested += (_, _) => ShowSettings();
@@ -284,7 +306,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private async Task CollapseDashboardAsync()
     {
-        if (_dashboardHiding || _dashboardOpening) return;
+        if (_dashboardHiding || _dashboardOpening || _displayRebuilding) return;
         _dashboardHiding = true;
         try
         {
@@ -313,6 +335,13 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 ApplyNativeOrbSettings();
             }
             _orbPositionBeforeDashboard = null;
+            if (IsRemoteDesktop || _displaySurfaceInvalid)
+            {
+                LogSurface("discard-after-collapse");
+                _dashboard?.ClosePermanently();
+                _dashboard = null;
+                _displaySurfaceInvalid = false;
+            }
             _settings = _settings with { LastView = StartupViewMode.Orb };
             await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
         }
@@ -481,6 +510,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private void Exit()
     {
+        StopDisplayRecovery();
         _lifetime.Cancel();
         _tray?.Dispose();
         _desktop.Shutdown();
