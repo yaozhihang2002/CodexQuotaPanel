@@ -92,7 +92,10 @@ foreach (var (name, scenario, scale) in scenarios)
 
 if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
 {
-    var now = DateTimeOffset.UtcNow;
+    // Use local noon so now - 3h and now - 1d always land on distinct
+    // calendar days. A live UTC clock before 03:00 merged both fixtures
+    // into yesterday on UTC CI hosts, invalidating the two-bar assertion.
+    var now = new DateTimeOffset(new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Local));
     var snapshot = new OfficialQuotaSnapshot(now,
         [new QuotaWindow("5h", 300, 71, now.AddHours(3)),
          new QuotaWindow("7d", 10_080, 44, now.AddDays(4))],
