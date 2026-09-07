@@ -432,12 +432,13 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     {
         var work = placementScreen.WorkingArea;
         var scale = placementScreen.Scaling;
-        var panelWidth = (int)Math.Ceiling(adaptiveDashboard.Width * scale);
-        var panelHeight = (int)Math.Ceiling(adaptiveDashboard.Height * scale);
+        var frameAllowance = new WindowDisplayRecovery(adaptiveDashboard).FrameInsets;
         var orbSize = (int)Math.Ceiling(88 * scale);
         var centeredOrb = new PixelPoint(work.X + work.Width / 2 - orbSize / 2,
             work.Y + work.Height / 2 - orbSize / 2);
         adaptiveDashboard.PlaceNear(centeredOrb, 88);
+        var panelWidth = (int)Math.Ceiling((adaptiveDashboard.Width + frameAllowance.Width) * scale);
+        var panelHeight = (int)Math.Ceiling((adaptiveDashboard.Height + frameAllowance.Height) * scale);
         Check.True(Math.Abs(adaptiveDashboard.Position.X -
                             (centeredOrb.X + orbSize / 2d - panelWidth / 2d)) <= 1 &&
                    Math.Abs(adaptiveDashboard.Position.Y -
@@ -465,6 +466,47 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         "dashboard retires its transparent final frame before the orb is shown");
     PumpAnimation(adaptiveDashboard.AnimateInAsync(), "dashboard animate in");
     adaptiveDashboard.ClosePermanently();
+
+    var dpiDashboard = new DashboardWindow(new AppSettings { Theme = AppTheme.Dark });
+    dpiDashboard.ApplyPresentation(presentation);
+    dpiDashboard.Show();
+    var recovery = new WindowDisplayRecovery(dpiDashboard);
+    var preferred = new Size(dpiDashboard.Width, dpiDashboard.Height);
+    foreach (var dpi in new[] { 1d, 1.5d, 2d, 1d })
+    {
+        dpiDashboard.SetRenderScaling(dpi);
+        // Simulate a changed remote desktop work area while retaining this
+        // exact window and its controls, then returning to the local desktop.
+        var work = dpi == 1 ? new PixelRect(0, 0, 1920, 1080) : new PixelRect(-1280, 0, 1280, 960);
+        dpiDashboard.Position = new PixelPoint(work.Right - 8, work.Bottom - 8);
+        var outer = recovery.Fit(work, dpi);
+        dpiDashboard.InvalidateMeasure();
+        dpiDashboard.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        Check.True(dpiDashboard.Position.X >= work.X && dpiDashboard.Position.Y >= work.Y &&
+                   dpiDashboard.Position.X + outer.Width <= work.Right &&
+                   dpiDashboard.Position.Y + outer.Height <= work.Bottom,
+            $"retained dashboard complete frame fits changed work area at {dpi}");
+        var footerButton = dpiDashboard.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.Content is string text && text == "收起为悬浮球");
+        var footerOrigin = footerButton.TranslatePoint(default, dpiDashboard) ?? default;
+        Check.True(footerOrigin.Y >= 0 && footerOrigin.Y + footerButton.Bounds.Height <= dpiDashboard.ClientSize.Height + 1,
+            $"retained dashboard footer remains visible at {dpi}");
+        Check.True(dpiDashboard.WindowCardCount == 2 && dpiDashboard.DailyChartDayCount > 0,
+            $"retained dashboard data survives DPI change at {dpi}");
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        Dispatcher.UIThread.RunJobs();
+    }
+    Check.True(Math.Abs(dpiDashboard.Width - preferred.Width) < 1 &&
+               Math.Abs(dpiDashboard.Height - preferred.Height) < 1,
+        "return to larger local desktop restores preferred dashboard size");
+    using (var dpiFrame = dpiDashboard.CaptureRenderedFrame())
+    {
+        if (dpiFrame is null) throw new InvalidOperationException("DPI recovery produced no rendered frame");
+        using var dpiOutput = File.Create(Path.Combine(outputRoot, "dashboard-dpi-roundtrip.png"));
+        dpiFrame.Save(dpiOutput, PngBitmapEncoderOptions.Default);
+    }
+    dpiDashboard.ClosePermanently();
 
     var persistentDashboard = new DashboardWindow(new AppSettings
     {
@@ -719,7 +761,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     compactFeedbackWindow.Close();
 }
 
-Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 31 : 0)} scenarios -> {outputRoot}");
+Console.WriteLine($"UI render matrix passed: {scenarios.Length + (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly ? 32 : 0)} scenarios -> {outputRoot}");
 Environment.Exit(0);
 
 static SettingsWindow CreateSettings(AppLanguage language, AppTheme theme, int page)

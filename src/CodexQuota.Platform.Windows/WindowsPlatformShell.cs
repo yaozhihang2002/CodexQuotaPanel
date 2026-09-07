@@ -128,6 +128,18 @@ public sealed class WindowsPlatformShell : IPlatformShell
 
     public IGlobalShortcutRegistration? RegisterRecoveryShortcut(Action callback) => new RecoveryHotkey(callback);
 
+    public void RedrawWindowFrame(nint handle)
+    {
+        if (handle == 0) return;
+        // Invalidate both client and non-client surfaces after display changes,
+        // including the retained layered dashboard's caption/close button.
+        _ = RedrawWindow(handle, IntPtr.Zero, IntPtr.Zero, 0x0001 | 0x0080 | 0x0100 | 0x0400);
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RedrawWindow(nint handle, IntPtr updateRect, IntPtr updateRegion, uint flags);
+
     public void PlayAlertSound() => MessageBeep(0x00000030);
 
     public void OpenUri(Uri uri) => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });

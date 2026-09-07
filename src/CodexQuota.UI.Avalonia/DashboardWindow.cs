@@ -35,6 +35,10 @@ public sealed class DashboardWindow : Window
     private bool _trackPlacement;
     private bool _placementDirty;
     private bool _presented;
+    private readonly WindowDisplayRecovery _displayRecovery;
+    private PixelPoint? _openingOrbPosition;
+    private double _openingOrbSize;
+    public event Action? DisplayRecovered;
 
     public event EventHandler? CollapseRequested;
     public event EventHandler? RefreshRequested;
@@ -142,6 +146,8 @@ public sealed class DashboardWindow : Window
         _transitionSurface.RenderTransformOrigin = RelativePoint.Center;
         _transitionSurface.RenderTransform = new ScaleTransform(1, 1);
         Content = _transitionSurface;
+        _displayRecovery = new WindowDisplayRecovery(this, () => IsPresented,
+            () => DisplayRecovered?.Invoke());
         Closing += (_, e) => { if (!_allowClose) { e.Cancel = true; CollapseRequested?.Invoke(this, EventArgs.Empty); } };
         PositionChanged += (_, _) =>
         {
@@ -271,12 +277,15 @@ public sealed class DashboardWindow : Window
 
     public void PlaceNear(PixelPoint orbPosition, double orbLogicalSize)
     {
+        _openingOrbPosition = orbPosition;
+        _openingOrbSize = orbLogicalSize;
         var orbScreen = Screens.ScreenFromPoint(orbPosition) ?? Screens.Primary;
         if (orbScreen is null) return;
         var scale = orbScreen.Scaling;
         var work = orbScreen.WorkingArea;
-        var panelWidth = (int)Math.Ceiling(Width * scale);
-        var panelHeight = (int)Math.Ceiling(Height * scale);
+        var outer = _displayRecovery.Fit(orbScreen);
+        var panelWidth = outer.Width;
+        var panelHeight = outer.Height;
         var orbSize = (int)Math.Ceiling(orbLogicalSize * scale);
         var x = (int)Math.Round(orbPosition.X + orbSize / 2d - panelWidth / 2d);
         var y = (int)Math.Round(orbPosition.Y + orbSize / 2d - panelHeight / 2d);
@@ -293,8 +302,9 @@ public sealed class DashboardWindow : Window
                      Screens.ScreenFromPoint(desired) ?? Screens.Primary;
         if (screen is null) return false;
         var work = screen.WorkingArea;
-        var panelWidth = (int)Math.Ceiling(Width * screen.Scaling);
-        var panelHeight = (int)Math.Ceiling(Height * screen.Scaling);
+        var outer = _displayRecovery.Fit(screen);
+        var panelWidth = outer.Width;
+        var panelHeight = outer.Height;
         var restored = new PixelPoint(
             Math.Clamp(desired.X, work.X, Math.Max(work.X, work.Right - panelWidth)),
             Math.Clamp(desired.Y, work.Y, Math.Max(work.Y, work.Bottom - panelHeight)));
@@ -335,6 +345,9 @@ public sealed class DashboardWindow : Window
         if (_transitionSurface.RenderTransform is ScaleTransform start) start.ScaleX = .98;
         if (_transitionSurface.RenderTransform is ScaleTransform startY) startY.ScaleY = .975;
         if (!IsVisible) Show();
+        // Show/moving across displays can change DPI and native frame size.
+        // Re-anchor using the new dimensions before the first visible frame.
+        if (_openingOrbPosition is { } openingOrb) PlaceNear(openingOrb, _openingOrbSize);
         if (!UseClientOpacityAnimation) Opacity = 1;
         // The native handle is guaranteed to exist after Show. Repeat the
         // zero-alpha assignment before activation so the whole HWND begins at 0.

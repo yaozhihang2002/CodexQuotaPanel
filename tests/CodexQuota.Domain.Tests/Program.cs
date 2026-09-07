@@ -18,6 +18,13 @@ Check.Equal(1, snapshot.VisibleWindows.Count, "adaptive window filtering");
 
 var usage = new TokenUsageBreakdown(110_000, 100_000, 40_000, 10_000, 3_000);
 var standardCost = ApiCostEstimator.Estimate("gpt-5.6-sol", "default", usage);
+Check.Equal(1.14m, ApiCostEstimator.Estimate("gpt-6-astra", "default", usage).Usd, "Astra standard");
+Check.Equal(2.28m, ApiCostEstimator.Estimate("gpt-6-astra", "priority", usage).Usd, "Astra fast");
+var astraLong = new TokenUsageBreakdown(310_000, 300_000, 200_000, 10_000, 3_000)
+    { CacheWriteInputTokens = 40_000 };
+Check.Equal(6.7m, ApiCostEstimator.Estimate("gpt-6-astra", "fast", astraLong).Usd,
+    "Astra fast long context includes cache writes without double counting cached or reasoning tokens");
+Check.Equal("GPT-6 Astra", ApiCostEstimator.DisplayModel("gpt-6-astra"), "Astra display label");
 Check.True(standardCost.IsPriced, "standard priced");
 Check.Equal(0.456m, standardCost.Usd, "standard cost");
 Check.Equal(0.912m, ApiCostEstimator.Estimate("gpt-5.6-sol", "fast", usage).Usd, "fast cost");
@@ -27,6 +34,14 @@ Check.Equal(0.62m, ApiCostEstimator.Estimate("codex-auto-review", "fast", usage)
     "auto review fast uses the official GPT-5.4 two-times multiplier");
 Check.Equal(0.62m, ApiCostEstimator.Estimate("gpt-5.5", "default", usage).Usd,
     "gpt-5.5 official API rate");
+Check.Equal(1.65m, ApiCostEstimator.Estimate("gpt-5.5", "default", astraLong).Usd,
+    "gpt-5.5 long context charges input and cached tokens twice and output 1.5 times");
+Check.Equal(1.66m, ApiCostEstimator.Estimate("gpt-5.5", "default",
+    new TokenUsageBreakdown(282_000, 272_000, 0, 10_000, 0)).Usd,
+    "gpt-5.5 threshold itself retains short-context rates");
+Check.Equal(3.17001m, ApiCostEstimator.Estimate("gpt-5.5", "default",
+    new TokenUsageBreakdown(282_001, 272_001, 0, 10_000, 0)).Usd,
+    "gpt-5.5 above threshold applies long-context rates");
 Check.Equal(0.093m, ApiCostEstimator.Estimate("gpt-5.4-mini", "default", usage).Usd,
     "gpt-5.4 mini official API rate");
 Check.Equal(0.252m, ApiCostEstimator.Estimate("gpt-5.3-codex", "default", usage).Usd,
@@ -131,7 +146,7 @@ var realReset = new[]
 Check.Equal(4, QuotaHistoryContinuity.RemoveTransientSourceSpikes(realReset).Count,
     "sustained reset value is preserved");
 
-Console.WriteLine("Domain checks passed: 29");
+Console.WriteLine("Domain checks passed: 36");
 
 static class Check
 {

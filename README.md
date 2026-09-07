@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.4--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.6.5--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-12%2B%20Apple%20Silicon%20%7C%20Intel-111111">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
@@ -17,7 +17,14 @@
   <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
 </p>
 
-> 当前版本：**v0.6.4 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.6.5 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+
+## v0.6.5 模型计价与显示恢复
+
+- 支持 GPT-6 Astra Default/Fast 美元估算、缓存写入和长上下文规则；补齐 GPT-5.5 长上下文计价。
+- 其他已支持模型标准单价已按 2026-09-07 官网核对；金额仍为当前公开 API 价目表等价估算，不是订阅账单。
+- 面板贴边定位计入原生标题栏与边框，减少右上角关闭按钮越界。
+- 显示器、工作区和 DPI 变化后重算布局并重绘，小工作区自适应；真实远程桌面断开/重连仍需用户环境验收。
 
 ## v0.6.4 用量归属与曲线交互修复
 
@@ -138,10 +145,10 @@ Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.4` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.6.5` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
 
-- Windows：`CodexQuotaPanel-0.6.4-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
-- macOS：`CodexQuotaPanel-0.6.4-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
+- Windows：`CodexQuotaPanel-0.6.5-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
+- macOS：`CodexQuotaPanel-0.6.5-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
 
 不再发布重复的 MSI、便携包、ZIP 或离线 Setup，减少选择成本。预发布版仍可能存在特定显卡、DPI 或系统环境下的兼容性问题。
 
@@ -169,13 +176,13 @@ dotnet run --project tests/CodexQuota.UI.Tests -c Release --no-build
 Windows 本地候选生成唯一的双语联网 Setup：
 
 ```powershell
-installer/Windows/Build-Release.ps1 -Version 0.6.4 -DotNetPath <dotnet.exe>
+installer/Windows/Build-Release.ps1 -Version 0.6.5 -DotNetPath <dotnet.exe>
 ```
 
 macOS 在 Apple runner 或 Mac 上生成唯一的通用 DMG：
 
 ```powershell
-installer/macOS/Build-Package.ps1 -Version 0.6.4 -Runtime osx-universal -DmgOnly
+installer/macOS/Build-Package.ps1 -Version 0.6.5 -Runtime osx-universal -DmgOnly
 ```
 
 ### 现有 Windows 正式分支

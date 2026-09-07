@@ -6,17 +6,18 @@ namespace CodexQuota.Domain;
 /// </summary>
 public static class ApiCostEstimator
 {
-    public const string BasisDate = "2026-08-26";
-    public const string SourceUrl = "https://platform.openai.com/pricing";
+    public const string BasisDate = "2026-09-07";
+    public const string SourceUrl = "https://developers.openai.com/api/docs/pricing";
     private const decimal TokensPerMillion = 1_000_000m;
     private const long LongContextThreshold = 272_000;
     private static readonly IReadOnlyDictionary<string, ModelPrice> StandardPrices =
         new Dictionary<string, ModelPrice>(StringComparer.OrdinalIgnoreCase)
         {
+            ["gpt-6-astra"] = new(10.00m, 1.00m, 50.00m, 2m, true, 1.25m),
             ["gpt-5.6-sol"] = new(4.00m, 0.40m, 20.00m, 2m, true, 1.25m),
             ["gpt-5.6-terra"] = new(2.00m, 0.20m, 12.00m, 2m, true, 1.25m),
             ["gpt-5.6-luna"] = new(0.20m, 0.02m, 1.20m, 2m, true, 1.25m),
-            ["gpt-5.5"] = new(5.00m, 0.50m, 30.00m, 2m),
+            ["gpt-5.5"] = new(5.00m, 0.50m, 30.00m, 2m, true),
             ["gpt-5.4"] = new(2.50m, 0.25m, 15.00m, 2m, true),
             ["gpt-5.4-mini"] = new(0.75m, 0.075m, 4.50m),
             ["gpt-5.3-codex"] = new(1.75m, 0.175m, 14.00m, 2m),
@@ -68,6 +69,7 @@ public static class ApiCostEstimator
 
     public static string DisplayModel(string? model) => NormalizeModel(model) switch
     {
+        "gpt-6-astra" => "GPT-6 Astra",
         "gpt-5.6-sol" => "GPT-5.6 Sol",
         "gpt-5.6-terra" => "GPT-5.6 Terra",
         "gpt-5.6-luna" => "GPT-5.6 Luna",

@@ -275,6 +275,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             };
         }
         PrepareNativeWindowTheme(_dashboard);
+        _dashboard.DisplayRecovered += () => RedrawNativeWindow(_dashboard);
         _dashboard.CollapseRequested += async (_, _) => await CollapseDashboardAsync();
         _dashboard.RefreshRequested += async (_, _) => await RefreshAsync();
         _dashboard.SettingsRequested += (_, _) => ShowSettings();
@@ -422,6 +423,8 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private void PrepareNativeWindowTheme(Window window, AppSettings? settings = null)
     {
+        if (window is not DashboardWindow)
+            _ = new WindowDisplayRecovery(window, redrawNativeFrame: () => RedrawNativeWindow(window));
         window.Opened += (_, _) =>
         {
             ApplyNativeWindowTheme(window, settings);
@@ -430,6 +433,13 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             if (ReferenceEquals(window, _dashboard))
                 Dispatcher.UIThread.Post(ApplyNativeOrbSettings, DispatcherPriority.Background);
         };
+    }
+
+    private void RedrawNativeWindow(Window? window)
+    {
+        if (OperatingSystem.IsWindows() && _platform is WindowsPlatformShell windows &&
+            window?.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
+            windows.RedrawWindowFrame(handle);
     }
 
     private void ConfigureRecoveryShortcut()
