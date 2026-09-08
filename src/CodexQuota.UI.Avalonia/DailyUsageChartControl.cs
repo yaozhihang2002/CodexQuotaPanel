@@ -155,7 +155,8 @@ public sealed class DailyUsageChartControl : Control
         if (_days.Count == 0 && _cycleStart is null) return [];
         var lookup = _days.ToDictionary(day => day.Day, day => day);
         var start = _cycleStart?.ToLocalTime().Date ?? _days.Min(day => day.Day.ToDateTime(TimeOnly.MinValue));
-        var requestedEnd = _cycleEnd?.ToLocalTime().Date ?? _days.Max(day => day.Day.ToDateTime(TimeOnly.MinValue));
+        // Cycle end is exclusive: a reset at midnight must not add an empty next-day bar.
+        var requestedEnd = _cycleEnd?.AddTicks(-1).ToLocalTime().Date ?? _days.Max(day => day.Day.ToDateTime(TimeOnly.MinValue));
         var end = requestedEnd > DateTime.Today ? DateTime.Today : requestedEnd;
         if (end < start) end = start;
         var result = new List<DailyBar>();

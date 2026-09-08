@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.6 — Transparent native first-frame preparation
+
+- Windows 详情窗口在首次 Show 前即设置原生透明度，并禁止准备阶段激活；避免 RDP/DPI 定位期间露出白色标题栏和临时位置。
+- 移除淡入完成后的重复原生边框刷新，主题和窗口样式在透明阶段准备。
+- 增加首次显示透明度与激活策略回归测试、独立进程原生首帧采样工具。
+- 每日金额图遵循周期结束时刻不包含在内的规则，避免午夜边界额外绘制下一天的空柱。
+- 应用、Windows 双语安装器和 macOS 打包配置同步为 0.6.6。
+
 ## v0.6.5 — Model pricing and display recovery (same-version update)
 
 - 支持 GPT-6 Astra Default/Fast API 等价美元估算、缓存写入和长上下文规则，并补齐 GPT-5.5 长上下文计价；金额不代表订阅账单。

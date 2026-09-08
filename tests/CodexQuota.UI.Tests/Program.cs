@@ -541,7 +541,19 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         Theme = AppTheme.Dark,
         Language = AppLanguage.SimplifiedChinese
     }) { UseClientOpacityAnimation = false };
+    var nativeOpacity = 1d;
+    var opacityAtOpened = 1d;
+    var activatedAtOpened = true;
+    persistentDashboard.TransitionOpacityChanged += value => nativeOpacity = value;
+    persistentDashboard.Opened += (_, _) =>
+    {
+        opacityAtOpened = nativeOpacity;
+        activatedAtOpened = persistentDashboard.ShowActivated;
+    };
     PumpAnimation(persistentDashboard.PrepareNativeSurfaceAsync(), "dashboard native surface prewarm");
+    Check.True(opacityAtOpened == 0 && nativeOpacity == 0 && !activatedAtOpened,
+        "native first Show is already transparent and does not activate the preparing window");
+    Check.True(persistentDashboard.ShowActivated, "preparation restores normal activation policy");
     PumpAnimation(persistentDashboard.AnimateInAsync(), "dashboard persistent animate in");
     Check.True(persistentDashboard.IsVisible && persistentDashboard.IsPresented,
         "persistent dashboard presents its prewarmed native surface");

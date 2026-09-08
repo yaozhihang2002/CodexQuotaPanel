@@ -288,7 +288,8 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 {
                     if (opacity <= .001) ApplyNativeWindowTheme(dashboard);
                     _platform.SetWindowOpacity(handle, opacity);
-                    if (opacity >= .999) ApplyNativeWindowTheme(dashboard);
+                    // Theme/frame styles are prepared while transparent.
+                    // SWP_FRAMECHANGED after revealing can flash the caption.
                 }
             };
         }

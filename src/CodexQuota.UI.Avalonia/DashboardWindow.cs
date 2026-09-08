@@ -326,15 +326,22 @@ public sealed class DashboardWindow : Window
         var intendedPosition = Position;
         WindowStartupLocation = WindowStartupLocation.Manual;
         Position = new PixelPoint(30000, 30000);
-        Show();
-        await Task.Delay(90);
-        SetTransitionOpacity(0);
-        // A tray utility does not need a second taskbar button. Avoid toggling
-        // the native style after prewarm because that can recreate or repaint
-        // the non-client surface.
-        Position = intendedPosition;
-        await Task.Delay(34);
-        _nativeSurfacePrepared = true;
+        var activateOnShow = ShowActivated;
+        ShowActivated = false;
+        try
+        {
+            // RDP/WM_DPICHANGED may relocate an offscreen window during Show.
+            // Position alone is not a visibility guard: set native alpha and
+            // theme before Show, then repeat alpha before yielding to rendering.
+            SetTransitionOpacity(0);
+            Show();
+            SetTransitionOpacity(0);
+            await Task.Delay(90);
+            Position = intendedPosition;
+            await Task.Delay(34);
+            _nativeSurfacePrepared = true;
+        }
+        finally { ShowActivated = activateOnShow; }
     }
 
     public async Task AnimateInAsync(bool animate = true)
