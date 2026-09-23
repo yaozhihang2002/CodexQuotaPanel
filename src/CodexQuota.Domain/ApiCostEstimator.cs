@@ -6,7 +6,8 @@ namespace CodexQuota.Domain;
 /// </summary>
 public static class ApiCostEstimator
 {
-    public const string BasisDate = "2026-09-07";
+    public const string BasisDate = "2026-09-23";
+    private const string LegacyBasisDate = "2026-09-07";
     public const string SourceUrl = "https://developers.openai.com/api/docs/pricing";
     private const decimal TokensPerMillion = 1_000_000m;
     private const long LongContextThreshold = 272_000;
@@ -14,6 +15,8 @@ public static class ApiCostEstimator
         new Dictionary<string, ModelPrice>(StringComparer.OrdinalIgnoreCase)
         {
             ["gpt-6-astra"] = new(10.00m, 1.00m, 50.00m, 2m, true, 1.25m),
+            ["gpt-6-sol"] = new(2.00m, 0.20m, 10.00m, 2m, true, 1.25m, BasisDate),
+            ["gpt-6-luna"] = new(0.10m, 0.01m, 0.50m, 2m, true, 1.25m, BasisDate),
             ["gpt-5.6-sol"] = new(4.00m, 0.40m, 20.00m, 2m, true, 1.25m),
             ["gpt-5.6-terra"] = new(2.00m, 0.20m, 12.00m, 2m, true, 1.25m),
             ["gpt-5.6-luna"] = new(0.20m, 0.02m, 1.20m, 2m, true, 1.25m),
@@ -49,7 +52,7 @@ public static class ApiCostEstimator
             cacheWrite * price.Input * price.CacheWriteMultiplier * tierMultiplier * inputMultiplier +
             cached * price.CachedInput * tierMultiplier * inputMultiplier +
             usage.OutputTokens * price.Output * tierMultiplier * outputMultiplier;
-        return new ApiCostEstimate(scaled / TokensPerMillion, true, BasisDate, SourceUrl);
+        return new ApiCostEstimate(scaled / TokensPerMillion, true, price.BasisDate, SourceUrl);
     }
 
     public static string NormalizeModel(string? model) => model?.Trim().ToLowerInvariant() switch
@@ -70,6 +73,8 @@ public static class ApiCostEstimator
     public static string DisplayModel(string? model) => NormalizeModel(model) switch
     {
         "gpt-6-astra" => "GPT-6 Astra",
+        "gpt-6-sol" => "GPT-6 Sol",
+        "gpt-6-luna" => "GPT-6 Luna",
         "gpt-5.6-sol" => "GPT-5.6 Sol",
         "gpt-5.6-terra" => "GPT-5.6 Terra",
         "gpt-5.6-luna" => "GPT-5.6 Luna",
@@ -102,7 +107,8 @@ public static class ApiCostEstimator
         decimal Output,
         decimal? FastMultiplier = null,
         bool LongContextSurcharge = false,
-        decimal CacheWriteMultiplier = 1m);
+        decimal CacheWriteMultiplier = 1m,
+        string BasisDate = LegacyBasisDate);
 }
 
 public enum ServiceTier

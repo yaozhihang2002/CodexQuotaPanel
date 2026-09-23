@@ -267,6 +267,8 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Check.True(pricingCopy.Any(text => text.Contains("API 等价计价标准", StringComparison.Ordinal)) &&
                pricingCopy.Any(text => text.Contains(ApiCostEstimator.BasisDate, StringComparison.Ordinal)) &&
                pricingCopy.Any(text => text.Contains("Fast", StringComparison.Ordinal)) &&
+               pricingCopy.Any(text => text.Contains("GPT-6 Sol", StringComparison.Ordinal)) &&
+               pricingCopy.Any(text => text.Contains("GPT-6 Luna", StringComparison.Ordinal)) &&
                pricingCopy.Any(text => text.Contains("Auto-review", StringComparison.Ordinal)),
         "settings explains the dated API-equivalent pricing standard");
     settingsInteraction.PreviewSettings(settings => settings with

@@ -142,7 +142,7 @@ public sealed partial class SettingsWindow
         {
             UiElements.Text(T("API 等价计价标准", "API-equivalent pricing standard"), 15,
                 FontWeight.Bold, _palette.TextPrimary),
-            UiElements.Text($"{T("费率基准", "Rate snapshot")} · {ApiCostEstimator.BasisDate}", 10.5,
+            UiElements.Text($"{T("最近费率更新", "Latest rate update")} · {ApiCostEstimator.BasisDate}", 10.5,
                 FontWeight.SemiBold, _palette.Mint)
         }});
         var official = UiElements.Button(T("查看官方价格", "Official pricing"), _palette);
@@ -165,8 +165,14 @@ public sealed partial class SettingsWindow
                 "Uses the public API Priority USD multiplier, not the ChatGPT credits multiplier")),
             PricingFact("GPT-6 Astra", T("每百万 Token：输入 $10，缓存输入 $1，缓存写入 $12.50，输出 $50；Fast ×2",
                 "Per 1M tokens: input $10, cached $1, cache writes $12.50, output $50; Fast ×2")),
-            PricingFact(T("Astra 长上下文", "Astra long context"), T("单次输入超过 272K：整次请求输入及缓存价格 ×2，输出 ×1.5",
+            PricingFact("GPT-6 Sol", T("每百万 Token：输入 $2，缓存输入 $0.20，缓存写入 $2.50，输出 $10；Fast ×2",
+                "Per 1M tokens: input $2, cached $0.20, cache writes $2.50, output $10; Fast ×2")),
+            PricingFact("GPT-6 Luna", T("每百万 Token：输入 $0.10，缓存输入 $0.01，缓存写入 $0.125，输出 $0.50；Fast ×2",
+                "Per 1M tokens: input $0.10, cached $0.01, cache writes $0.125, output $0.50; Fast ×2")),
+            PricingFact(T("GPT-6 长上下文", "GPT-6 long context"), T("单次输入超过 272K：整次请求输入及缓存价格 ×2，输出 ×1.5",
                 "Above 272K input tokens per request: all input/cache rates ×2 and output ×1.5")),
+            PricingFact(T("旧模型", "Earlier models"), T("沿用 2026-09-07 已核对费率，新模型费率于 2026-09-23 核对",
+                "Retain rates checked on 2026-09-07; new model rates checked on 2026-09-23")),
             PricingFact("Auto-review", T("按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算",
                 "Estimated with the GPT-5.4 API rate mapped by the current official Codex rate card")),
             PricingFact("Unknown / Unpriced", T("保留原始 Token，但不计入美元合计，绝不按免费处理",

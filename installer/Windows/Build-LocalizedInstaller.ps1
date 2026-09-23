@@ -3,7 +3,7 @@
     [string]$DevenvPath,
     [string]$Configuration = 'Release',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.6.6'
+    [string]$Version = '0.6.7'
 )
 
 Set-StrictMode -Version Latest
@@ -12,13 +12,13 @@ $ErrorActionPreference = 'Stop'
 $installerDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectPath = Join-Path $installerDir 'CodexQuotaPanelSetup.vdproj'
 $solutionPath = Join-Path $installerDir 'CodexQuotaPanelInstaller.sln'
-$generatedProject = Join-Path $installerDir 'CodexQuotaPanelSetup.en-us.generated.vdproj'
-$generatedSolution = Join-Path $installerDir 'CodexQuotaPanelInstaller.en-us.generated.sln'
+$generatedProject = Join-Path $installerDir "CodexQuotaPanelSetup.en-us.v$Version.generated.vdproj"
+$generatedSolution = Join-Path $installerDir "CodexQuotaPanelInstaller.en-us.v$Version.generated.sln"
 $iconPath = Join-Path $installerDir '..\..\src\CodexQuota.App\Assets\CodexQuotaPanel.ico'
 $postProcessor = Join-Path $installerDir 'Set-OptionalDesktopShortcut.ps1'
 $upgradeCoordinatorSource = Join-Path $installerDir 'UpgradeCoordinator.cs'
-$upgradeCoordinatorBinary = Join-Path $installerDir '..\..\artifacts\release-stage\UpgradeCoordinator.exe'
-$applicationBinary = Join-Path $installerDir '..\..\artifacts\release-stage\win-x64\CodexQuotaPanel.exe'
+$upgradeCoordinatorBinary = Join-Path $installerDir "..\..\artifacts\release-stage-v$Version\UpgradeCoordinator.exe"
+$applicationBinary = Join-Path $installerDir "..\..\artifacts\release-stage-v$Version\win-x64\CodexQuotaPanel.exe"
 $baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-x64.msi"
 $englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-$Version-en-us-x64.msi"
 $transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-en-us.mst"
@@ -166,7 +166,7 @@ function New-EnglishProject {
     $solution = Get-Content -LiteralPath $solutionPath -Raw -Encoding UTF8
     $solution = $solution.Replace(
         '"CodexQuotaPanelSetup", "CodexQuotaPanelSetup.vdproj", "{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}"',
-        '"CodexQuotaPanelSetupEnUs", "CodexQuotaPanelSetup.en-us.generated.vdproj", "{4DAF16CF-505F-4FEC-9F28-7FD152FB0732}"')
+        "`"CodexQuotaPanelSetupEnUs`", `"CodexQuotaPanelSetup.en-us.v$Version.generated.vdproj`", `"{4DAF16CF-505F-4FEC-9F28-7FD152FB0732}`"")
     $solution = $solution.Replace(
         '{956DA40F-62E0-496D-8861-2AF9DBD1C2EC}',
         '{4DAF16CF-505F-4FEC-9F28-7FD152FB0732}')

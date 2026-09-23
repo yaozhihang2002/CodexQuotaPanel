@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.7 — GPT-6 Sol and Luna pricing (local candidate)
+
+- 按 OpenAI 2026-09-23 官方 API 价格，为 GPT-6 Sol 和 GPT-6 Luna 增加 Default/Fast、缓存写入与长上下文的 API 等价美元估算；使用明细显示正式模型名，不再标为 `Unpriced`。
+- 设置页补充两种模型的费率，并将 GPT-6 长上下文规则说明扩展到整个系列。此前模型的价格保留原有费率；该金额仍不是 Codex 订阅账单。
+
 ## v0.6.6 — Transparent native first-frame preparation
 
 - Windows 详情窗口在首次 Show 前即设置原生透明度，并禁止准备阶段激活；避免 RDP/DPI 定位期间露出白色标题栏和临时位置。

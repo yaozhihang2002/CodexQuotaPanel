@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.6',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.7',
     [string]$DotNetPath,
     [string]$DevenvPath,
     [string]$OutputDirectory,
@@ -14,7 +14,7 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $installerDirectory '..\..')
 $solution = Join-Path $repositoryRoot 'CodexQuotaPanel.VNext.slnx'
 $aggregate = Join-Path $repositoryRoot 'build\CodexQuota.ReleaseAggregate.csproj'
 $appProject = Join-Path $repositoryRoot 'src\CodexQuota.App\CodexQuota.App.csproj'
-$stage = Join-Path $repositoryRoot 'artifacts\release-stage\win-x64'
+$stage = Join-Path $repositoryRoot "artifacts\release-stage-v$Version\win-x64"
 $output = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else {
     Join-Path $repositoryRoot "artifacts\release-v$Version"
 }
