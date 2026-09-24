@@ -154,7 +154,14 @@ public sealed class DashboardWindow : Window
         Content = _transitionSurface;
         _displayRecovery = new WindowDisplayRecovery(this, () => IsPresented,
             () => DisplayRecovered?.Invoke());
-        Closing += (_, e) => { if (!_allowClose) { e.Cancel = true; CollapseRequested?.Invoke(this, EventArgs.Empty); } };
+        Closing += (_, e) =>
+        {
+            // OS/application shutdown must close the window, not start an
+            // asynchronous collapse that may try to reopen an already closed orb.
+            if (_allowClose || e.CloseReason != WindowCloseReason.WindowClosing) return;
+            e.Cancel = true;
+            CollapseRequested?.Invoke(this, EventArgs.Empty);
+        };
         PositionChanged += (_, _) =>
         {
             if (!_trackPlacement || !IsVisible) return;

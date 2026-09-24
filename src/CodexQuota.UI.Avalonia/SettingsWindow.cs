@@ -64,7 +64,7 @@ public sealed partial class SettingsWindow : Window
         SelectPage(0);
         Closing += (_, e) =>
         {
-            if (_allowClose) return;
+            if (_allowClose || e.CloseReason != WindowCloseReason.WindowClosing) return;
             e.Cancel = true;
             RequestCancel();
         };

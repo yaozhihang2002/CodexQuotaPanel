@@ -47,12 +47,14 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private bool _temporaryMoveMode;
     private bool _dashboardOpening;
     private bool _dashboardHiding;
+    private bool _shuttingDown;
     private PixelPoint? _orbPositionBeforeDashboard;
 
     public RuntimeCoordinator(IClassicDesktopStyleApplicationLifetime desktop)
     {
         _desktop = desktop;
         _desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        _desktop.ShutdownRequested += (_, _) => BeginShutdown();
         _platform = OperatingSystem.IsWindows() ? new WindowsPlatformShell() : new MacOSPlatformShell();
         var isolatedDataRoot = string.Equals(
             Environment.GetEnvironmentVariable("CODEXQUOTA_ALLOW_ISOLATED_SMOKE"), "1", StringComparison.Ordinal)
@@ -106,6 +108,11 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 _dashboard!.PlaceNear(_orb.Position, _settings.OrbSize);
             _dashboard!.ApplyPresentation(_presentation);
             await _dashboard.PrepareNativeSurfaceAsync().ConfigureAwait(true);
+            // Avalonia can finish applying HWND styles during its first Show.
+            // Reassert the dormant input policy after the native prewarm settles.
+            if (OperatingSystem.IsWindows() &&
+                _dashboard.TryGetPlatformHandle()?.Handle is { } dormantHandle && dormantHandle != 0)
+                _platform.SetClickThrough(dormantHandle, true);
         }
         StartDisplayRecovery();
         _refreshLoop = RefreshLoopAsync(_lifetime.Token);
@@ -282,12 +289,25 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 return new Thickness(frame.Left, frame.Top, frame.Right, frame.Bottom);
             };
             dashboard.UseClientOpacityAnimation = false;
+            bool? nativeInputTransparent = null;
             dashboard.TransitionOpacityChanged += opacity =>
             {
                 if (dashboard.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
                 {
+                    // The prewarmed, fully transparent HWND remains visible near the orb.
+                    // Explicitly remove it from hit testing while it is dormant.
+                    if (opacity > .001 && nativeInputTransparent != false)
+                    {
+                        _platform.SetClickThrough(handle, false);
+                        nativeInputTransparent = false;
+                    }
                     if (opacity <= .001) ApplyNativeWindowTheme(dashboard);
                     _platform.SetWindowOpacity(handle, opacity);
+                    if (opacity <= .001)
+                    {
+                        _platform.SetClickThrough(handle, true);
+                        nativeInputTransparent = true;
+                    }
                     // Theme/frame styles are prepared while transparent.
                     // SWP_FRAMECHANGED after revealing can flash the caption.
                 }
@@ -307,7 +327,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private async Task CollapseDashboardAsync()
     {
-        if (_dashboardHiding || _dashboardOpening || _displayRebuilding) return;
+        if (_shuttingDown || _dashboardHiding || _dashboardOpening || _displayRebuilding) return;
         _dashboardHiding = true;
         try
         {
@@ -319,6 +339,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 // Mirror the open transition: begin restoring the orb only
                 // after the panel has faded into its low-opacity tail.
                 await Task.Delay(70).ConfigureAwait(true);
+                if (_shuttingDown) return;
                 var orbAnimation = _orb.AnimateInAsync();
                 await Task.WhenAll(panelAnimation, orbAnimation).ConfigureAwait(true);
                 ApplyNativeOrbSettings();
@@ -331,10 +352,12 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
             if (_orb is not null && !orbAnimated)
             {
+                if (_shuttingDown) return;
                 RestoreOrbPosition();
                 await _orb.AnimateInAsync();
                 ApplyNativeOrbSettings();
             }
+            if (_shuttingDown) return;
             _orbPositionBeforeDashboard = null;
             if (IsRemoteDesktop || _displaySurfaceInvalid)
             {
@@ -511,10 +534,17 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
 
     private void Exit()
     {
+        BeginShutdown();
+        _desktop.Shutdown();
+    }
+
+    private void BeginShutdown()
+    {
+        if (_shuttingDown) return;
+        _shuttingDown = true;
         StopDisplayRecovery();
         _lifetime.Cancel();
         _tray?.Dispose();
-        _desktop.Shutdown();
     }
 
     private bool IsSystemDark() => global::Avalonia.Application.Current?.ActualThemeVariant == ThemeVariant.Dark;

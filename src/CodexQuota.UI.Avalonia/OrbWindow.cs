@@ -18,6 +18,7 @@ public sealed class OrbWindow : Window
     private bool _pointerMoved;
     private bool _moveMode;
     private bool _pointerPressed;
+    private bool _closing;
     private PixelPoint _pressPosition;
     private PixelPoint _pressPointerScreenPosition;
 
@@ -56,6 +57,7 @@ public sealed class OrbWindow : Window
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
         PointerCaptureLost += (_, _) => FinishPointerInteraction(false);
+        Closing += (_, _) => _closing = true;
     }
 
     public void ApplySettings(AppSettings settings)
@@ -173,6 +175,7 @@ public sealed class OrbWindow : Window
 
     public async Task AnimateInAsync()
     {
+        if (_closing) return;
         if (_settings.ReducedMotion) { Opacity = 1d; Show(); return; }
         Opacity = .02;
         if (RenderTransform is ScaleTransform start)

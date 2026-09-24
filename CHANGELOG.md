@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.8 — Floating window input and shutdown repair
+
+- Windows 悬浮球旁预绘但完全透明的详情窗口在待命时显式启用鼠标穿透，展开时恢复输入，修复球外区域不能点击的问题。
+- Windows 关机或重启时不再把详情窗口关闭当成收起操作；已关闭的悬浮球也不会被动画再次显示，避免 `Cannot re-show a closed window` 异常。
+- 本地 Windows 原生窗口检查覆盖待命穿透、展开后恢复输入及先关闭悬浮球的顺序；真实系统重启仍需安装后验证。
+
 ## v0.6.7 — GPT-6 Sol and Luna pricing
 
 - 按 OpenAI 2026-09-23 官方 API 价格，为 GPT-6 Sol 和 GPT-6 Luna 增加 Default/Fast、缓存写入与长上下文的 API 等价美元估算；使用明细显示正式模型名，不再标为 `Unpriced`。
