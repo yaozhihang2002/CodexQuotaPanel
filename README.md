@@ -14,80 +14,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/detail-panel.png" width="368" alt="CodexQuotaPanel 额度详情面板">
+  <img src="docs/images/dashboard-current.png" width="450" alt="CodexQuotaPanel 当前额度详情面板，使用示例数据">
 </p>
 
 > 当前版本：**v0.6.9 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
-## v0.6.9 Windows 窗口修复
-
-- 悬浮球旁的透明待命详情窗不再挡住鼠标点击；展开后仍可正常操作。
-- Windows 关机或重启时不再尝试重新显示已关闭的悬浮球，避免异常弹窗。
-- 设置窗口在首次显示前应用深色标题栏主题，消除先白后黑的闪现；实际重启和安装后视觉效果仍需用户环境验证。
-
-## v0.6.7 新模型计价
-
-- 使用明细新增 GPT-6 Sol 与 GPT-6 Luna 的 Default/Fast API 等价金额估算；已有原始 Token 记录会在新版中按对应模型重新计算。
-- 按 OpenAI 2026-09-23 公开价格加入缓存写入和长上下文规则，设置页展示两种模型的费率。旧模型保留原有价格核对日期。
-- 美元金额用于比较用量，不是 Codex 订阅账单或实际扣费。
-
-## v0.6.6 展开首帧修复
-
-- Windows 详情面板首次显示前即进入原生透明状态，准备时不抢焦点，完成布局后再淡入，修复展开时临时位置及白色标题栏闪现的问题。
-- 移除淡入结束后的重复原生边框刷新，保留悬浮球独立位置、贴边和显示变化恢复行为。
-- 每日金额图正确排除午夜周期结束边界，不再额外绘制下一天的空柱。
-- 本地 RDP 首帧对比及重复采样、五轮原生贴边/重建检查通过；不代替所有跨 DPI 重连环境或 Mac 实机验收。
-
-## v0.6.5 模型计价与显示恢复
-
-- 支持 GPT-6 Astra Default/Fast 美元估算、缓存写入和长上下文规则；补齐 GPT-5.5 长上下文计价。
-- 其他已支持模型标准单价已按 2026-09-07 官网核对；金额仍为当前公开 API 价目表等价估算，不是订阅账单。
-- Windows 面板按系统实测的可见边框贴边，消除透明缩放边框造成的左右、底部缝隙，同时保留完整标题栏和按钮。
-- RDP 会话、显示器、工作区和 DPI 变化后自动恢复；必要时仅重建详情窗口，保留额度数据、显示器归属和悬浮球位置，不新增托盘菜单。
-- 修正原生窗口准备时序，避免把句柄已分配误当成绘制已就绪；小工作区仍自适应。真实跨 DPI 远程桌面断开/重连仍需用户环境验收。
-
-## v0.6.4 用量归属与曲线交互修复
-
-- 重复 Token 事件只允许从 `Unknown` 升级为已知模型，不再被缺少上下文的副本反向覆盖。
-- 升级后自动重建近期索引，修复本周期已经保存的 `Unknown / Unpriced` 聚合。
-- 本周期金额严格按精确重置时间区间统计，不再把重置当天零点到重置时刻之前的数据算入新周期。
-- 24 小时曲线的完整绘图区都可悬停，按鼠标横坐标显示对应时刻的实际额度与均匀额度。
-
-## v0.6.3 交互稳定性修复
-
-- 使用明细默认按 API 美元估算从高到低排列，未定价项目置后。
-- 详情面板每次以当前悬浮球为锚点展开，收起后精确恢复悬浮球位置。
-- Windows 展开与收起改用预绘原生表面和短促交叉淡入，减少白闪、灰闪、标题栏残影和空白中间帧。
-- 详情面板作为托盘工具窗口运行，不再在 Windows 任务栏额外显示应用图标。
-- 悬浮球正常交互使用手形光标，只有显式移动模式才显示四向移动光标。
-
-## v0.6.2 Token 模型归因修复
-
-- Token 事件早于模型上下文写入日志时，会使用同一会话随后出现的首个明确模型进行安全回填，不再无故显示 `Unknown`。
-- 解析规则升级后自动进行一次有限历史重建，以原指纹原位更新最近周期的 SQLite 聚合记录，不删除原始日志、不重复累计 Token。
-- `rate_limits.limit_name` 只代表额度桶，可能与当前模型不同，因此不会被误当作模型或套用错误价格；确实没有模型证据的记录仍保持 `Unknown / Unpriced`。
-- GitHub 默认分支首页同步到当前跨平台版本，不再停留在 v0.5.x 介绍。
-
-## v0.6.1 反馈动画优化
-
-- 火焰状态改为依据实际消耗与当前窗口可持续均速的比值判断，五小时和七天窗口在各自均速附近都会显示温焰。
-- 火焰运动速度随额度压力连续变化；修复低速反馈及窗口短暂隐藏后动画可能停止的问题。
-- 双窗口使用压力更高的周期驱动反馈，悬浮球透明度仅影响背景，不再冲淡火焰、文字和额度环。
-
-## v0.6.0 跨平台版本
-
-`codex/vnext-windows-macos` 使用 Avalonia、模块化单体与很薄的平台适配层重建 **v0.6.0**。统计、预测、设置和普通界面在 Windows/macOS 之间共用，置顶、穿透、登录启动与托盘/菜单栏由平台层处理。
-
-当前 vNext 已实现：
-
-- 与正式版一致的单环/双环悬浮球、三种消耗反馈、展开详情、24 小时实际趋势与均匀使用参考线。
-- 当前重置周期 Token 明细、每日/模型/`Default`/`Fast` 汇总，以及明确标为“API 等价估算、非账单”的美元估算。
-- 中英文、深色/浅色/跟随系统、尺寸/字体/透明度/背景/环颜色、置顶、穿透、位置锁定、边缘吸附和提醒设置。
-- 设置即时预览、保存后不退出、取消完整回滚、导入/导出、备份恢复、旧版设置迁移、更新检查和重启应用。
-- Windows 托盘与 macOS 菜单栏、登录启动、全局找回快捷键，以及平台原生置顶/鼠标穿透适配。
-- Token 日志采用有界分批和跨重启增量游标；首次历史索引以及空/损坏游标恢复均由有限工作进程完成并自动退出，主界面不会继承导入内存。实时 App Server 可用时不会先扫描大型 JSONL，回退读取也从文件末尾反向查找最新额度。
-
-Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及一个同时包含 Apple Silicon / Intel 二进制的通用 macOS DMG。macOS 正式稳定版发布前仍需 Apple Developer ID 签名、公证和真实 Retina 设备验收。
+各版本的更新内容与验证说明请查看对应的 [GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)；当前版本详见 [v0.6.9 介绍](https://github.com/yaozhihang2002/CodexQuotaPanel/releases/tag/v0.6.9)。
 
 ## 一眼了解
 
@@ -100,18 +32,23 @@ Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及
 
 ## 界面预览
 
+以下图片由当前界面的自动化渲染测试生成，使用示例额度与用量，并非真实账户截图或实际账单；系统标题栏和托盘外观会因平台而异。
+
 ### 外观与交互集中设置
 
-悬浮球尺寸、设置字体、透明度、双环颜色、火焰样式、置顶和鼠标穿透都可以调整。修改会即时预览，“保存并应用”后设置窗口仍会保持打开，方便继续微调。
+外观页可即时预览悬浮球，并调整尺寸、界面缩放、背景透明度、环颜色与火焰样式。置顶、鼠标穿透和位置锁定等交互选项位于“交互”页；保存后设置窗口仍会保持打开，方便继续微调。
 
 <p align="center">
-  <img src="docs/images/settings-appearance.png" width="860" alt="CodexQuotaPanel 外观设置中心">
+  <img src="docs/images/settings-appearance-current.png" width="900" alt="CodexQuotaPanel 当前外观设置页，深色主题">
 </p>
 
 ### 深色、浅色与跟随系统
 
+同一设置页可选择深色、浅色或跟随系统；下方分别展示深色中文和浅色英文界面。
+
 <p align="center">
-  <img src="docs/images/themes-dark-light.png" width="100%" alt="CodexQuotaPanel 深色和浅色主题">
+  <img src="docs/images/settings-dark-current.png" width="49%" alt="CodexQuotaPanel 深色中文设置界面">
+  <img src="docs/images/settings-light-current.png" width="49%" alt="CodexQuotaPanel 浅色英文设置界面">
 </p>
 
 ### 三种火焰风格，五档消耗反馈
@@ -119,18 +56,14 @@ Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及
 低活动时显示安静的霜晶或冷焰；消耗加快后逐步升温，特别高时显示更浓烈的火焰。三种风格共享五档状态，也可完全关闭动画。
 
 <p align="center">
-  <img src="docs/images/flame-styles.png" width="694" alt="CodexQuotaPanel 三种火焰五档状态">
+  <img src="docs/images/feedback-current.png" width="760" alt="CodexQuotaPanel 当前三种火焰风格与五档状态示意">
 </p>
 
 ### 托盘图标也能读懂额度
 
-托盘图标外围会跟随额度变化，并区分连接中、正常、紧张和离线状态，不展开面板也能快速判断当前情况。
+托盘图标的环长反映剩余额度，颜色反映实时连接、本地回退、连接中或离线等数据状态。它不是风险等级灯；额度是否紧张请查看悬浮球和详情面板。
 
-<p align="center">
-  <img src="docs/images/tray-status.png" width="640" alt="CodexQuotaPanel 动态托盘额度图标">
-</p>
-
-## v0.6.x Pre-release 功能
+## 功能
 
 ### 额度与显示
 
@@ -180,9 +113,9 @@ Release 页面只提供两个入口：一个 Windows 双语联网 Setup，以及
 
 ## 从源码构建
 
-### vNext（Windows / macOS）
+### Windows / macOS
 
-vNext 开发机需要 .NET 10 SDK。Windows Setup 使用框架依赖单文件并在缺少运行时时从微软下载；macOS DMG 使用自包含通用应用：
+开发机需要 .NET 10 SDK。Windows Setup 使用框架依赖单文件，并在缺少运行时时从微软下载；macOS DMG 使用自包含通用应用：
 
 ```powershell
 dotnet restore CodexQuotaPanel.VNext.slnx
@@ -190,7 +123,10 @@ dotnet build CodexQuotaPanel.VNext.slnx -c Release
 dotnet run --project tests/CodexQuota.Domain.Tests -c Release --no-build
 dotnet run --project tests/CodexQuota.Application.Tests -c Release --no-build
 dotnet run --project tests/CodexQuota.Infrastructure.Tests -c Release --no-build
+dotnet run --project tests/CodexQuota.Platform.Tests -c Release --no-build
 dotnet run --project tests/CodexQuota.UI.Tests -c Release --no-build
+# 以下原生标题栏检查仅在 Windows 运行
+dotnet run --project tests/CodexQuota.NativeTheme.Tests -c Release --no-build
 ```
 
 Windows 本地候选生成唯一的双语联网 Setup：
@@ -205,30 +141,15 @@ macOS 在 Apple runner 或 Mac 上生成唯一的通用 DMG：
 installer/macOS/Build-Package.ps1 -Version 0.6.9 -Runtime osx-universal -DmgOnly
 ```
 
-### 现有 Windows 正式分支
-
-需要 Windows x64 与对应的 .NET SDK：
-
-```powershell
-dotnet build work\CodexQuotaPanel.Tests\CodexQuotaPanel.Tests.csproj -c Release
-dotnet run --project work\CodexQuotaPanel.Tests\CodexQuotaPanel.Tests.csproj -c Release --no-build
-```
-
-在装有 Visual Studio Installer Projects 的开发机上，可使用一次构建、多产物复用的本地发布脚本：
-
-```powershell
-work\Installer\Build-Release.ps1 -Version 0.5.2
-```
-
-脚本默认只生成并验证本地产物；确认版本无误并已经创建对应 Git 标签后，可显式添加 `-PublishToGitHub -PublishConfirmation "PUBLISH v0.5.2"`，直接复用同一批产物上传，不会重新构建。脚本分别生成自包含载荷与体积很小的 framework-dependent 主机，随后由中英文安装器和便携包共同复用，不会为每个附件重复构建应用。
-
 项目结构：
 
-- `work/CodexQuotaPanel`：WinForms 主程序。
-- `work/CodexQuotaPanel.Tests`：逻辑检查、布局截图与动画时序检查。
-- `work/Installer`：Windows 安装项目。
-- `docs/images`：README 界面预览素材。
-- `outputs`：本地发布产物，不纳入 Git。
+- `src/CodexQuota.App`：桌面应用入口与运行协调。
+- `src/CodexQuota.UI.Avalonia`：Windows / macOS 共用界面。
+- `src/CodexQuota.Domain`、`Application`、`Infrastructure`：统计与业务逻辑。
+- `src/CodexQuota.Platform.Windows`、`Platform.macOS`：平台适配。
+- `tests`：逻辑、平台与界面渲染检查。
+- `installer/Windows`、`installer/macOS`：两平台安装包脚本。
+- `docs/images`：主页当前界面示意图。
 
 ## 联系与反馈
 
