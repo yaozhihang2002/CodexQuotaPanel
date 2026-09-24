@@ -98,7 +98,7 @@
         {
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_9A51A9E7F3B84F61B0A31C286BBA3A15"
             {
-                "SourcePath" = "8:..\\..\\artifacts\\release-stage-v0.6.7\\win-x64\\CodexQuotaPanel.exe"
+                "SourcePath" = "8:..\\..\\artifacts\\release-stage-v0.6.8\\win-x64\\CodexQuotaPanel.exe"
                 "TargetName" = "8:CodexQuotaPanel.exe"
                 "Tag" = "8:"
                 "Folder" = "8:_31A69E2F937747B896F82FB339E9838F"
