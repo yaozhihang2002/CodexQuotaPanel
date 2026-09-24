@@ -478,6 +478,9 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (window is not DashboardWindow)
             _ = new WindowDisplayRecovery(window, redrawNativeFrame: () => RedrawNativeWindow(window));
+        // Avalonia may create the native HWND before Show. Style it now so the
+        // first visible non-client frame does not use Windows' light title bar.
+        ApplyNativeWindowTheme(window, settings);
         window.Opened += (_, _) =>
         {
             ApplyNativeWindowTheme(window, settings);

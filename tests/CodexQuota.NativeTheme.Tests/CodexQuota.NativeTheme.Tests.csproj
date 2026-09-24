@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <ProjectReference Include="../../src/CodexQuota.UI.Avalonia/CodexQuota.UI.Avalonia.csproj" />
+    <ProjectReference Include="../../src/CodexQuota.Platform.Windows/CodexQuota.Platform.Windows.csproj" />
+  </ItemGroup>
+</Project>

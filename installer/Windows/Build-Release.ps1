@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.8',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.6.9',
     [string]$DotNetPath,
     [string]$DevenvPath,
     [string]$OutputDirectory,
@@ -67,7 +67,7 @@ if (-not $SkipChecks) {
     Invoke-Step 'Build once' {
         & $dotnet build $aggregate -c Release -r win-x64 --no-restore -p:PublishSingleFile=true
     }
-    foreach ($test in @('Domain','Application','Infrastructure','Platform','UI')) {
+    foreach ($test in @('Domain','Application','Infrastructure','Platform','UI','NativeTheme')) {
         $projectPath = Join-Path $repositoryRoot "tests\CodexQuota.$test.Tests\CodexQuota.$test.Tests.csproj"
         Invoke-Step "$test checks" { & $dotnet run --project $projectPath -c Release -r win-x64 --no-build --no-restore }
     }

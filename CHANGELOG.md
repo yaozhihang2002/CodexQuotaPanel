@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.9 — Settings title-bar first-frame theme
+
+- Windows 设置窗口在首次显示前就设置原生标题栏主题，避免深色主题下先闪出白色标题栏再变色。
+- 增加独立原生窗口测试，验证设置 HWND 在 Show 前可设置深色 DWM 属性，且 Show 后保持不变；本地安装后视觉验收仍需用户确认。
+
 ## v0.6.8 — Floating window input and shutdown repair
 
 - Windows 悬浮球旁预绘但完全透明的详情窗口在待命时显式启用鼠标穿透，展开时恢复输入，修复球外区域不能点击的问题。
