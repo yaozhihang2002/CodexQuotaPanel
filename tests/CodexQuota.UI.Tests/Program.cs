@@ -184,6 +184,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     };
     foreach (var (name, window) in formal)
     {
+        Console.WriteLine($"Formal rendering {name}...");
         if (window is DashboardWindow dashboard)
             dashboard.ApplyPresentation(name.EndsWith("single", StringComparison.Ordinal)
                 ? presentation with { Snapshot = snapshot with { Windows = [snapshot.VisibleWindows[1]] } }
@@ -221,8 +222,10 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         await using var output = File.Create(Path.Combine(outputRoot, name + ".png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
         window.Close();
+        Console.WriteLine($"Formal rendered {name}");
     }
 
+    Console.WriteLine("Formal settings interaction checks...");
     var settingsInteraction = new SettingsWindow(new AppSettings
     {
         Theme = AppTheme.Dark,
@@ -293,6 +296,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Check.True(cancelCount == 1 && settingsInteraction.DraftSettings.OrbSize == 146,
         "settings cancel rollback");
     settingsInteraction.ClosePermanently();
+    Console.WriteLine("Formal settings interaction checks passed");
 
     UiElements.ScaleFactor = 1.5;
     var largeSettings = new SettingsWindow(new AppSettings
@@ -333,6 +337,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     largeDashboard.ClosePermanently();
+    Console.WriteLine("Formal large-layout checks passed");
     UiElements.ScaleFactor = 1d;
 
     var lifecycleOrb = new OrbWindow { Position = new PixelPoint(240, 180) };
@@ -566,6 +571,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
                persistentDashboard.Content is Control { RenderTransform: ScaleTransform { ScaleX: 1, ScaleY: 1 } },
         "recovery presents the full-size surface without an extra zoom transition");
     persistentDashboard.ClosePermanently();
+    Console.WriteLine("Formal window lifecycle checks passed");
 
     var usageCycle = new UsageDetailsWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese });
     usageCycle.ApplyUsage(usage, now.Date.AddDays(-6), now.Date.AddDays(1));
