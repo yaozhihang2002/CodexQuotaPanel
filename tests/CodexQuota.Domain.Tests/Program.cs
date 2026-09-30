@@ -25,6 +25,16 @@ var astraLong = new TokenUsageBreakdown(310_000, 300_000, 200_000, 10_000, 3_000
 Check.Equal(6.7m, ApiCostEstimator.Estimate("gpt-6-astra", "fast", astraLong).Usd,
     "Astra fast long context includes cache writes without double counting cached or reasoning tokens");
 Check.Equal("GPT-6 Astra", ApiCostEstimator.DisplayModel("gpt-6-astra"), "Astra display label");
+Check.Equal(0.224m, ApiCostEstimator.Estimate("gpt-6.1-sol", "default", usage).Usd,
+    "GPT-6.1 Sol standard rate uses its distinct cached-input price");
+Check.Equal(0.448m, ApiCostEstimator.Estimate("gpt-6.1-sol", "fast", usage).Usd,
+    "GPT-6.1 Sol fast rate");
+Check.Equal(0.63m, ApiCostEstimator.Estimate("gpt-6.1-sol", "default", astraLong).Usd,
+    "GPT-6.1 Sol long-context cache-write and output rates");
+Check.Equal("GPT-6.1 Sol", ApiCostEstimator.DisplayModel("gpt-6.1-sol"),
+    "GPT-6.1 Sol display label");
+Check.Equal("2026-09-30", ApiCostEstimator.Estimate("gpt-6.1-sol", "default", usage).BasisDate,
+    "new model carries current verification date");
 Check.Equal(0.228m, ApiCostEstimator.Estimate("gpt-6-sol", "default", usage).Usd,
     "GPT-6 Sol standard rate includes cached input and output");
 Check.Equal(0.456m, ApiCostEstimator.Estimate("gpt-6-sol", "fast", usage).Usd,
@@ -33,10 +43,12 @@ Check.Equal(0.0114m, ApiCostEstimator.Estimate("gpt-6-luna", "default", usage).U
     "GPT-6 Luna standard rate");
 Check.Equal(0.0228m, ApiCostEstimator.Estimate("gpt-6-luna", "priority", usage).Usd,
     "GPT-6 Luna fast rate");
-Check.Equal("2026-09-23", ApiCostEstimator.Estimate("gpt-6-sol", "default", usage).BasisDate,
-    "new GPT-6 rates carry their verification date");
-Check.Equal("2026-09-07", standardCost.BasisDate,
-    "earlier model rates retain their earlier verification date");
+Check.Equal("2026-09-30", ApiCostEstimator.Estimate("gpt-6-sol", "default", usage).BasisDate,
+    "existing GPT-6 rate was rechecked");
+Check.Equal("2026-09-30", standardCost.BasisDate,
+    "earlier model rate was rechecked");
+Check.Equal("2026-09-07", ApiCostEstimator.Estimate("codex-auto-review", "default", usage).BasisDate,
+    "Auto-review workload mapping retains its original verification date");
 Check.Equal(0.67m, ApiCostEstimator.Estimate("gpt-6-sol", "default", astraLong).Usd,
     "GPT-6 Sol long-context cache-write and output rates");
 Check.Equal(0.0335m, ApiCostEstimator.Estimate("gpt-6-luna", "default", astraLong).Usd,

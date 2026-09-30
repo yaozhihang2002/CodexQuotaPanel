@@ -264,13 +264,12 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         "settings atomic tab switch");
     var pricingCopy = settingsInteraction.GetVisualDescendants().OfType<TextBlock>()
         .Select(text => text.Text ?? string.Empty).ToArray();
-    Check.True(pricingCopy.Any(text => text.Contains("API 等价计价标准", StringComparison.Ordinal)) &&
+    Check.True(pricingCopy.Any(text => text.Contains("API 等价估算", StringComparison.Ordinal)) &&
                pricingCopy.Any(text => text.Contains(ApiCostEstimator.BasisDate, StringComparison.Ordinal)) &&
-               pricingCopy.Any(text => text.Contains("Fast", StringComparison.Ordinal)) &&
-               pricingCopy.Any(text => text.Contains("GPT-6 Sol", StringComparison.Ordinal)) &&
-               pricingCopy.Any(text => text.Contains("GPT-6 Luna", StringComparison.Ordinal)) &&
-               pricingCopy.Any(text => text.Contains("Auto-review", StringComparison.Ordinal)),
-        "settings explains the dated API-equivalent pricing standard");
+               pricingCopy.Any(text => text.Contains("查看官方价格", StringComparison.Ordinal)) &&
+               pricingCopy.Any(text => text.Contains("Auto-review", StringComparison.Ordinal)) &&
+               !pricingCopy.Any(text => text.Contains("每百万 Token", StringComparison.Ordinal)),
+        "settings gives a concise dated API-equivalent estimate with official link");
     settingsInteraction.PreviewSettings(settings => settings with
     {
         Theme = AppTheme.Light,

@@ -6,7 +6,7 @@ namespace CodexQuota.Domain;
 /// </summary>
 public static class ApiCostEstimator
 {
-    public const string BasisDate = "2026-09-23";
+    public const string BasisDate = "2026-09-30";
     private const string LegacyBasisDate = "2026-09-07";
     public const string SourceUrl = "https://developers.openai.com/api/docs/pricing";
     private const decimal TokensPerMillion = 1_000_000m;
@@ -15,6 +15,7 @@ public static class ApiCostEstimator
         new Dictionary<string, ModelPrice>(StringComparer.OrdinalIgnoreCase)
         {
             ["gpt-6-astra"] = new(10.00m, 1.00m, 50.00m, 2m, true, 1.25m),
+            ["gpt-6.1-sol"] = new(2.00m, 0.10m, 10.00m, 2m, true, 1.25m),
             ["gpt-6-sol"] = new(2.00m, 0.20m, 10.00m, 2m, true, 1.25m, BasisDate),
             ["gpt-6-luna"] = new(0.10m, 0.01m, 0.50m, 2m, true, 1.25m, BasisDate),
             ["gpt-5.6-sol"] = new(4.00m, 0.40m, 20.00m, 2m, true, 1.25m),
@@ -25,8 +26,9 @@ public static class ApiCostEstimator
             ["gpt-5.4-mini"] = new(0.75m, 0.075m, 4.50m),
             ["gpt-5.3-codex"] = new(1.75m, 0.175m, 14.00m, 2m),
             // Codex reports the reviewer as a workload label rather than its backing model.
-            // The current official Codex rate card maps Auto-review to GPT-5.4.
-            ["codex-auto-review"] = new(2.50m, 0.25m, 15.00m, 2m, true)
+            // Retain the previously verified Auto-review to GPT-5.4 mapping;
+            // the model API prices above were rechecked separately on 2026-09-30.
+            ["codex-auto-review"] = new(2.50m, 0.25m, 15.00m, 2m, true, 1m, LegacyBasisDate)
         };
 
     public static ApiCostEstimate Estimate(string? model, string? serviceTier, TokenUsageBreakdown usage)
@@ -73,6 +75,7 @@ public static class ApiCostEstimator
     public static string DisplayModel(string? model) => NormalizeModel(model) switch
     {
         "gpt-6-astra" => "GPT-6 Astra",
+        "gpt-6.1-sol" => "GPT-6.1 Sol",
         "gpt-6-sol" => "GPT-6 Sol",
         "gpt-6-luna" => "GPT-6 Luna",
         "gpt-5.6-sol" => "GPT-5.6 Sol",
@@ -108,7 +111,7 @@ public static class ApiCostEstimator
         decimal? FastMultiplier = null,
         bool LongContextSurcharge = false,
         decimal CacheWriteMultiplier = 1m,
-        string BasisDate = LegacyBasisDate);
+        string BasisDate = ApiCostEstimator.BasisDate);
 }
 
 public enum ServiceTier

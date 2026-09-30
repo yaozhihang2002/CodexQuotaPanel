@@ -103,6 +103,19 @@ try
     Check.True(!events[0].IsServiceTierExplicit, "backfilled event remains marked inferred");
     Check.Equal(50L, events[1].Usage.TotalTokens, "cumulative normalization");
 
+    var newModelTranscript = Path.Combine(sessions, "gpt-6.1-sol.jsonl");
+    await File.WriteAllLinesAsync(newModelTranscript,
+    [
+        """{"timestamp":"2026-09-30T01:00:00Z","type":"turn_context","payload":{"model":"gpt-6.1-sol"}}""",
+        TokenLine("2026-09-30T01:01:00Z", "new-sol-turn", 100, 80, 20)
+    ]);
+    var newModelEvents = new List<ObservedUsage>();
+    await foreach (var item in usageSource.ReadFileAsync(newModelTranscript)) newModelEvents.Add(item);
+    Check.Equal(1, newModelEvents.Count, "new Sol log event count");
+    Check.Equal("gpt-6.1-sol", newModelEvents[0].Model, "new Sol log model identity");
+    Check.True(ApiCostEstimator.Estimate(newModelEvents[0].Model, newModelEvents[0].ServiceTier,
+        newModelEvents[0].Usage).IsPriced, "new Sol log event is priced");
+
     var streamingRoot = Path.Combine(root, "streaming");
     var streamingSessions = Path.Combine(streamingRoot, "sessions");
     Directory.CreateDirectory(streamingSessions);

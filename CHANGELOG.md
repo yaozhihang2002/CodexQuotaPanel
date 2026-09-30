@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.0 — GPT-6.1 Sol and API price refresh
+
+- 识别并显示新发布的 GPT-6.1 Sol；按 2026-09-30 官方 API 费率估算 Default/Fast、缓存写入及长上下文用量。
+- 复核原有模型费率；GPT-6 Sol 保留独立型号与缓存输入 $0.20/百万 Token，不能与 GPT-6.1 Sol 的 $0.10 混用。Auto-review 的后台模型映射未在本次重新确认，仍标注原核对日期。
+- 应用、Windows 双语安装器和 macOS 通用 DMG 的版本与文件名同步至 0.7.0。
+
 ## v0.6.9 — Settings title-bar first-frame theme
 
 - Windows 设置窗口在首次显示前就设置原生标题栏主题，避免深色主题下先闪出白色标题栏再变色。

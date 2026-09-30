@@ -140,9 +140,9 @@ public sealed partial class SettingsWindow
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 12 };
         header.Children.Add(new StackPanel { Spacing = 2, Children =
         {
-            UiElements.Text(T("API 等价计价标准", "API-equivalent pricing standard"), 15,
+            UiElements.Text(T("API 等价估算", "API-equivalent estimate"), 15,
                 FontWeight.Bold, _palette.TextPrimary),
-            UiElements.Text($"{T("最近费率更新", "Latest rate update")} · {ApiCostEstimator.BasisDate}", 10.5,
+            UiElements.Text($"{T("费率核对", "Rates checked")} · {ApiCostEstimator.BasisDate}", 10.5,
                 FontWeight.SemiBold, _palette.Mint)
         }});
         var official = UiElements.Button(T("查看官方价格", "Official pricing"), _palette);
@@ -155,42 +155,16 @@ public sealed partial class SettingsWindow
         var explanation = new StackPanel { Spacing = 5, Children =
         {
             UiElements.Text(T(
-                    "用于把本机观察到的 Token 统一换算成可比较的 API 等价美元；不是 Codex 订阅账单、额度百分比换算或实际扣费。",
-                    "Converts locally observed tokens into comparable API-equivalent USD. It is not a Codex subscription bill, quota conversion, or actual charge."),
+                    "按 OpenAI 公开 API 价格换算本机 Token，仅供参考；不是订阅账单或实际扣费。",
+                    "Local tokens are converted using public OpenAI API prices for reference, not as a subscription bill or actual charge."),
                 10.5, FontWeight.Normal, _palette.TextSecondary),
-            new Border { Height = 1, Background = _palette.Border, Margin = new Thickness(0, 3) },
-            PricingFact(T("计价组成", "Components"), T("未缓存输入 + 缓存写入 + 缓存输入 + 输出（输出已包含推理 Token）",
-                "Uncached input + cache writes + cached input + output (output already includes reasoning tokens)")),
-            PricingFact("Fast", T("按公开 API Priority 美元倍率计算，不套用 ChatGPT credits 的消耗倍率",
-                "Uses the public API Priority USD multiplier, not the ChatGPT credits multiplier")),
-            PricingFact("GPT-6 Astra", T("每百万 Token：输入 $10，缓存输入 $1，缓存写入 $12.50，输出 $50；Fast ×2",
-                "Per 1M tokens: input $10, cached $1, cache writes $12.50, output $50; Fast ×2")),
-            PricingFact("GPT-6 Sol", T("每百万 Token：输入 $2，缓存输入 $0.20，缓存写入 $2.50，输出 $10；Fast ×2",
-                "Per 1M tokens: input $2, cached $0.20, cache writes $2.50, output $10; Fast ×2")),
-            PricingFact("GPT-6 Luna", T("每百万 Token：输入 $0.10，缓存输入 $0.01，缓存写入 $0.125，输出 $0.50；Fast ×2",
-                "Per 1M tokens: input $0.10, cached $0.01, cache writes $0.125, output $0.50; Fast ×2")),
-            PricingFact(T("GPT-6 长上下文", "GPT-6 long context"), T("单次输入超过 272K：整次请求输入及缓存价格 ×2，输出 ×1.5",
-                "Above 272K input tokens per request: all input/cache rates ×2 and output ×1.5")),
-            PricingFact(T("旧模型", "Earlier models"), T("沿用 2026-09-07 已核对费率，新模型费率于 2026-09-23 核对",
-                "Retain rates checked on 2026-09-07; new model rates checked on 2026-09-23")),
-            PricingFact("Auto-review", T("按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算",
-                "Estimated with the GPT-5.4 API rate mapped by the current official Codex rate card")),
-            PricingFact("Unknown / Unpriced", T("保留原始 Token，但不计入美元合计，绝不按免费处理",
-                "Raw tokens are retained but excluded from the USD total; they are never treated as free"))
+            UiElements.Text(T(
+                    "Auto-review 沿用历史模型映射；未知模型只保留 Token，不计入美元合计。",
+                    "Auto-review retains its historical model mapping; unknown models keep tokens but are excluded from the USD total."),
+                10.5, FontWeight.Normal, _palette.TextSecondary)
         }};
         return UiElements.Card(new StackPanel { Spacing = 10, Children = { header, explanation } },
             _palette, new Thickness(16, 13));
-    }
-
-    private Control PricingFact(string label, string value)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("118,*"), ColumnSpacing = 10 };
-        grid.Children.Add(UiElements.Text(label, 10, FontWeight.Bold, _palette.TextMuted,
-            TextWrapping.NoWrap));
-        var detail = UiElements.Text(value, 10.5, FontWeight.Normal, _palette.TextSecondary);
-        Grid.SetColumn(detail, 1);
-        grid.Children.Add(detail);
-        return grid;
     }
 
 }
