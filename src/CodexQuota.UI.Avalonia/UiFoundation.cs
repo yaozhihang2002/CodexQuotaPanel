@@ -107,6 +107,9 @@ public static class UiElements
         button.Resources["ButtonBackgroundPressed"] = pressedBackground;
         button.Resources["ButtonBorderBrushPressed"] = Mix(normalBorder, foreground, .12);
         button.Resources["ButtonForegroundPressed"] = foreground;
+        button.Resources["ButtonBackgroundDisabled"] = palette.Surface;
+        button.Resources["ButtonBorderBrushDisabled"] = palette.Border;
+        button.Resources["ButtonForegroundDisabled"] = palette.TextMuted;
         return button;
     }
 

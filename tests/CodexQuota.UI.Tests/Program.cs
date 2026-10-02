@@ -226,6 +226,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     }
 
     Console.WriteLine("Formal settings interaction checks...");
+    ProductivityChecks.Run(outputRoot);
     var settingsInteraction = new SettingsWindow(new AppSettings
     {
         Theme = AppTheme.Dark,
@@ -239,6 +240,15 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     settingsInteraction.SaveRequested += draft => savedDraft = draft;
     settingsInteraction.CancelRequested += (_, _) => cancelCount++;
     settingsInteraction.Show();
+    var productVersion = "v" + System.Reflection.Assembly.GetEntryAssembly()!
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion.Split('+')[0];
+    Check.True(settingsInteraction.Title!.Contains(productVersion), "version visible in settings title");
+    Check.True(settingsInteraction.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == productVersion),
+        "version visible in persistent settings header");
+    var removedOptions = new[] { "吸附屏幕边缘", "显示穿透提醒", "悬浮球背景", "外环额度窗口", "内环额度窗口", "反馈风格" };
+    Check.True(!settingsInteraction.GetVisualDescendants().OfType<TextBlock>().Any(t => removedOptions.Contains(t.Text)),
+        "redundant and low-frequency switches removed");
     settingsInteraction.NavigateToPage(1);
     settingsInteraction.UpdateLayout();
     Dispatcher.UIThread.RunJobs();

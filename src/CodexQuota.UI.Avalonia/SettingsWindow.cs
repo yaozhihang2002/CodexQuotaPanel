@@ -38,6 +38,14 @@ public sealed partial class SettingsWindow : Window
     public event EventHandler? RestoreDefaultsRequested;
     public event EventHandler? OpenProjectRequested;
     public event EventHandler? OpenPricingRequested;
+    public event EventHandler? PricingUpdateRequested;
+    private TextBlock? _pricingStatus;
+    private Button? _pricingUpdate;
+    public void SetPricingStatus(string message, bool busy = false)
+    {
+        if (_pricingStatus is not null) _pricingStatus.Text = message;
+        if (_pricingUpdate is not null) _pricingUpdate.IsEnabled = !busy;
+    }
 
     public SettingsWindow(AppSettings settings, bool systemDark = true, IReadOnlyList<int>? availableWindowMinutes = null)
     {
@@ -47,8 +55,9 @@ public sealed partial class SettingsWindow : Window
             .Append(_draft.OuterWindowMinutes).Append(_draft.InnerWindowMinutes)
             .Where(minutes => minutes > 0).Distinct().OrderBy(minutes => minutes).ToArray();
         _palette = UiPalette.For(_draft.Theme, _systemDark);
+        ApplyRequestedTheme();
         _appliedInterfaceScale = _draft.InterfaceScalePercent;
-        Title = T("Codex 额度面板设置", "CodexQuota Settings");
+        Title = T("Codex 额度面板设置", "CodexQuota Settings") + " · v" + AppVersion;
         Width = Math.Clamp(900 + (_draft.InterfaceScalePercent - 100) * 3.2, 820, 1060);
         Height = Math.Clamp(650 + (_draft.InterfaceScalePercent - 100) * 1.4, 600, 760);
         MinWidth = 780;
@@ -95,7 +104,11 @@ public sealed partial class SettingsWindow : Window
                 {
                     new Border { Background = _palette.Mint, CornerRadius = new CornerRadius(3) },
                     HeaderCopy(),
-                    UiElements.Text("CODEX · SETTINGS", 10.5, FontWeight.Bold, _palette.Mint)
+                    new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, Children =
+                    {
+                        UiElements.Text("v" + AppVersion, 18, FontWeight.Bold, _palette.Mint),
+                        UiElements.Text("CODEX · SETTINGS", 9, FontWeight.SemiBold, _palette.TextMuted)
+                    }}
                 }
             }
         };
@@ -185,6 +198,7 @@ public sealed partial class SettingsWindow : Window
     {
         _building = true;
         _palette = UiPalette.For(_draft.Theme, _systemDark);
+        ApplyRequestedTheme();
         _navButtons.Clear();
         _pageControls.Clear();
         _pages = new Grid();
@@ -235,8 +249,12 @@ public sealed partial class SettingsWindow : Window
 
     private string T(string zh, string en) => _draft.Language == AppLanguage.SimplifiedChinese ? zh : en;
 
+    private void ApplyRequestedTheme() => RequestedThemeVariant =
+        (_draft.Theme == AppTheme.Dark || _draft.Theme == AppTheme.System && _systemDark)
+            ? global::Avalonia.Styling.ThemeVariant.Dark : global::Avalonia.Styling.ThemeVariant.Light;
+
     private static string AppVersion => Assembly.GetEntryAssembly()?
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.6.5";
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "—";
 
     private sealed record WindowChoice(int Minutes, string Label)
     {

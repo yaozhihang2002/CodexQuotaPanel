@@ -9,6 +9,8 @@ namespace CodexQuota.UI.Avalonia;
 
 public sealed partial class SettingsWindow
 {
+    private enum FeedbackOption { Off, Ember, Fluid, Pixel }
+    private enum ResetOption { Off, Glow, Notify }
     private StackPanel Page(string heading, string description) => new() { Spacing = 10, Children =
     {
         UiElements.Text(heading, 23, FontWeight.Bold, _palette.TextPrimary),
@@ -189,6 +191,12 @@ public sealed partial class SettingsWindow
 
     private string EnumLabel<T>(T value) where T : struct, Enum => (object)value switch
     {
+        FeedbackOption.Off or ResetOption.Off => this.T("关闭", "Off"),
+        FeedbackOption.Ember => this.T("余烬", "Ember"),
+        FeedbackOption.Fluid => this.T("流体", "Fluid"),
+        FeedbackOption.Pixel => this.T("像素", "Pixel"),
+        ResetOption.Glow => this.T("仅微光", "Glow only"),
+        ResetOption.Notify => this.T("微光与通知", "Glow & notification"),
         StartupViewMode.RestorePrevious => this.T("恢复上次状态", "Restore previous"),
         StartupViewMode.Orb => this.T("悬浮球", "Orb"),
         StartupViewMode.Details => this.T("详情面板", "Details"),

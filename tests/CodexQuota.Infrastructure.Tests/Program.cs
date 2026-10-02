@@ -3,6 +3,17 @@ using CodexQuota.Domain;
 using CodexQuota.Infrastructure;
 using System.Text.Json;
 
+if (args.Contains("--pricing-live"))
+{
+    using var liveClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
+    var liveRoot = Path.Combine(Path.GetTempPath(), "CodexQuotaPanel-pricing-live", Guid.NewGuid().ToString("N"));
+    var liveUpdater = new PricingCatalogUpdater(Path.Combine(liveRoot, "prices.json"), liveClient);
+    var result = await liveUpdater.UpdateAsync(CancellationToken.None);
+    Check.True(result is PricingUpdateStatus.Current or PricingUpdateStatus.Updated, "anonymous GitHub sync succeeds");
+    Console.WriteLine($"Anonymous pricing sync: {result}; date={ApiCostEstimator.CurrentBasisDate}; revision={ApiCostEstimator.CatalogRevision}");
+    return;
+}
+
 var overrideResolver = new CodexHomeResolver(
     key => key == "CODEX_HOME" ? Path.Combine(Path.GetTempPath(), "custom-codex") : null,
     () => Path.Combine(Path.GetTempPath(), "home"));
@@ -323,6 +334,7 @@ try
     await store.ClearAsync(CancellationToken.None);
     Check.Equal(0, (await store.ReadQuotaAsync(DateTimeOffset.MinValue, CancellationToken.None)).Count, "SQLite quota clear");
     Check.Equal(0, (await store.ReadUsageAsync(DateTimeOffset.MinValue, CancellationToken.None)).Count, "SQLite usage clear");
+    await ProductivityChecks.RunAsync(root);
 }
 finally
 {

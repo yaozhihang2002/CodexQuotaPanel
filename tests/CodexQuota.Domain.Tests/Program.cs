@@ -177,6 +177,7 @@ Check.Equal(4, QuotaHistoryContinuity.RemoveTransientSourceSpikes(realReset).Cou
     "sustained reset value is preserved");
 
 Console.WriteLine("Domain checks passed: 43");
+ProductivityChecks.Run();
 
 static class Check
 {

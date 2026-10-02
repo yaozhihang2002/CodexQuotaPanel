@@ -81,6 +81,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         if (storedSettings is null)
             await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(true);
         await _history.InitializeAsync(_lifetime.Token).ConfigureAwait(true);
+        await InitializeProductivityAsync();
         _lastTrustedQuotaSnapshot = await _trustedQuotaStore.ReadAsync(_lifetime.Token).ConfigureAwait(true);
         if (_lastTrustedQuotaSnapshot is { } trustedSnapshot)
         {
@@ -118,6 +119,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _refreshLoop = RefreshLoopAsync(_lifetime.Token);
         _usageLoop = RunUsagePipelineAsync(_lifetime.Token);
         _topmostLoop = TopmostLoopAsync(_lifetime.Token);
+        _productivityLoop = ProductivityLoopAsync(_lifetime.Token);
         await RefreshAsync().ConfigureAwait(true);
         if (_settings.CheckForUpdatesOnStartup) _ = CheckForUpdatesAsync(true);
     }
@@ -143,7 +145,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _orb.OpenDetailsRequested += async (_, _) => await OpenDashboardAsync();
         _orb.MoveCompleted += async (_, _) =>
         {
-            var placement = _orb.ConstrainPosition(_settings.SnapToEdge);
+            var placement = _orb.ConstrainPosition(_settings.EdgeAutoHide);
             _settings = _settings with { OrbX = placement.Position.X, OrbY = placement.Position.Y,
                 OrbDisplayId = placement.DisplayId, LastView = StartupViewMode.Orb };
             await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
@@ -169,6 +171,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         AddTrayItem(menu, T("显示/隐藏悬浮球", "Show/hide orb"), ToggleOrb);
         _moveOrbTrayItem = AddTrayItem(menu, T("移动悬浮球…", "Move orb…"), BeginOrbMoveMode);
         AddTrayItem(menu, T("立即刷新", "Refresh now"), () => _ = RefreshAsync());
+        AddTrayItem(menu, T("使用明细", "Usage details"), ShowUsageDetails);
         _clickThroughTrayItem = AddTrayItem(menu, ClickThroughTrayHeader(), () => _ = ToggleClickThroughAsync());
         _clickThroughTrayItem.IsChecked = false;
         menu.Items.Add(new NativeMenuItemSeparator());
@@ -223,7 +226,8 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _dashboardOpening = true;
         try
         {
-            _orbPositionBeforeDashboard = _orb?.IsVisible == true ? _orb.Position : null;
+            _orb?.ExpandFromEdge();
+            _orbPositionBeforeDashboard = _orb?.IsVisible == true ? _orb.ExpandedPosition : null;
             if (IsRemoteDesktop || _displaySurfaceInvalid)
             {
                 LogSurface("discard-before-open");
@@ -505,7 +509,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             ? _platform.RegisterRecoveryShortcut(() => Dispatcher.UIThread.Post(async () =>
             {
                 if (_settings.ClickThrough) await ToggleClickThroughAsync();
-                else { _orb?.Show(); ApplyNativeOrbSettings(); }
+                else { _orb?.ExpandFromEdge(); _orb?.Show(); ApplyNativeOrbSettings(); }
             }))
             : null;
     }
@@ -545,6 +549,8 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_shuttingDown) return;
         _shuttingDown = true;
+        _orb?.StopEffects();
+        _resetToast?.Close();
         StopDisplayRecovery();
         _lifetime.Cancel();
         _tray?.Dispose();
@@ -565,10 +571,11 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _lifetime.Cancel();
         _recoveryShortcut?.Dispose();
         _tray?.Dispose();
-        foreach (var task in new[] { _refreshLoop, _usageLoop, _topmostLoop }.Where(task => task is not null))
+        foreach (var task in new[] { _refreshLoop, _usageLoop, _topmostLoop, _productivityLoop }.Where(task => task is not null))
             try { await task!; } catch (OperationCanceledException) { }
         _refreshGate.Dispose();
         await _liveQuota.DisposeAsync();
+        _pricingClient.Dispose();
         _lifetime.Dispose();
     }
 

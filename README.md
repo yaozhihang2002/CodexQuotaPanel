@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.7.0--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.8.0--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-12%2B%20Apple%20Silicon%20%7C%20Intel-111111">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
@@ -17,16 +17,16 @@
   <img src="docs/images/dashboard-current.png" width="450" alt="CodexQuotaPanel 当前额度详情面板，使用示例数据">
 </p>
 
-> 当前版本：**v0.7.0 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.8.0 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
-各版本的更新内容与验证说明请查看对应的 [GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)；当前版本详见 [v0.7.0 介绍](https://github.com/yaozhihang2002/CodexQuotaPanel/releases/tag/v0.7.0)。
+各版本的更新内容与验证说明请查看对应的 [GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)；当前版本详见 [v0.8.0 介绍](https://github.com/yaozhihang2002/CodexQuotaPanel/releases/tag/v0.8.0)。
 
 ## 一眼了解
 
-- **桌面双环悬浮球**：同时查看五小时与一周额度；窗口、环角色与颜色均可调整，点击后展开完整详情。
+- **桌面双环悬浮球**：同时查看五小时与一周额度，自定义环颜色，点击后展开完整详情；靠近屏幕四边时可闲置收起为单弧或双弧。
 - **三种风格、五档状态**：简约余烬、流体火焰和像素火焰都会随近期消耗从霜晶、冷焰逐步变化到浓烈大火。
 - **适配日常桌面**：深色、浅色或跟随系统，简体中文 / English，支持多显示器、不同 DPI 与负坐标屏幕。
-- **自由但克制**：尺寸、字体、透明度、置顶、鼠标穿透、位置锁定、边缘吸附和提醒方式均可设置。
+- **自由但克制**：尺寸、字体、透明度、置顶、鼠标穿透、位置锁定、贴边收起和提醒方式均可设置。
 - **本地与可恢复**：额度趋势和设置留在本机；异常记录仅用于脱敏诊断，下次启动照常恢复上次保存的界面、位置和设置。
 - **每日用量与 API 成本估算**：按当前重置周期汇总每日原始 Token，并按模型与 `Default` / `Fast` 分类，使用有日期标记的 OpenAI 公开 API 价格估算美元成本。
 
@@ -67,11 +67,11 @@
 
 ### 额度与显示
 
-- 五小时与一周额度双环，可选择窗口、内外环角色及自定义颜色。
+- 五小时与一周额度双环，按可用额度自动分配，并支持自定义颜色。
 - 点击悬浮球展开详情，支持分窗口、逐分钟原始精度的完整 24 小时趋势；趋势同时显示半透明的均匀使用参考线，鼠标悬停可对照当时的实际额度与均匀规划额度。
 - 智能续航估算会计入空闲区间，并融合 90 分钟短期速度、6 小时长期速度与样本置信度；样本不足时保持原有显示，不读取对话内容。
 - 本周期每日图按 API 等价美元估算绘制，悬停仍可核对精确输入、缓存输入、缓存写入、输出与推理用量；点击可展开模型和 `Default` / `Fast` 速率明细。日志较晚写入模型或速率时会在会话内安全回填；Auto-review 按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算，无法识别或缺少公开费率的模型则保留原始 Token 并标记为“未公开计价”，不会被当作免费或实际账单。
-- 每根非零每日柱会直接标出紧凑美元值；设置页同时列明费率日期、Token 组成、Fast、Auto-review 与未计价规则，并提供官方价格入口。
+- 每根非零每日柱会直接标出紧凑美元值；设置页只保留同步状态与官方价格入口。默认每天从 GitHub 静默同步费率，失败继续使用本地表，也可手动同步或关闭自动同步。
 - 续航预测同时展示风险结论、预计还可使用多久和当前/安全速度；最早到期重置卡使用独立高亮状态条展示剩余时长、到期时刻和可用数量。
 - Token 统计 2.0 同时兼容单次增量与累计记录，识别计数器重置，并对重复快照、归档副本和分叉日志的复制前缀去重；跨重启持久缓存与追加读取减少重复扫描，详情页会显示缓存命中、去重和归因覆盖率。
 - 深色、浅色、跟随系统三种主题，以及简体中文 / English 界面。
@@ -83,14 +83,14 @@
 - 简约余烬、流体火焰、像素火焰三种样式，每种包含霜晶、冷焰、温焰、热焰和烈焰五档反馈。
 - 悬浮球与详情面板采用快速收束 / 展开过渡；拖动交由 Windows 原生窗口移动处理，设置窗口拉伸时只重排当前页面，减少重绘、闪烁与残影。
 - 托盘菜单在鼠标穿透开启时于右侧显示 `✓`，关闭时不显示标记；未穿透时悬浮球使用可点击或可拖动光标。默认字号下详情面板无需滚动即可完整展示额度、续航、重置卡、趋势和每日费用，大字体模式则保留自然滚动以避免压缩重叠。
-- 支持鼠标穿透、位置锁定、可选边缘吸附、全局找回快捷键和动态托盘额度图标。
+- 支持鼠标穿透、位置锁定、四边贴边收起、全局找回快捷键和动态托盘额度图标。贴边闲置后悬浮球先淡出，再让额度弧线淡入；悬停时反向展开，角落优先左右两边。
 
 ### 恢复、设置与更新
 
 - 非正常退出或电脑重启后不再进入安全模式，始终按上次保存的显示状态、位置和设置启动。
 - 托盘右键菜单提供“重启应用”，在界面仍可响应时快速重新加载程序。
 - 安装确认页点击“安装”后才会关闭运行中的面板；若安装前处于开启状态，安装结束后自动重新启动。
-- 穿透提示支持“不再提醒”，也可在“交互”设置中随时恢复；该偏好支持设置导入与导出。
+- 穿透提示支持“不再提醒”；设置保留常用功能，版本号固定显示在顶部。
 - 额度警告支持“本额度周期不再提醒”，当前窗口重置后自动恢复提醒。
 - 设置采用原子写入并保留备份；升级会读取旧版设置，继续保留悬浮球位置和已有个性化参数。
 - 支持导入、导出可移植设置。导出文件不包含悬浮球位置、历史、账户、路径或额度数据。
@@ -98,10 +98,10 @@
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.7.0` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.8.0` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
 
-- Windows：`CodexQuotaPanel-0.7.0-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
-- macOS：`CodexQuotaPanel-0.7.0-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
+- Windows：`CodexQuotaPanel-0.8.0-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
+- macOS：`CodexQuotaPanel-0.8.0-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
 
 不再发布重复的 MSI、便携包、ZIP 或离线 Setup，减少选择成本。预发布版仍可能存在特定显卡、DPI 或系统环境下的兼容性问题。
 
@@ -132,13 +132,13 @@ dotnet run --project tests/CodexQuota.NativeTheme.Tests -c Release --no-build
 Windows 本地候选生成唯一的双语联网 Setup：
 
 ```powershell
-installer/Windows/Build-Release.ps1 -Version 0.7.0 -DotNetPath <dotnet.exe>
+installer/Windows/Build-Release.ps1 -Version 0.8.0 -DotNetPath <dotnet.exe>
 ```
 
 macOS 在 Apple runner 或 Mac 上生成唯一的通用 DMG：
 
 ```powershell
-installer/macOS/Build-Package.ps1 -Version 0.7.0 -Runtime osx-universal -DmgOnly
+installer/macOS/Build-Package.ps1 -Version 0.8.0 -Runtime osx-universal -DmgOnly
 ```
 
 项目结构：

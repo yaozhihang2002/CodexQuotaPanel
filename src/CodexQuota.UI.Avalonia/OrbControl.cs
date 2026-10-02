@@ -31,6 +31,10 @@ public sealed partial class OrbControl : Control
     private readonly DispatcherTimer _animationTimer;
     private double _displayIntensity;
     private double _phase;
+    public static readonly StyledProperty<double> RecoveryHighlightProperty = AvaloniaProperty.Register<OrbControl, double>(nameof(RecoveryHighlight));
+    public static readonly StyledProperty<string> RecoveryLabelProperty = AvaloniaProperty.Register<OrbControl, string>(nameof(RecoveryLabel), "");
+    public double RecoveryHighlight { get => GetValue(RecoveryHighlightProperty); set => SetValue(RecoveryHighlightProperty, value); }
+    public string RecoveryLabel { get => GetValue(RecoveryLabelProperty); set => SetValue(RecoveryLabelProperty, value); }
 
     public double RemainingPercent { get => GetValue(RemainingPercentProperty); set => SetValue(RemainingPercentProperty, value); }
     public double SecondaryRemainingPercent { get => GetValue(SecondaryRemainingPercentProperty); set => SetValue(SecondaryRemainingPercentProperty, value); }
@@ -52,7 +56,8 @@ public sealed partial class OrbControl : Control
     static OrbControl() => AffectsRender<OrbControl>(RemainingPercentProperty, SecondaryRemainingPercentProperty,
         CaptionProperty, PrimaryLabelProperty, SecondaryLabelProperty, OrbBackgroundProperty, OrbBackgroundOpacityProperty, OuterRingColorProperty,
         InnerRingColorProperty, FeedbackIntensityProperty, FeedbackEnabledProperty, FeedbackStyleProperty,
-        AnimateFeedbackProperty, ConnectionStateProperty, MoveModeProperty, InteractionPausedProperty);
+        AnimateFeedbackProperty, ConnectionStateProperty, MoveModeProperty, InteractionPausedProperty,
+        RecoveryHighlightProperty, RecoveryLabelProperty);
 
     public OrbControl()
     {
@@ -150,6 +155,12 @@ public sealed partial class OrbControl : Control
         }
         if (FeedbackEnabled) DrawFeedback(context, center, size);
         if (MoveMode) DrawMoveMode(context, rect, center, size);
+        if (RecoveryHighlight > 0)
+            context.DrawEllipse(null, new Pen(new SolidColorBrush(WithAlpha(OuterRingColor,
+                200 * RecoveryHighlight)), 3), rect.Deflate(2));
+        if (RecoveryLabel.Length > 0)
+            DrawCentered(context, RecoveryLabel, center.Y + size * .34, size * .074,
+                new SolidColorBrush(OuterRingColor), FontWeight.SemiBold, 6.2);
     }
 
     private void DrawFeedback(DrawingContext context, Point center, double size)

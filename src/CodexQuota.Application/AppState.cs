@@ -32,7 +32,7 @@ public enum ConsumptionFeedbackStyle
 
 public sealed record AppSettings
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 6;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public AppTheme Theme { get; init; } = AppTheme.System;
@@ -53,12 +53,15 @@ public sealed record AppSettings
     public bool ShowClickThroughReminder { get; init; } = true;
     public bool PositionLocked { get; init; }
     public bool SnapToEdge { get; init; }
+    public bool EdgeAutoHide { get; init; } = true;
     public bool HoverPreviewEnabled { get; init; } = true;
     public bool GlobalRecoveryShortcutEnabled { get; init; } = true;
     public bool ReducedMotion { get; init; }
     public bool ConsumptionFeedbackEnabled { get; init; } = true;
     public ConsumptionFeedbackStyle ConsumptionFeedbackStyle { get; init; } = ConsumptionFeedbackStyle.Fluid;
     public bool AlertsEnabled { get; init; } = true;
+    public bool ResetCelebrationEnabled { get; init; } = true;
+    public bool ResetNotificationEnabled { get; init; }
     public int WarningThreshold { get; init; } = 20;
     public int CriticalThreshold { get; init; } = 10;
     public bool QuietHoursEnabled { get; init; }
@@ -67,6 +70,7 @@ public sealed record AppSettings
     public bool AlertSoundEnabled { get; init; }
     public bool TrendRecordingEnabled { get; init; } = true;
     public bool CheckForUpdatesOnStartup { get; init; }
+    public bool AutoUpdatePricing { get; init; } = true;
     public string? DismissedAlertCycleKey { get; init; }
     public string? LastWarningCycleKey { get; init; }
     public string? LastCriticalCycleKey { get; init; }
@@ -85,6 +89,9 @@ public sealed record AppSettings
         return this with
         {
             SchemaVersion = CurrentSchemaVersion,
+            // The first local 0.8.0 preview defaulted to off. Adopt the new default
+            // once; subsequent explicit opt-outs in schema 6 remain respected.
+            AutoUpdatePricing = SchemaVersion < 6 || AutoUpdatePricing,
             OrbSize = Math.Clamp(OrbSize, 56, 192),
             OrbOpacityPercent = Math.Clamp(OrbOpacityPercent, 30, 100),
             InterfaceScalePercent = Math.Clamp(InterfaceScalePercent, 80, 150),

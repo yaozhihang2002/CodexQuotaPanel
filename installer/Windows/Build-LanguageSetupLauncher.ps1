@@ -6,7 +6,7 @@
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.7.0',
+    [string]$Version = '0.8.0',
     [switch]$RequiresDotNetRuntime,
     [string]$RuntimeDownloadUrl = '',
     [string]$RuntimeSha512 = ''

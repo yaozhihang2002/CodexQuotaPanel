@@ -21,6 +21,8 @@ public sealed class UsageDetailsWindow : Window
     {
         _settings = settings.Normalize();
         _palette = UiPalette.For(_settings.Theme, systemDark);
+        RequestedThemeVariant = (_settings.Theme == AppTheme.Dark || _settings.Theme == AppTheme.System && systemDark)
+            ? global::Avalonia.Styling.ThemeVariant.Dark : global::Avalonia.Styling.ThemeVariant.Light;
         Title = T("Codex 使用明细", "Codex usage details");
         var scale = _settings.InterfaceScalePercent / 100d;
         Width = Math.Clamp(760 * (.72 + .28 * scale), 650, 920);
@@ -144,7 +146,6 @@ public sealed class UsageDetailsWindow : Window
         return grid;
     }
 
-    private static string DisplayTier(string tier) => string.IsNullOrWhiteSpace(tier) || tier.Equals("unknown", StringComparison.OrdinalIgnoreCase)
-        ? "Default" : ApiCostEstimator.DisplayTier(tier);
+    private static string DisplayTier(string tier) => ApiCostEstimator.DisplayTier(tier);
     private string T(string zh, string en) => _settings.Language == AppLanguage.SimplifiedChinese ? zh : en;
 }

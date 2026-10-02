@@ -5,11 +5,12 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.VisualTree;
+using Avalonia.Threading;
 using CodexQuota.Application;
 
 namespace CodexQuota.UI.Avalonia;
 
-public sealed class OrbWindow : Window
+public sealed partial class OrbWindow : Window
 {
     private static readonly Cursor DragCursor = new(StandardCursorType.SizeAll);
     private static readonly Cursor ClickCursor = new(StandardCursorType.Hand);
@@ -57,15 +58,15 @@ public sealed class OrbWindow : Window
         PointerMoved += OnPointerMoved;
         PointerReleased += OnPointerReleased;
         PointerCaptureLost += (_, _) => FinishPointerInteraction(false);
-        Closing += (_, _) => _closing = true;
+        InitializeEdgeBehavior();
+        Closing += (_, _) => StopEffects();
     }
 
     public void ApplySettings(AppSettings settings)
     {
+        ExpandFromEdge();
         _settings = settings.Normalize();
-        Width = Height = _settings.OrbSize;
-        MinWidth = MinHeight = _settings.OrbSize;
-        MaxWidth = MaxHeight = _settings.OrbSize;
+        SetSurfaceSize(_settings.OrbSize, _settings.OrbSize);
         Opacity = 1d;
         Topmost = _settings.AlwaysOnTop;
         _orb.OrbBackground = Color.Parse(_settings.OrbBackground);
@@ -103,10 +104,12 @@ public sealed class OrbWindow : Window
         _orb.FeedbackIntensity = ConsumptionFeedbackIntensity.From(presentation.Forecast);
         _orb.ConnectionState = presentation.ConnectionState;
         ToolTip.SetTip(_orb, _settings.HoverPreviewEnabled ? BuildToolTip(presentation) : null);
+        UpdateEdgePresentation(presentation);
     }
 
     public void SetMoveMode(bool enabled)
     {
+        ExpandFromEdge();
         _moveMode = enabled;
         _orb.MoveMode = enabled;
         UpdatePointerCursor();
@@ -129,6 +132,7 @@ public sealed class OrbWindow : Window
 
     public void RestorePosition(double? x, double? y, string? displayId = null)
     {
+        ExpandFromEdge();
         if (x is null || y is null) return;
         var desired = new PixelPoint((int)Math.Round(x.Value), (int)Math.Round(y.Value));
         var screen = Screens.All.FirstOrDefault(item => DisplayId(item) == displayId) ??
@@ -143,6 +147,7 @@ public sealed class OrbWindow : Window
 
     public (PixelPoint Position, string DisplayId) ConstrainPosition(bool snapToEdge)
     {
+        ExpandFromEdge();
         var screen = Screens.ScreenFromPoint(Position) ?? Screens.Primary;
         if (screen is null) return (Position, string.Empty);
         var area = screen.WorkingArea;
@@ -168,6 +173,7 @@ public sealed class OrbWindow : Window
 
     public async Task AnimateOutAsync()
     {
+        ExpandFromEdge();
         if (_settings.ReducedMotion) { Hide(); return; }
         await AnimateAsync(Opacity, .02, 1, .72, 90).ConfigureAwait(true);
         Hide();
@@ -189,6 +195,7 @@ public sealed class OrbWindow : Window
         const int frames = 8;
         for (var i = 0; i <= frames; i++)
         {
+            if (_closing) return;
             var t = i / (double)frames;
             var eased = 1 - Math.Pow(1 - t, 3);
             Opacity = fromOpacity + (toOpacity - fromOpacity) * eased;
@@ -213,6 +220,8 @@ public sealed class OrbWindow : Window
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        ExpandFromEdge();
+        _lastInteraction = Environment.TickCount64;
         var point = e.GetCurrentPoint(this);
         if (point.Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed) return;
         if (!point.Properties.IsLeftButtonPressed || !_moveMode && _settings.ClickThrough) return;
@@ -253,7 +262,7 @@ public sealed class OrbWindow : Window
         _orb.InteractionPaused = false;
         if (_pointerMoved)
         {
-            var placement = ConstrainPosition(_settings.SnapToEdge);
+            var placement = ConstrainPosition(_settings.EdgeAutoHide);
             MoveCompleted?.Invoke(this, placement.Position);
         }
         else if (allowClick && !_settings.ClickThrough && !_moveMode)
@@ -261,6 +270,7 @@ public sealed class OrbWindow : Window
             OpenDetailsRequested?.Invoke(this, EventArgs.Empty);
         }
         _pointerMoved = false;
+        _lastInteraction = Environment.TickCount64;
     }
 
 }

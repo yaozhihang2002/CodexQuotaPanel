@@ -9,6 +9,41 @@ public static class ApiCostEstimator
     public const string BasisDate = "2026-09-30";
     private const string LegacyBasisDate = "2026-09-07";
     public const string SourceUrl = "https://developers.openai.com/api/docs/pricing";
+    private static PricingCatalog? _catalog;
+    private static readonly object CatalogGate = new();
+    public static long CatalogRevision => Volatile.Read(ref _catalog)?.Revision ?? PricingCatalog.BuiltInRevision;
+    public static string CurrentBasisDate => Volatile.Read(ref _catalog)?.CheckedAt ?? BasisDate;
+
+    public static bool ApplyCatalog(PricingCatalog catalog)
+    {
+        lock (CatalogGate)
+        {
+            if (IsOlderCatalog(catalog) || IsCurrentCatalog(catalog)) return false;
+            Volatile.Write(ref _catalog, catalog);
+            return true;
+        }
+    }
+
+    public static bool IsOlderCatalog(PricingCatalog catalog) => catalog.Revision < CatalogRevision ||
+        string.CompareOrdinal(catalog.CheckedAt, CurrentBasisDate) < 0;
+
+    public static bool IsCurrentCatalog(PricingCatalog catalog)
+    {
+        var current = Volatile.Read(ref _catalog);
+        if (catalog.Revision != (current?.Revision ?? PricingCatalog.BuiltInRevision) ||
+            catalog.CheckedAt != (current?.CheckedAt ?? BasisDate)) return false;
+        if (current is not null)
+            return catalog.Models.Count == current.Models.Count && catalog.Models.All(pair =>
+                current.Models.TryGetValue(pair.Key, out var rate) && pair.Value == rate);
+        return catalog.Models.Count == StandardPrices.Count && StandardPrices.All(pair =>
+        {
+            var p = pair.Value;
+            return catalog.Models.TryGetValue(pair.Key, out var rate) && rate == new ModelRate(pair.Key,
+                BuiltInDisplayModel(pair.Key), p.Input, p.CachedInput, p.Output, p.BasisDate,
+                p.FastMultiplier, p.CacheWriteMultiplier, p.LongContextSurcharge ? p.LongThreshold : null,
+                p.LongContextSurcharge ? p.LongInputMultiplier : 1m, p.LongContextSurcharge ? p.LongOutputMultiplier : 1m);
+        });
+    }
     private const decimal TokensPerMillion = 1_000_000m;
     private const long LongContextThreshold = 272_000;
     private static readonly IReadOnlyDictionary<string, ModelPrice> StandardPrices =
@@ -35,16 +70,25 @@ public static class ApiCostEstimator
     {
         var normalizedModel = NormalizeModel(model);
         var normalizedTier = NormalizeTier(serviceTier);
-        if (!StandardPrices.TryGetValue(normalizedModel, out var price) ||
+        var catalog = Volatile.Read(ref _catalog);
+        ModelPrice? price;
+        if (catalog is not null)
+            price = catalog.Models.TryGetValue(normalizedModel, out var rate)
+                ? new ModelPrice(rate.Input, rate.CachedInput, rate.Output, rate.FastMultiplier,
+                    rate.LongContextThreshold is not null, rate.CacheWriteMultiplier, rate.BasisDate,
+                    rate.LongContextThreshold ?? LongContextThreshold, rate.LongInputMultiplier, rate.LongOutputMultiplier)
+                : null;
+        else StandardPrices.TryGetValue(normalizedModel, out price);
+        if (price is null ||
             normalizedTier == ServiceTier.Unknown)
-            return ApiCostEstimate.Unpriced(BasisDate, SourceUrl);
+            return ApiCostEstimate.Unpriced(catalog?.CheckedAt ?? BasisDate, SourceUrl);
 
         if (normalizedTier == ServiceTier.Fast && price.FastMultiplier is null)
-            return ApiCostEstimate.Unpriced(BasisDate, SourceUrl);
+            return ApiCostEstimate.Unpriced(price.BasisDate, SourceUrl);
         var tierMultiplier = normalizedTier == ServiceTier.Fast ? price.FastMultiplier!.Value : 1m;
-        var longContext = price.LongContextSurcharge && usage.InputTokens > LongContextThreshold;
-        var inputMultiplier = longContext ? 2m : 1m;
-        var outputMultiplier = longContext ? 1.5m : 1m;
+        var longContext = price.LongContextSurcharge && usage.InputTokens > price.LongThreshold;
+        var inputMultiplier = longContext ? price.LongInputMultiplier : 1m;
+        var outputMultiplier = longContext ? price.LongOutputMultiplier : 1m;
         var cached = Math.Min(usage.CachedInputTokens, usage.InputTokens);
         var cacheWrite = Math.Min(usage.CacheWriteInputTokens, Math.Max(0, usage.InputTokens - cached));
         var uncached = Math.Max(0, usage.InputTokens - cached - cacheWrite);
@@ -72,7 +116,11 @@ public static class ApiCostEstimator
         _ => "unknown"
     };
 
-    public static string DisplayModel(string? model) => NormalizeModel(model) switch
+    public static string DisplayModel(string? model) =>
+        Volatile.Read(ref _catalog)?.Models.TryGetValue(NormalizeModel(model), out var rate) == true
+            ? rate.DisplayName : BuiltInDisplayModel(model);
+
+    private static string BuiltInDisplayModel(string? model) => NormalizeModel(model) switch
     {
         "gpt-6-astra" => "GPT-6 Astra",
         "gpt-6.1-sol" => "GPT-6.1 Sol",
@@ -111,7 +159,10 @@ public static class ApiCostEstimator
         decimal? FastMultiplier = null,
         bool LongContextSurcharge = false,
         decimal CacheWriteMultiplier = 1m,
-        string BasisDate = ApiCostEstimator.BasisDate);
+        string BasisDate = ApiCostEstimator.BasisDate,
+        long LongThreshold = LongContextThreshold,
+        decimal LongInputMultiplier = 2m,
+        decimal LongOutputMultiplier = 1.5m);
 }
 
 public enum ServiceTier

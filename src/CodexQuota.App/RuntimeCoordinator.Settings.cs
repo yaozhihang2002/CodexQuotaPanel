@@ -38,6 +38,7 @@ internal sealed partial class RuntimeCoordinator
             _platform.OpenUri(new Uri("https://github.com/yaozhihang2002/CodexQuotaPanel"));
         _settingsWindow.OpenPricingRequested += (_, _) =>
             _platform.OpenUri(new Uri(ApiCostEstimator.SourceUrl));
+        _settingsWindow.PricingUpdateRequested += async (_, _) => await UpdatePricingAsync(false);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
@@ -185,9 +186,15 @@ internal sealed partial class RuntimeCoordinator
 
     private async Task ClearHistoryAsync()
     {
-        await _history.ClearAsync(_lifetime.Token);
-        await RefreshAsync();
-        await ShowMessageAsync(T("已清除", "Cleared"), T("本地趋势和 Token 历史已清除。", "Local trend and token history were cleared."));
+        try
+        {
+            await _history.ClearAsync(_lifetime.Token);
+            await RefreshAsync();
+            await ShowMessageAsync(T("已清除", "Cleared"), T("本地趋势和 Token 历史已清除。", "Local trends and tokens were cleared."));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        { await ShowMessageAsync(T("清除失败", "Clear failed"), T("无法清除本地历史，请稍后重试。", "Cannot clear local history; please try again.")); }
     }
 
     private async Task ResetDefaultsAsync()

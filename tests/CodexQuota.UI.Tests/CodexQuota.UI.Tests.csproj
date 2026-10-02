@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <Target Name="UseProductVersionForUiEvidence" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <XmlPeek XmlInputPath="../../src/CodexQuota.App/CodexQuota.App.csproj" Query="/Project/PropertyGroup/Version/text()">
+      <Output TaskParameter="Result" PropertyName="Version" />
+    </XmlPeek>
+    <PropertyGroup><InformationalVersion>$(Version)</InformationalVersion></PropertyGroup>
+  </Target>
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless" Version="12.1.1" />
     <PackageReference Include="Avalonia.Skia" Version="12.1.1" />

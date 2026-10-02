@@ -79,6 +79,7 @@ internal sealed partial class RuntimeCoordinator
             OfficialQuotaSnapshot? snapshot = null;
             var retained = _lastTrustedQuotaSnapshot ?? _presentation.Snapshot;
             var freshSnapshot = false;
+            IReadOnlyList<QuotaWindow> resetWindows = [];
             string? error = null;
             var connectionState = QuotaConnectionState.Connecting;
             string? connectionDetail = null;
@@ -97,6 +98,9 @@ internal sealed partial class RuntimeCoordinator
                 freshSnapshot = selection.IsFresh;
                 if (selection.Kind == QuotaSnapshotSelectionKind.Live)
                 {
+                    resetWindows = QuotaResetDetector.Detect(_previousLiveSnapshot, snapshot!);
+                    if (_previousLiveSnapshot is null || snapshot!.ObservedAt > _previousLiveSnapshot.ObservedAt)
+                        _previousLiveSnapshot = snapshot;
                     _lastTrustedQuotaSnapshot = snapshot;
                     try
                     {
@@ -168,6 +172,7 @@ internal sealed partial class RuntimeCoordinator
             {
                 ApplyPresentation();
                 CheckAlerts();
+                ShowQuotaRecovery(resetWindows);
             });
         }
         finally { _refreshGate.Release(); }
