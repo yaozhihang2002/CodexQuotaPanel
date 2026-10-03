@@ -65,7 +65,8 @@ internal sealed partial class RuntimeCoordinator
         _platform.SetStartWithSystem(draft.StartWithSystem);
         var visualShellChanged = draft.Theme != _settings.Theme || draft.Language != _settings.Language ||
                                  draft.InterfaceScalePercent != _settings.InterfaceScalePercent;
-        _settings = draft;
+        _settings = draft with { AlertedUntil = _settings.AlertedUntil };
+        if (!_settings.AlertsEnabled) _quotaAlert?.Close();
         await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(true);
         ApplyApplicationTheme(_settings);
         _orb?.ApplySettings(_settings);
@@ -153,7 +154,7 @@ internal sealed partial class RuntimeCoordinator
         if (file is null) return;
         var portable = _settings with { OrbX = null, OrbY = null, OrbDisplayId = null,
             DashboardX = null, DashboardY = null, DashboardDisplayId = null, StartWithSystem = false,
-            DismissedAlertCycleKey = null, LastWarningCycleKey = null, LastCriticalCycleKey = null };
+            DismissedAlertCycleKey = null, LastWarningCycleKey = null, LastCriticalCycleKey = null, AlertedUntil = [] };
         await using var stream = await file.OpenWriteAsync();
         await JsonSerializer.SerializeAsync(stream, portable, new JsonSerializerOptions { WriteIndented = true }, _lifetime.Token);
     }

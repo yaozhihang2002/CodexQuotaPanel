@@ -45,6 +45,27 @@ var emptySelection = QuotaSnapshotContinuity.Select(null, null, null);
 Check.Equal(QuotaSnapshotSelectionKind.None, emptySelection.Kind, "missing sources stay empty");
 
 Console.WriteLine("Application checks passed: 18");
+Check.False(AppSettings.Default.AlertsEnabled, "alerts default off");
+Check.False((new AppSettings { SchemaVersion = 6, AlertsEnabled = true }).Normalize().AlertsEnabled, "upgrade disables old default alerts");
+var alertSettings = new AppSettings { AlertsEnabled = true };
+Check.True(alertSettings.Normalize().AlertsEnabled, "explicit opt-in survives normalization");
+var alertSnapshot = new OfficialQuotaSnapshot(now, [new("5h", 300, 15, now.AddHours(2)), new("7d", 10080, 16, now.AddDays(3))]);
+var firstAlert = QuotaAlertPolicy.Evaluate(alertSettings, alertSnapshot, now, false);
+Check.True(firstAlert.Alert is not null, "first warning appears");
+Check.Equal(2, firstAlert.Settings.AlertedUntil.Count, "all low windows remembered");
+var restored = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(System.Text.Json.JsonSerializer.Serialize(firstAlert.Settings))!;
+Check.True(QuotaAlertPolicy.Evaluate(restored, alertSnapshot, now, false).Alert is null, "restart and close cannot repeat warning");
+var criticalSnapshot = alertSnapshot with { Windows = [new("changed-id", 300, 5, now.AddHours(2).AddSeconds(30)), new("7d", 10080, 4, now.AddDays(3))] };
+Check.True(QuotaAlertPolicy.Evaluate(restored, criticalSnapshot, now, false).Alert is null, "severity, lowest window and timestamp jitter do not duplicate alerts");
+Check.True(QuotaAlertPolicy.Evaluate(alertSettings, alertSnapshot with { IsStale = true }, now, false).Alert is null, "stale snapshot ignored");
+Check.True(QuotaAlertPolicy.Evaluate(alertSettings, alertSnapshot, now.AddHours(8), false).Alert is null, "overnight old snapshot ignored");
+var nextCycle = alertSnapshot with { ObservedAt = now.AddHours(3), Windows = [new("5h", 300, 8, now.AddHours(7))] };
+Check.True(QuotaAlertPolicy.Evaluate(restored, nextCycle, now.AddHours(3), false).Alert is not null, "new reset cycle can warn once");
+var whileOpen = QuotaAlertPolicy.Evaluate(restored, nextCycle, now.AddHours(3), true);
+Check.True(whileOpen.Alert is null, "never stack windows");
+Check.True(QuotaAlertPolicy.Evaluate(whileOpen.Settings, nextCycle, now.AddHours(3), false).Alert is null, "no queued popup after closing");
+Check.True(QuotaAlertPolicy.Evaluate(alertSettings, alertSnapshot with { Windows = [new("5h", 300, 1, now.AddSeconds(-1))] }, now, false).Alert is null, "expired reset ignored");
+Console.WriteLine("Quota alert checks passed: defaults, upgrade, opt-in, persistence, severity, alternating windows, stale data, reset and no backlog.");
 
 static OfficialQuotaSnapshot Snapshot(DateTimeOffset observedAt, double remaining, string source) =>
     new(observedAt, [new QuotaWindow("7d", 10_080, remaining, observedAt.AddDays(5))], Source: source);

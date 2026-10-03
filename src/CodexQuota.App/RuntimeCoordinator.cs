@@ -43,7 +43,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private Task? _refreshLoop;
     private Task? _usageLoop;
     private Task? _topmostLoop;
-    private string? _cycleAlertDismissal;
+    private AlertWindow? _quotaAlert;
     private bool _temporaryMoveMode;
     private bool _dashboardOpening;
     private bool _dashboardHiding;
@@ -550,6 +550,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         if (_shuttingDown) return;
         _shuttingDown = true;
         _orb?.StopEffects();
+        _quotaAlert?.Close();
         _resetToast?.Close();
         StopDisplayRecovery();
         _lifetime.Cancel();

@@ -233,28 +233,29 @@ internal sealed partial class RuntimeCoordinator
 
     private void CheckAlerts()
     {
-        if (!_settings.AlertsEnabled || IsQuietHours()) return;
-        var window = _presentation.Snapshot?.VisibleWindows.OrderBy(window => window.ClampedRemainingPercent).FirstOrDefault();
-        if (window is null || window.ResetsAt is null) return;
-        var cycle = $"{window.Id}:{window.ResetsAt.Value.ToUnixTimeSeconds()}";
-        if (_cycleAlertDismissal == cycle || _settings.DismissedAlertCycleKey == cycle) return;
+        if (_shuttingDown || !_settings.AlertsEnabled || IsQuietHours() || _presentation.ConnectionState != QuotaConnectionState.Live) return;
+        var decision = QuotaAlertPolicy.Evaluate(_settings, _presentation.Snapshot, DateTimeOffset.UtcNow, _quotaAlert is not null);
+        if (!ReferenceEquals(_settings, decision.Settings))
+        {
+            _settings = decision.Settings;
+            _ = SaveAlertStateAsync();
+        }
+        var window = decision.Alert;
+        if (window is null) return;
         var critical = window.ClampedRemainingPercent <= _settings.CriticalThreshold;
-        var warning = window.ClampedRemainingPercent <= _settings.WarningThreshold;
-        if (!critical && !warning) return;
-        if (critical && _settings.LastCriticalCycleKey == cycle || !critical && _settings.LastWarningCycleKey == cycle) return;
         var alert = new AlertWindow(_settings, critical ? T("额度严重不足", "Quota critically low") : T("额度提醒", "Quota alert"),
             $"{UiElements.WindowLabel(window, _settings.Language)} · {window.ClampedRemainingPercent:0}% {T("剩余", "remaining")}", critical);
         PrepareNativeWindowTheme(alert);
-        alert.DismissForCycleRequested += async (_, _) =>
-        {
-            _cycleAlertDismissal = cycle;
-            _settings = _settings with { DismissedAlertCycleKey = cycle };
-            await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(false);
-        };
+        _quotaAlert = alert;
+        alert.Closed += (_, _) => { if (ReferenceEquals(_quotaAlert, alert)) _quotaAlert = null; };
         alert.Show();
         if (_settings.AlertSoundEnabled) _platform.PlayAlertSound();
-        _settings = critical ? _settings with { LastCriticalCycleKey = cycle } : _settings with { LastWarningCycleKey = cycle };
-        _ = _settingsStore.WriteAsync(_settings, _lifetime.Token);
+    }
+
+    private async Task SaveAlertStateAsync()
+    {
+        try { await _settingsStore.WriteAsync(_settings, _lifetime.Token); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException) { }
     }
 
     private bool IsQuietHours()

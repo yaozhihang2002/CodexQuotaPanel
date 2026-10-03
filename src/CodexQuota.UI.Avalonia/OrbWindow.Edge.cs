@@ -50,7 +50,7 @@ public sealed partial class OrbWindow
                 _edge.RecoveryHighlight = _orb.RecoveryHighlight;
                 _edge.InvalidateVisual();
             }
-            if (Environment.TickCount64 - _lastInteraction >= 5000) TryCollapseToEdge();
+            if (Environment.TickCount64 - _lastInteraction >= 2500) TryCollapseToEdge();
         };
     }
 

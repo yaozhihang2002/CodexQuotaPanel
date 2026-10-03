@@ -72,7 +72,7 @@ public sealed partial class SettingsWindow
             _draft.PositionLocked, value => Change(s => s with { PositionLocked = value })));
         panel.Children.Add(ToggleRow(T("鼠标悬停信息", "Hover details"), T("显示额度、重置时间与数据源", "Quota, reset and source"),
             _draft.HoverPreviewEnabled, value => Change(s => s with { HoverPreviewEnabled = value })));
-        panel.Children.Add(ToggleRow(T("贴边收起", "Edge collapse"), T("靠近四边自动吸附，闲置后收起；悬停展开", "Snap near any edge, collapse when idle; hover to expand"),
+        panel.Children.Add(ToggleRow(T("贴边收起", "Edge collapse"), T("靠近四边自动吸附，闲置 2.5 秒后收起；悬停展开", "Snap near any edge, collapse after 2.5s idle; hover to expand"),
             _draft.EdgeAutoHide, value => Change(s => s with { EdgeAutoHide = value })));
         panel.Children.Add(ToggleRow(T("全局恢复快捷键", "Global recovery shortcut"), "Ctrl+Alt+Shift+Q",
             _draft.GlobalRecoveryShortcutEnabled, value => Change(s => s with { GlobalRecoveryShortcutEnabled = value })));
@@ -89,7 +89,7 @@ public sealed partial class SettingsWindow
                 _draft.ResetCelebrationEnabled ? ResetOption.Glow : ResetOption.Off,
                 value => Change(s => s with { ResetCelebrationEnabled = value != ResetOption.Off,
                     ResetNotificationEnabled = value == ResetOption.Notify }))));
-        panel.Children.Add(ToggleRow(T("启用额度提醒", "Enable alerts"), T("警告与严重阈值", "Warning and critical thresholds"),
+        panel.Children.Add(ToggleRow(T("启用额度提醒", "Enable alerts"), T("默认关闭；每个额度周期最多提醒一次", "Off by default; once per quota cycle"),
             _draft.AlertsEnabled, value => Change(s => s with { AlertsEnabled = value })));
         panel.Children.Add(Row(T("警告阈值", "Warning threshold"), "2–100%", NumberSlider(2, 100, _draft.WarningThreshold,
             value => Change(s => s with { WarningThreshold = value }))));

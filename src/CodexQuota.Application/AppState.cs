@@ -32,7 +32,7 @@ public enum ConsumptionFeedbackStyle
 
 public sealed record AppSettings
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public AppTheme Theme { get; init; } = AppTheme.System;
@@ -59,7 +59,8 @@ public sealed record AppSettings
     public bool ReducedMotion { get; init; }
     public bool ConsumptionFeedbackEnabled { get; init; } = true;
     public ConsumptionFeedbackStyle ConsumptionFeedbackStyle { get; init; } = ConsumptionFeedbackStyle.Fluid;
-    public bool AlertsEnabled { get; init; } = true;
+    public bool AlertsEnabled { get; init; }
+    public Dictionary<int, DateTimeOffset> AlertedUntil { get; init; } = [];
     public bool ResetCelebrationEnabled { get; init; } = true;
     public bool ResetNotificationEnabled { get; init; }
     public int WarningThreshold { get; init; } = 20;
@@ -89,6 +90,7 @@ public sealed record AppSettings
         return this with
         {
             SchemaVersion = CurrentSchemaVersion,
+            AlertsEnabled = SchemaVersion >= 7 && AlertsEnabled,
             // The first local 0.8.0 preview defaulted to off. Adopt the new default
             // once; subsequent explicit opt-outs in schema 6 remain respected.
             AutoUpdatePricing = SchemaVersion < 6 || AutoUpdatePricing,
