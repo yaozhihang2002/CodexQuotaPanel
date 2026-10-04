@@ -28,6 +28,11 @@ var outputRoot = args.Length > 0
 Directory.CreateDirectory(outputRoot);
 
 TestAppBuilder.BuildAvaloniaApp().SetupWithoutStarting();
+if (args.Length > 1 && args[1] == "placement")
+{
+    ProductivityChecks.RunPlacement();
+    return;
+}
 var allScenarios = new[]
 {
     ("zh-dark-single-100", new PreviewScenario(AppLanguage.SimplifiedChinese, AppTheme.Dark, false), 1d),

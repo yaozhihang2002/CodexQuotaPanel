@@ -27,7 +27,7 @@ public sealed partial class OrbWindow
 
     private void InitializeEdgeBehavior()
     {
-        PointerEntered += (_, _) => { if (!_edgeTransition) ExpandFromEdge(animate: true); };
+        PointerEntered += (_, _) => { if (!_edgeTransition && !_placementPending) ExpandFromEdge(animate: true); };
         PointerExited += (_, _) => _lastInteraction = Environment.TickCount64;
         Opened += (_, _) => { _lastInteraction = Environment.TickCount64; _edgeTimer.Start(); };
         PropertyChanged += (_, e) =>
@@ -57,13 +57,12 @@ public sealed partial class OrbWindow
     private void OnEdgeScreensChanged(object? sender, EventArgs e)
     {
         if (_closing) return;
-        ExpandFromEdge();
-        RestorePosition(Position.X, Position.Y);
+        QueuePlacementRestore();
     }
 
     internal bool TryCollapseToEdge()
     {
-        if (_closing || !IsVisible || IsEdgeCollapsed || IsEdgeAnimating || !_settings.EdgeAutoHide ||
+        if (_closing || _placementPending || !IsVisible || IsEdgeCollapsed || IsEdgeAnimating || !_settings.EdgeAutoHide ||
             _settings.ClickThrough || _moveMode || _pointerPressed || IsPointerOver) return false;
         var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
         if (screen is null) return false;
@@ -73,19 +72,26 @@ public sealed partial class OrbWindow
         if (edge == DockEdge.None) return false;
         _expandedPosition = Position;
         _edge.Edge = edge;
+        var target = CollapsedGeometry(Position, edge, area, screen.Scaling, _settings.OrbSize);
+        StartEdgeMotion(target.Position, target.Width, target.Height, collapse: true, animate: !_settings.ReducedMotion);
+        return true;
+    }
+
+    internal static (PixelPoint Position, double Width, double Height) CollapsedGeometry(
+        PixelPoint anchor, DockEdge edge, PixelRect area, double scale, double orbSize)
+    {
         var horizontal = edge is DockEdge.Top or DockEdge.Bottom;
         var targetWidth = horizontal ? 76 : EdgeWidth;
         var targetHeight = horizontal ? EdgeHorizontalHeight : 76;
-        var width = (int)Math.Ceiling(targetWidth * screen.Scaling);
-        var height = (int)Math.Ceiling(targetHeight * screen.Scaling);
-        var x = Math.Clamp(_expandedPosition.Value.X + (int)((_settings.OrbSize - targetWidth) * screen.Scaling / 2),
+        var width = (int)Math.Ceiling(targetWidth * scale);
+        var height = (int)Math.Ceiling(targetHeight * scale);
+        var x = Math.Clamp(anchor.X + (int)((orbSize - targetWidth) * scale / 2),
                 area.X, Math.Max(area.X, area.Right - width));
-        var y = Math.Clamp(_expandedPosition.Value.Y + (int)((_settings.OrbSize - targetHeight) * screen.Scaling / 2),
+        var y = Math.Clamp(anchor.Y + (int)((orbSize - targetHeight) * scale / 2),
                 area.Y, Math.Max(area.Y, area.Bottom - height));
         var targetPosition = new PixelPoint(edge == DockEdge.Left ? area.X : edge == DockEdge.Right ? area.Right - width : x,
             edge == DockEdge.Top ? area.Y : edge == DockEdge.Bottom ? area.Bottom - height : y);
-        StartEdgeMotion(targetPosition, targetWidth, targetHeight, collapse: true, animate: !_settings.ReducedMotion);
-        return true;
+        return (targetPosition, targetWidth, targetHeight);
     }
 
     internal static DockEdge SelectEdge(PixelPoint position, int size, PixelRect area, double threshold)
@@ -141,6 +147,7 @@ public sealed partial class OrbWindow
         _closing = true;
         _edgeTimer.Stop();
         _edgeMotionTimer.Stop();
+        _placementTimer.Stop();
         _edgeMotion = null;
         Screens.Changed -= OnEdgeScreensChanged;
     }

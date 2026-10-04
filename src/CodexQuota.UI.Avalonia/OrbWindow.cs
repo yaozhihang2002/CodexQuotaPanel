@@ -59,6 +59,7 @@ public sealed partial class OrbWindow : Window
         PointerReleased += OnPointerReleased;
         PointerCaptureLost += (_, _) => FinishPointerInteraction(false);
         InitializeEdgeBehavior();
+        InitializePlacement();
         Closing += (_, _) => StopEffects();
     }
 
@@ -143,6 +144,7 @@ public sealed partial class OrbWindow : Window
         Position = new PixelPoint(
             Math.Clamp(desired.X, area.X, Math.Max(area.X, area.Right - orbSize)),
             Math.Clamp(desired.Y, area.Y, Math.Max(area.Y, area.Bottom - orbSize)));
+        RememberPlacement();
     }
 
     public (PixelPoint Position, string DisplayId) ConstrainPosition(bool snapToEdge)
@@ -263,6 +265,13 @@ public sealed partial class OrbWindow : Window
         if (_pointerMoved)
         {
             var placement = ConstrainPosition(_settings.EdgeAutoHide);
+            if (_placementPending)
+            {
+                // A display change during a drag is not a new user placement.
+                _pointerMoved = false;
+                return;
+            }
+            RememberPlacement();
             MoveCompleted?.Invoke(this, placement.Position);
         }
         else if (allowClick && !_settings.ClickThrough && !_moveMode)

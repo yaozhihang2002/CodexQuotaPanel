@@ -139,9 +139,10 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private void CreateOrb()
     {
         _orb = new OrbWindow();
+        _orb.SetPlacementContext(IsRemoteDesktop);
         _orb.ApplySettings(_settings);
         _orb.ApplyPresentation(_presentation);
-        _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
+        _orb.RestoreRememberedPosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
         _orb.OpenDetailsRequested += async (_, _) => await OpenDashboardAsync();
         _orb.MoveCompleted += async (_, _) =>
         {
@@ -212,7 +213,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
                 break;
             default:
                 _orb!.Show();
-                _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
+                _orb.RestoreRememberedPosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
                 break;
         }
     }
@@ -383,9 +384,9 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_orb is null) return;
         if (_orbPositionBeforeDashboard is { } position)
-            _orb.RestorePosition(position.X, position.Y);
+            _orb.RestoreRememberedPosition(position.X, position.Y);
         else
-            _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
+            _orb.RestoreRememberedPosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
     }
 
     private void ShowUsageDetails()
@@ -411,7 +412,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     {
         if (_orb is null) return;
         if (_orb.IsVisible) _orb.Hide();
-        else { _orb.Show(); _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId); ApplyNativeOrbSettings(); }
+        else { _orb.Show(); _orb.RestoreRememberedPosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId); ApplyNativeOrbSettings(); }
     }
 
     private void BeginOrbMoveMode()
@@ -428,7 +429,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         _temporaryMoveMode = true;
         _orb.SetMoveMode(true);
         if (!_orb.IsVisible) _orb.Show();
-        _orb.RestorePosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
+        _orb.RestoreRememberedPosition(_settings.OrbX, _settings.OrbY, _settings.OrbDisplayId);
         if (_orb.TryGetPlatformHandle()?.Handle is { } handle && handle != 0)
         {
             _platform.SetClickThrough(handle, false);

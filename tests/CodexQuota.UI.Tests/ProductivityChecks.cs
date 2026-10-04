@@ -11,8 +11,128 @@ using CodexQuota.UI.Avalonia;
 
 internal static class ProductivityChecks
 {
+    public static void RunPlacement()
+    {
+        var localArea = new PixelRect(0, 0, 1920, 1040);
+        var remoteArea = new PixelRect(0, 0, 1280, 720);
+        var localAnchor = new OrbPlacementAnchor(new(1824, 472), localArea, 96, "local");
+        Check.True(localAnchor.Project(remoteArea, 120) == new PixelPoint(1160, 300), "RDP keeps right edge and relative height at changed DPI");
+        Check.True(localAnchor.Project(localArea, 96) == new PixelPoint(1824, 472), "local reconnect restores exact original anchor");
+        for (var i = 0; i < 20; i++)
+        {
+            _ = localAnchor.Project(new(-1280, -720, 1280, 720), 144);
+            Check.True(localAnchor.Project(localArea, 96) == localAnchor.Position, "repeated temporary layouts do not accumulate drift");
+        }
+        Check.True(localAnchor.Project(new(0, 0, 64, 64), 96) == new PixelPoint(0, 0), "tiny transient display clamps safely");
+        var placementOrb = new OrbWindow();
+        placementOrb.ApplySettings(new AppSettings { OrbSize = 96, ReducedMotion = true });
+        placementOrb.Show();
+        var placementArea = placementOrb.Screens.Primary!.WorkingArea;
+        var intended = new PixelPoint(placementArea.X + 200, placementArea.Y + 180);
+        placementOrb.RestorePosition(intended.X, intended.Y);
+        placementOrb.Position = new PixelPoint(placementArea.X, placementArea.Y);
+        placementOrb.RestoreRememberedPosition(0, 0);
+        Check.True(placementOrb.Position == intended, "temporary OS position does not overwrite user anchor");
+        var hides = 0;
+        var reveals = 0;
+        ((Control)placementOrb.Content!).PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Visual.IsVisibleProperty) return;
+            if (e.NewValue is false) hides++;
+            else reveals++;
+        };
+        placementOrb.SetPlacementContext(true);
+        Check.True(placementOrb.IsPlacementConcealed, "hide intermediate position immediately");
+        placementOrb.Position = new PixelPoint(placementArea.X, placementArea.Y);
+        var bursts = 0;
+        var notifications = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        notifications.Tick += (_, _) =>
+        {
+            placementOrb.SetPlacementContext(true, displayChanged: true);
+            Check.True(placementOrb.IsPlacementConcealed, "consecutive notifications never reveal an intermediate frame");
+            if (++bursts == 3) notifications.Stop();
+        };
+        notifications.Start();
+        try { PumpUntil(() => placementOrb.Position == intended && !placementOrb.IsPlacementConcealed, 5000); }
+        finally { notifications.Stop(); }
+        Check.True(bursts == 3 && hides == 1 && reveals == 1, "notification burst hides once and reveals once");
+        var remoteIntent = new PixelPoint(placementArea.X + 350, placementArea.Y + 250);
+        placementOrb.RestorePosition(remoteIntent.X, remoteIntent.Y);
+        placementOrb.SetPlacementContext(false);
+        PumpUntil(() => placementOrb.Position == intended && !placementOrb.IsPlacementConcealed);
+        placementOrb.SetPlacementContext(true);
+        PumpUntil(() => placementOrb.Position == remoteIntent && !placementOrb.IsPlacementConcealed);
+        placementOrb.SetPlacementContext(true, displayChanged: true);
+        Check.True(!placementOrb.IsPlacementConcealed, "late duplicate final-layout notification does not flash again");
+        placementOrb.SetPlacementContext(false);
+        placementOrb.Hide();
+        PumpUntil(() => !placementOrb.IsPlacementConcealed);
+        Check.True(!placementOrb.IsVisible, "display recovery never reopens a user-hidden orb");
+        placementOrb.Show();
+        placementOrb.SetPlacementContext(true);
+        Check.True(placementOrb.IsPlacementConcealed, "close test starts during pending recovery");
+        placementOrb.Close();
+        Check.True(!placementOrb.IsVisible, "closing cancels pending display recovery");
+        foreach (var edge in new[] { DockEdge.Left, DockEdge.Right, DockEdge.Top, DockEdge.Bottom })
+        {
+            var compactOrb = new OrbWindow();
+            compactOrb.ApplySettings(new AppSettings { OrbSize = 96, EdgeAutoHide = true, ReducedMotion = true });
+            compactOrb.Show();
+            var screen = compactOrb.Screens.Primary!;
+            var area = screen.WorkingArea;
+            var size = (int)Math.Ceiling(96 * screen.Scaling);
+            var anchor = edge switch
+            {
+                DockEdge.Left => new PixelPoint(area.X, area.Y + 150),
+                DockEdge.Right => new PixelPoint(area.Right - size, area.Y + 150),
+                DockEdge.Top => new PixelPoint(area.X + 150, area.Y),
+                _ => new PixelPoint(area.X + 150, area.Bottom - size)
+            };
+            compactOrb.MouseMove(new Point(-100, -100));
+            compactOrb.RestorePosition(anchor.X, anchor.Y);
+            Check.True(compactOrb.TryCollapseToEdge(), edge + " collapsed before session change");
+            var compactPosition = compactOrb.Position;
+            var expandedDuringRecovery = false;
+            compactOrb.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == ContentControl.ContentProperty && compactOrb.Content is OrbControl)
+                    expandedDuringRecovery = true;
+            };
+            compactOrb.SetPlacementContext(true);
+            compactOrb.MouseMove(new Point(10, 10));
+            Dispatcher.UIThread.RunJobs();
+            Check.True(compactOrb.IsEdgeCollapsed, "recovery hover cannot expand compact surface");
+            compactOrb.Position = new PixelPoint(area.X + 20, area.Y + 20);
+            PumpUntil(() => !compactOrb.IsPlacementPending, 5000);
+            Check.True(compactOrb.CollapsedEdge == edge && compactOrb.Position == compactPosition &&
+                compactOrb.ExpandedPosition == anchor && !expandedDuringRecovery,
+                edge + " recovery preserves compact surface and anchor without intermediate orb");
+            compactOrb.RestoreRememberedPosition(0, 0);
+            Check.True(compactOrb.IsEdgeCollapsed, "coordinator restore also preserves collapsed state");
+            compactOrb.SetPlacementContext(false);
+            PumpUntil(() => !compactOrb.IsPlacementPending, 5000);
+            Check.True(compactOrb.CollapsedEdge == edge && !expandedDuringRecovery, "local reconnect stays collapsed");
+            compactOrb.MouseMove(new Point(-100, -100));
+            compactOrb.MouseMove(new Point(10, 10));
+            Dispatcher.UIThread.RunJobs();
+            Check.True(!compactOrb.IsEdgeCollapsed, "intentional hover still expands after recovery");
+            compactOrb.Close();
+            var projected = localAnchor.Project(remoteArea, 120);
+            var geometry = OrbWindow.CollapsedGeometry(projected, edge, remoteArea, 1.25, 96);
+            Check.True(edge switch
+            {
+                DockEdge.Left => geometry.Position.X == remoteArea.X,
+                DockEdge.Right => geometry.Position.X + (int)Math.Ceiling(geometry.Width * 1.25) == remoteArea.Right,
+                DockEdge.Top => geometry.Position.Y == remoteArea.Y,
+                _ => geometry.Position.Y + (int)Math.Ceiling(geometry.Height * 1.25) == remoteArea.Bottom
+            }, "compact surface stays on selected edge after DPI change");
+        }
+        Console.WriteLine("Placement checks passed: relative edges, DPI, negative coordinates, repeated layouts, temporary OS moves, local/remote anchors.");
+    }
+
     public static void Run(string outputRoot)
     {
+        RunPlacement();
         var now = DateTimeOffset.Parse("2026-10-02T07:00:00Z");
         var usage = new[] { new ObservedUsage(now.AddMinutes(-5), "gpt-6.1-sol", "default",
             new(51000,50000,30000,1000,200), "fixture", true),
@@ -152,9 +272,9 @@ internal static class ProductivityChecks
         Console.WriteLine("UI refinement checks passed (simplified usage, four edges, side priority, hover recovery and opt-outs).");
     }
 
-    private static void PumpUntil(Func<bool> finished)
+    private static void PumpUntil(Func<bool> finished, int timeoutMilliseconds = 2500)
     {
-        var deadline = Environment.TickCount64 + 2500;
+        var deadline = Environment.TickCount64 + timeoutMilliseconds;
         var frame = new DispatcherFrame();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(5) };
         timer.Tick += (_, _) =>

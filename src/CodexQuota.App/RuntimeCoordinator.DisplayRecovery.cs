@@ -78,6 +78,7 @@ internal sealed partial class RuntimeCoordinator
     {
         if (_lifetime.IsCancellationRequested) return;
         _displaySurfaceInvalid = true;
+        _orb?.SetPlacementContext(IsRemoteDesktop, displayChanged: true);
         _displayEpoch++;
         LogSurface(reason);
         _displayDebounce?.Stop();
