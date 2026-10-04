@@ -1,6 +1,6 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.8.1',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.8.2',
     [string]$DotNetPath,
     [string]$DevenvPath,
     [string]$OutputDirectory,
