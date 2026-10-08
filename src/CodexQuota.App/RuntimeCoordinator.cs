@@ -139,6 +139,16 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
     private void CreateOrb()
     {
         _orb = new OrbWindow();
+        if (OperatingSystem.IsWindows())
+        {
+            var orb = _orb;
+            orb.NativeEdgePosition = (area, edge) =>
+                OperatingSystem.IsWindows() && ContainedWindowPosition.Read(orb.TryGetPlatformHandle()?.Handle ?? 0,
+                    area.X, area.Y, area.Right, area.Bottom,
+                    edge == DockEdge.Left ? -1 : edge == DockEdge.Right ? 1 : 0,
+                    edge == DockEdge.Top ? -1 : edge == DockEdge.Bottom ? 1 : 0) is { } position
+                    ? new PixelPoint(position.X, position.Y) : null;
+        }
         _orb.SetPlacementContext(IsRemoteDesktop);
         _orb.ApplySettings(_settings);
         _orb.ApplyPresentation(_presentation);

@@ -11,6 +11,40 @@ using CodexQuota.UI.Avalonia;
 
 internal static class ProductivityChecks
 {
+    public static void RunEdgeContainmentMotion()
+    {
+        var orb = new OrbWindow();
+        orb.ApplySettings(new AppSettings { OrbSize = 96, EdgeAutoHide = true });
+        orb.Show();
+        orb.MouseMove(new Point(-100, -100));
+        var screen = orb.Screens.Primary!;
+        var area = screen.WorkingArea;
+        var anchor = new PixelPoint(area.Right - (int)Math.Ceiling(96 * screen.Scaling), area.Y + 150);
+        orb.Position = anchor;
+        var target = OrbWindow.CollapsedGeometry(anchor, DockEdge.Right, area, screen.Scaling, 96).Position;
+        var calls = 0;
+        // Simulate a native resize that settles one frame after initial layout.
+        orb.NativeEdgePosition = (_, _) => target + new PixelVector(++calls == 1 ? -64 : 0, 0);
+        var visibleMoves = 0;
+        orb.PositionChanged += (_, _) => { if (orb.Opacity > .001) visibleMoves++; };
+        try
+        {
+            Check.True(orb.TryCollapseToEdge(), "animated containment starts");
+            PumpUntil(() => !orb.IsEdgeAnimating, 5000);
+            Check.True(calls >= 3 && orb.Position == target,
+                "native corrections settle before fade-in");
+            Check.True(visibleMoves == 0 && orb.Opacity == 1 && orb.IsEdgeCollapsed,
+                "fade-in completion never resets visible geometry");
+            var settledCalls = calls;
+            orb.ExpandFromEdge(animate: true);
+            PumpUntil(() => !orb.IsEdgeAnimating, 5000);
+            Check.True(orb.Position == anchor && !orb.IsEdgeCollapsed && visibleMoves == 0 && calls == settledCalls,
+                "expansion restores anchor only while transparent");
+            Console.WriteLine("PASS edge containment motion: late native correction renders while transparent; no visible movement on collapse or expansion.");
+        }
+        finally { orb.Close(); }
+    }
+
     public static void RunPlacement()
     {
         var localArea = new PixelRect(0, 0, 1920, 1040);
@@ -91,6 +125,7 @@ internal static class ProductivityChecks
             compactOrb.MouseMove(new Point(-100, -100));
             compactOrb.RestorePosition(anchor.X, anchor.Y);
             Check.True(compactOrb.TryCollapseToEdge(), edge + " collapsed before session change");
+            Check.True(((Control)compactOrb.Content!).ClipToBounds, "arc stroke is clipped at the control boundary");
             var compactPosition = compactOrb.Position;
             var expandedDuringRecovery = false;
             compactOrb.PropertyChanged += (_, e) =>
@@ -116,6 +151,18 @@ internal static class ProductivityChecks
             compactOrb.MouseMove(new Point(10, 10));
             Dispatcher.UIThread.RunJobs();
             Check.True(!compactOrb.IsEdgeCollapsed, "intentional hover still expands after recovery");
+            compactOrb.MouseMove(new Point(-100, -100));
+            var nativeChecks = 0;
+            var contained = compactPosition + new PixelVector(edge == DockEdge.Right ? -2 : 0, edge == DockEdge.Bottom ? -2 : 0);
+            compactOrb.NativeEdgePosition = (_, _) => { nativeChecks++; return contained; };
+            Check.True(compactOrb.TryCollapseToEdge() && compactOrb.Position == contained && nativeChecks > 0,
+                "collapse uses native containment before showing compact surface");
+            compactOrb.RestoreRememberedPosition(0, 0);
+            Check.True(compactOrb.Position == contained && compactOrb.IsEdgeCollapsed && nativeChecks > 1,
+                "display recovery reapplies containment without expanding");
+            compactOrb.ExpandFromEdge();
+            Check.True(compactOrb.Position == anchor && !compactOrb.IsEdgeCollapsed,
+                "native edge correction never overwrites expanded anchor");
             compactOrb.Close();
             var projected = localAnchor.Project(remoteArea, 120);
             var geometry = OrbWindow.CollapsedGeometry(projected, edge, remoteArea, 1.25, 96);
@@ -133,6 +180,7 @@ internal static class ProductivityChecks
     public static void Run(string outputRoot)
     {
         RunPlacement();
+        RunEdgeContainmentMotion();
         var now = DateTimeOffset.Parse("2026-10-02T07:00:00Z");
         var usage = new[] { new ObservedUsage(now.AddMinutes(-5), "gpt-6.1-sol", "default",
             new(51000,50000,30000,1000,200), "fixture", true),

@@ -26,6 +26,7 @@ public sealed partial class OrbWindow
         public long FrameRequestedAt { get; set; }
         public long? Started { get; set; }
         public double Progress { get; set; }
+        public bool SurfacePrepared { get; set; } = alreadyTarget;
     }
 
     private void StartEdgeMotion(PixelPoint target, double width, double height, bool collapse, bool animate)
@@ -61,6 +62,13 @@ public sealed partial class OrbWindow
             }
             else
             {
+                // Native sizing may settle after the first layout frame. Any
+                // final correction must also render while fully transparent.
+                if (motion.Collapse && ContainEdgeSurface())
+                {
+                    WaitForEdgeFrame(motion, EdgePhase.Preparing);
+                    return;
+                }
                 motion.Phase = EdgePhase.FadeIn;
                 motion.FromOpacity = 0;
                 motion.Started = null;
@@ -104,6 +112,8 @@ public sealed partial class OrbWindow
             var target = motion.Collapse ? (object)_edge : _orb;
             if (!ReferenceEquals(Content, target)) Content = target;
             if (Position != motion.Target) Position = motion.Target;
+            if (motion.Collapse) ContainEdgeSurface();
+            motion.SurfacePrepared = true;
         }
         finally { _edgeTransition = false; }
     }
@@ -113,7 +123,13 @@ public sealed partial class OrbWindow
         _edgeMotionTimer.Stop();
         if (_edgeMotion is not { } motion || _closing) return;
         _edgeMotion = null;
-        ApplyEdgeSurface(motion);
+        // Fade-in already uses the corrected native position. Reapplying the
+        // original target here causes a visible out-and-back jump at opacity 1.
+        if (!motion.SurfacePrepared)
+        {
+            Opacity = 0;
+            ApplyEdgeSurface(motion);
+        }
         Opacity = 1;
         if (!motion.Collapse) _expandedPosition = null;
     }

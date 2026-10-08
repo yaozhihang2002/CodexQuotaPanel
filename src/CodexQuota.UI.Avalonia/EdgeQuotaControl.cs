@@ -7,6 +7,8 @@ namespace CodexQuota.UI.Avalonia;
 /// <summary>Continuous, rounded Bezier arcs inside the compact native footprint.</summary>
 internal sealed class EdgeQuotaControl : Control
 {
+    public EdgeQuotaControl() => ClipToBounds = true;
+
     public DockEdge Edge { get; set; }
     public double Primary { get; set; }
     public double Secondary { get; set; } = double.NaN;

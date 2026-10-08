@@ -28,6 +28,11 @@ var outputRoot = args.Length > 0
 Directory.CreateDirectory(outputRoot);
 
 TestAppBuilder.BuildAvaloniaApp().SetupWithoutStarting();
+if (args.Length > 1 && args[1] == "edge-containment")
+{
+    ProductivityChecks.RunEdgeContainmentMotion();
+    return;
+}
 if (args.Length > 1 && args[1] == "placement")
 {
     ProductivityChecks.RunPlacement();

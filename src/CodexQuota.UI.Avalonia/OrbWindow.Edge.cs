@@ -6,7 +6,7 @@ using CodexQuota.Application;
 
 namespace CodexQuota.UI.Avalonia;
 
-internal enum DockEdge { None, Left, Right, Top, Bottom }
+public enum DockEdge { None, Left, Right, Top, Bottom }
 
 public sealed partial class OrbWindow
 {
@@ -18,6 +18,21 @@ public sealed partial class OrbWindow
     private readonly DispatcherTimer _edgeTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly EdgeQuotaControl _edge = new() { Cursor = new Cursor(StandardCursorType.Hand) };
     private PixelPoint? _expandedPosition;
+    private PixelRect? _collapsedArea;
+    // The host can supply native window measurements without making the UI
+    // assembly depend on a particular desktop platform.
+    public Func<PixelRect, DockEdge, PixelPoint?>? NativeEdgePosition { get; set; }
+
+    private bool ContainEdgeSurface()
+    {
+        if (_collapsedArea is not { } area || NativeEdgePosition?.Invoke(area, _edge.Edge) is not { } position || Position == position)
+            return false;
+        var wasTransition = _edgeTransition;
+        _edgeTransition = true;
+        try { Position = position; }
+        finally { _edgeTransition = wasTransition; }
+        return true;
+    }
     private long _lastInteraction = Environment.TickCount64;
     private long _recoveryStarted;
     private bool _edgeTransition;
@@ -72,6 +87,7 @@ public sealed partial class OrbWindow
         if (edge == DockEdge.None) return false;
         _expandedPosition = Position;
         _edge.Edge = edge;
+        _collapsedArea = area;
         var target = CollapsedGeometry(Position, edge, area, screen.Scaling, _settings.OrbSize);
         StartEdgeMotion(target.Position, target.Width, target.Height, collapse: true, animate: !_settings.ReducedMotion);
         return true;

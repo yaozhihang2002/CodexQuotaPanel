@@ -10,6 +10,11 @@ using CodexQuota.UI.Avalonia;
 if (!OperatingSystem.IsWindows()) return;
 
 AppBuilder.Configure<ThemeProbeApp>().UsePlatformDetect().SetupWithoutStarting();
+if (args.Length == 1 && args[0] == "--edge-bounds")
+{
+    EdgeBoundsProbe.Run();
+    return;
+}
 if (args.Length == 2 && args[0] is "--edge-frames" or "--edge-frames-dual")
 {
     EdgeFrameProbe.Run(args[1], dual: args[0] == "--edge-frames-dual");

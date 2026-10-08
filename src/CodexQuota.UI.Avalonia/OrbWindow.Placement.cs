@@ -128,7 +128,7 @@ public sealed partial class OrbWindow
         if (!_placementPending) _settledPlacementKey = PlacementKey;
     }
 
-    private (PixelPoint Anchor, PixelPoint Position, double Width, double Height)? PlacementTarget()
+    private (PixelPoint Anchor, PixelPoint Position, double Width, double Height, PixelRect Area)? PlacementTarget()
     {
         var anchor = _placements.GetValueOrDefault(PlacementKey) ??
             _contextAnchors.GetValueOrDefault(_placementContext) ?? _placementAnchor;
@@ -139,9 +139,9 @@ public sealed partial class OrbWindow
         if (IsEdgeCollapsed)
         {
             var compact = CollapsedGeometry(position, _edge.Edge, screen.WorkingArea, screen.Scaling, _settings.OrbSize);
-            return (position, compact.Position, compact.Width, compact.Height);
+            return (position, compact.Position, compact.Width, compact.Height, screen.WorkingArea);
         }
-        return (position, position, _settings.OrbSize, _settings.OrbSize);
+        return (position, position, _settings.OrbSize, _settings.OrbSize, screen.WorkingArea);
     }
 
     private bool PlacementGeometryDiffers() => PlacementTarget() is { } target &&
@@ -158,6 +158,11 @@ public sealed partial class OrbWindow
             if (IsEdgeCollapsed) _expandedPosition = target.Anchor;
             if (Width != target.Width || Height != target.Height) SetSurfaceSize(target.Width, target.Height);
             if (Position != target.Position) Position = target.Position;
+            if (IsEdgeCollapsed)
+            {
+                _collapsedArea = target.Area;
+                ContainEdgeSurface();
+            }
         }
         finally { _edgeTransition = false; }
         _lastInteraction = Environment.TickCount64;
