@@ -106,8 +106,7 @@ public sealed partial class SettingsWindow : Window
                     HeaderCopy(),
                     new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, Children =
                     {
-                        UiElements.Text("v" + AppVersion, 18, FontWeight.Bold, _palette.Mint),
-                        UiElements.Text("CODEX · SETTINGS", 9, FontWeight.SemiBold, _palette.TextMuted)
+                        UiElements.Text("v" + AppVersion, 18, FontWeight.Bold, _palette.Mint)
                     }}
                 }
             }
@@ -127,6 +126,7 @@ public sealed partial class SettingsWindow : Window
             var index = i;
             var button = UiElements.Button(labels[i], _palette);
             button.HorizontalContentAlignment = HorizontalAlignment.Left;
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
             button.Click += (_, _) => SelectPage(index);
             _navButtons.Add(button);
             nav.Children.Add(button);
@@ -164,8 +164,7 @@ public sealed partial class SettingsWindow : Window
 
     private Control HeaderCopy() => new StackPanel { Spacing = 1, Children =
     {
-        UiElements.Text("Codex / " + T("额度面板", "Quota Panel"), 23, FontWeight.Bold, _palette.TextPrimary),
-        UiElements.Text(T("紧凑、即时且可撤销的设置", "Compact, immediate and reversible settings"), 10.5, FontWeight.Normal, _palette.TextMuted)
+        UiElements.Text("Codex / " + T("额度面板", "Quota Panel"), 23, FontWeight.Bold, _palette.TextPrimary)
     }};
 
     private void Change(Func<AppSettings, AppSettings> change)

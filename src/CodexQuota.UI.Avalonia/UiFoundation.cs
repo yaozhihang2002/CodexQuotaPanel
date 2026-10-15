@@ -39,16 +39,19 @@ public sealed record UiPalette(
     IBrush Border, IBrush Active, IBrush TextPrimary, IBrush TextSecondary, IBrush TextMuted,
     IBrush Mint, IBrush Blue, IBrush Amber, IBrush Red, IBrush ButtonText)
 {
+    public static bool IsDarkTheme(AppTheme theme, bool systemDark) =>
+        theme == AppTheme.Dark || theme == AppTheme.System && systemDark;
+
     public static UiPalette For(AppTheme theme, bool systemDark = true)
     {
-        var dark = theme == AppTheme.Dark || theme == AppTheme.System && systemDark;
+        var dark = IsDarkTheme(theme, systemDark);
         return dark
             ? new UiPalette(B("#0D1210"), B("#121916"), B("#101613"), B("#151C19"), B("#1A231F"),
                 B("#2B3933"), B("#20362D"), B("#F2F4EF"), B("#BDCAC4"), B("#8FA198"),
                 B("#57D9AA"), B("#72BFF2"), B("#E9B94F"), B("#FF746F"), B("#0B1611"))
-            : new UiPalette(B("#F2F5F1"), B("#E9F0EB"), B("#EDF2EE"), B("#FAFBF9"), B("#FFFFFF"),
-                B("#CAD6CF"), B("#DDECE4"), B("#15211B"), B("#475B51"), B("#667A70"),
-                B("#168A67"), B("#247EAC"), B("#976611"), B("#C44742"), B("#FFFFFF"));
+            : new UiPalette(B("#F2F4F7"), B("#F2F4F7"), B("#F2F4F7"), B("#FFFFFF"), B("#FFFFFF"),
+                B("#DDE2E7"), B("#E8F5EF"), B("#18212B"), B("#475467"), B("#667085"),
+                B("#087F5B"), B("#247EAC"), B("#976611"), B("#C44742"), B("#FFFFFF"));
     }
 
     public static IBrush B(string value) => new SolidColorBrush(Color.Parse(value));
@@ -90,6 +93,8 @@ public static class UiElements
             FontFamily = AppFont,
             FontSize = 13 * ScaleFactor,
             FontWeight = FontWeight.SemiBold,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             Foreground = foreground,
             Background = normalBackground,
             BorderBrush = normalBorder,

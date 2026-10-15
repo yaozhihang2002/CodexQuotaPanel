@@ -23,6 +23,8 @@ public enum StartupViewMode
     TrayOnly
 }
 
+public enum PanelCloseAction { Ask, Tray, Exit }
+
 public enum ConsumptionFeedbackStyle
 {
     Ember,
@@ -40,6 +42,7 @@ public sealed record AppSettings
     public StartupViewMode StartupView { get; init; } = StartupViewMode.RestorePrevious;
     public StartupViewMode LastView { get; init; } = StartupViewMode.Orb;
     public bool StartWithSystem { get; init; }
+    public PanelCloseAction CloseAction { get; init; } = PanelCloseAction.Ask;
     public int OrbSize { get; init; } = 88;
     public int OrbOpacityPercent { get; init; } = 100;
     public string OrbBackground { get; init; } = "#000000";
@@ -79,6 +82,8 @@ public sealed record AppSettings
     public double? OrbY { get; init; }
     public string? OrbDisplayId { get; init; }
     public double? DashboardX { get; init; }
+    public double? DashboardWidth { get; init; }
+    public double? DashboardHeight { get; init; }
     public double? DashboardY { get; init; }
     public string? DashboardDisplayId { get; init; }
 
@@ -90,6 +95,9 @@ public sealed record AppSettings
         return this with
         {
             SchemaVersion = CurrentSchemaVersion,
+            DashboardWidth = DashboardWidth is { } width && double.IsFinite(width) && width > 0 ? Math.Max(420, width) : null,
+            DashboardHeight = DashboardHeight is { } height && double.IsFinite(height) && height > 0 ? Math.Max(570, height) : null,
+            CloseAction = Enum.IsDefined(CloseAction) ? CloseAction : PanelCloseAction.Ask,
             AlertsEnabled = SchemaVersion >= 7 && AlertsEnabled,
             // The first local 0.8.0 preview defaulted to off. Adopt the new default
             // once; subsequent explicit opt-outs in schema 6 remain respected.

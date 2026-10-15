@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.8.3--pre--release-64e6b3"></a>
+  <a href="https://github.com/yaozhihang2002/CodexQuotaPanel/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.8.4--pre--release-64e6b3"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-1674d1">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-12%2B%20Apple%20Silicon%20%7C%20Intel-111111">
   <img alt="Languages" src="https://img.shields.io/badge/UI-简体中文%20%7C%20English-4f8cff">
@@ -17,9 +17,9 @@
   <img src="docs/images/dashboard-current.png" width="450" alt="CodexQuotaPanel 当前额度详情面板，使用示例数据">
 </p>
 
-> 当前版本：**v0.8.3 Pre-release**。这是 Windows / macOS 共用核心与界面的跨平台测试版；macOS 包尚未经过 Developer ID 公证与真人 Retina 设备验收。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
+> 当前版本：**v0.8.4 Pre-release**。支持 Windows / macOS；macOS 包使用 ad-hoc 签名，未经过 Apple Developer ID 公证。遇到问题欢迎通过 [GitHub Issues](https://github.com/yaozhihang2002/CodexQuotaPanel/issues) 反馈。
 
-各版本的更新内容与验证说明请查看对应的 [GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)；当前版本详见 [v0.8.3 介绍](https://github.com/yaozhihang2002/CodexQuotaPanel/releases/tag/v0.8.3)。
+各版本的更新内容请查看对应的 [GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)；当前版本详见 [v0.8.4 介绍](https://github.com/yaozhihang2002/CodexQuotaPanel/releases/tag/v0.8.4)。
 
 ## 一眼了解
 
@@ -68,6 +68,9 @@
 ### 额度与显示
 
 - 五小时与一周额度双环，按可用额度自动分配，并支持自定义颜色。
+- Credits 余额与重置卡同排显示；无余额时隐藏，余额小于 1 时保留小数。
+- 自动发现正式版与 Beta 客户端，支持从运行进程和安装注册信息识别自定义安装目录。
+- 面板支持拖动边缘调整宽高并记忆尺寸；关闭时可选择隐藏到托盘或退出应用。
 - 点击悬浮球展开详情，支持分窗口、逐分钟原始精度的完整 24 小时趋势；趋势同时显示半透明的均匀使用参考线，鼠标悬停可对照当时的实际额度与均匀规划额度。
 - 智能续航估算会计入空闲区间，并融合 90 分钟短期速度、6 小时长期速度与样本置信度；样本不足时保持原有显示，不读取对话内容。
 - 本周期每日图按 API 等价美元估算绘制，悬停仍可核对精确输入、缓存输入、缓存写入、输出与推理用量；点击可展开模型和 `Default` / `Fast` 速率明细。日志较晚写入模型或速率时会在会话内安全回填；Auto-review 按当前官方 Codex 费率表对应的 GPT-5.4 API 价格估算，无法识别或缺少公开费率的模型则保留原始 Token 并标记为“未公开计价”，不会被当作免费或实际账单。
@@ -98,10 +101,10 @@
 
 ## 下载
 
-请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.8.3` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
+请只从项目的 **[GitHub Releases](https://github.com/yaozhihang2002/CodexQuotaPanel/releases)** 页面下载。`v0.8.4` 标记为 **Pre-release**，支持 **Windows 10/11 x64** 与 **macOS 12+（Apple Silicon / Intel）**。
 
-- Windows：`CodexQuotaPanel-0.8.3-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
-- macOS：`CodexQuotaPanel-0.8.3-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
+- Windows：`CodexQuotaPanel-0.8.4-Windows-Setup.exe`；仅在电脑缺少 .NET 10 时从微软官方下载并验证 SHA-512。
+- macOS：`CodexQuotaPanel-0.8.4-macOS.dmg`，一个 DMG 自动覆盖 Apple Silicon 与 Intel Mac。
 
 不再发布重复的 MSI、便携包、ZIP 或离线 Setup，减少选择成本。预发布版仍可能存在特定显卡、DPI 或系统环境下的兼容性问题。
 
@@ -132,13 +135,13 @@ dotnet run --project tests/CodexQuota.NativeTheme.Tests -c Release --no-build
 Windows 本地候选生成唯一的双语联网 Setup：
 
 ```powershell
-installer/Windows/Build-Release.ps1 -Version 0.8.3 -DotNetPath <dotnet.exe>
+installer/Windows/Build-Release.ps1 -Version 0.8.4 -DotNetPath <dotnet.exe>
 ```
 
 macOS 在 Apple runner 或 Mac 上生成唯一的通用 DMG：
 
 ```powershell
-installer/macOS/Build-Package.ps1 -Version 0.8.3 -Runtime osx-universal -DmgOnly
+installer/macOS/Build-Package.ps1 -Version 0.8.4 -Runtime osx-universal -DmgOnly
 ```
 
 项目结构：

@@ -2,6 +2,13 @@ using CodexQuota.Application;
 using CodexQuota.Domain;
 
 var original = AppState.Create();
+Check.Equal(PanelCloseAction.Ask, AppSettings.Default.CloseAction, "close asks by default");
+Check.Equal(PanelCloseAction.Ask, (new AppSettings { CloseAction = (PanelCloseAction)99 }).Normalize().CloseAction, "invalid close action asks");
+foreach (var action in Enum.GetValues<PanelCloseAction>())
+{
+    var json = System.Text.Json.JsonSerializer.Serialize(new AppSettings { CloseAction = action });
+    Check.Equal(action, System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)!.Normalize().CloseAction, "remember close choice roundtrip");
+}
 var draft = new SettingsDraftSession(original);
 var preview = draft.Preview(settings => settings with
 {
@@ -46,6 +53,19 @@ Check.Equal(QuotaSnapshotSelectionKind.None, emptySelection.Kind, "missing sourc
 
 Console.WriteLine("Application checks passed: 18");
 Check.False(AppSettings.Default.AlertsEnabled, "alerts default off");
+Check.False(AppSettings.Default.StartWithSystem, "startup remains opt-in");
+Check.False(AppSettings.Default.AlertSoundEnabled, "sound defaults off");
+Check.False(AppSettings.Default.ResetNotificationEnabled, "reset notifications default off");
+Check.False(AppSettings.Default.CheckForUpdatesOnStartup, "startup update prompts default off");
+Check.True(AppSettings.Default.AutoUpdatePricing, "silent pricing sync defaults on");
+Check.True(AppSettings.Default.EdgeAutoHide, "edge hiding defaults on");
+Check.False(AppSettings.Default.ClickThrough, "first install remains interactive");
+Check.False(AppSettings.Default.PositionLocked, "first install allows dragging");
+Check.Equal(AppTheme.System, AppSettings.Default.Theme, "theme follows system");
+Check.Equal(StartupViewMode.RestorePrevious, AppSettings.Default.StartupView, "restore prior view");
+Check.Equal(StartupViewMode.Orb, AppSettings.Default.LastView, "first launch shows orb");
+Check.False((AppSettings.Default with { AutoUpdatePricing = false }).Normalize().AutoUpdatePricing,
+    "existing pricing opt-out preserved");
 Check.False((new AppSettings { SchemaVersion = 6, AlertsEnabled = true }).Normalize().AlertsEnabled, "upgrade disables old default alerts");
 var alertSettings = new AppSettings { AlertsEnabled = true };
 Check.True(alertSettings.Normalize().AlertsEnabled, "explicit opt-in survives normalization");

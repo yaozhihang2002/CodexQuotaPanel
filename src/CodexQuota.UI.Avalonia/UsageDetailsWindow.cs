@@ -21,7 +21,7 @@ public sealed class UsageDetailsWindow : Window
     {
         _settings = settings.Normalize();
         _palette = UiPalette.For(_settings.Theme, systemDark);
-        RequestedThemeVariant = (_settings.Theme == AppTheme.Dark || _settings.Theme == AppTheme.System && systemDark)
+        RequestedThemeVariant = UiPalette.IsDarkTheme(_settings.Theme, systemDark)
             ? global::Avalonia.Styling.ThemeVariant.Dark : global::Avalonia.Styling.ThemeVariant.Light;
         Title = T("Codex 使用明细", "Codex usage details");
         var scale = _settings.InterfaceScalePercent / 100d;
@@ -37,7 +37,7 @@ public sealed class UsageDetailsWindow : Window
         {
             Height = 205,
             Language = _settings.Language,
-            IsDark = _settings.Theme != AppTheme.Light
+            IsDark = UiPalette.IsDarkTheme(_settings.Theme, systemDark)
         };
         Content = BuildContent();
     }

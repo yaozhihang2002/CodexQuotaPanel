@@ -13,7 +13,7 @@ namespace CodexQuota.Infrastructure;
 public sealed class CodexAppServerQuotaSource : IQuotaSource, IAsyncDisposable
 {
     private readonly string _codexHome;
-    private readonly string _executable;
+    private readonly string? _executable;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private readonly SemaphoreSlim _writeGate = new(1, 1);
@@ -28,7 +28,7 @@ public sealed class CodexAppServerQuotaSource : IQuotaSource, IAsyncDisposable
     public CodexAppServerQuotaSource(string? codexHome = null, string? executable = null)
     {
         _codexHome = codexHome ?? new CodexHomeResolver().Resolve();
-        _executable = executable ?? ResolveExecutable();
+        _executable = executable;
     }
 
     public async Task<OfficialQuotaSnapshot?> ReadAsync(CancellationToken cancellationToken)
@@ -58,7 +58,10 @@ public sealed class CodexAppServerQuotaSource : IQuotaSource, IAsyncDisposable
             await ResetConnectionAsync().ConfigureAwait(false);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
-            _process = StartProcess();
+            // Resolve on reconnect, not at UI construction: packages can be installed
+            // or upgraded while the panel is running.
+            var executable = _executable ?? await Task.Run(ResolveExecutable, timeout.Token).ConfigureAwait(false);
+            _process = StartProcess(executable);
             _readerTask = Task.Run(() => ReadLoopAsync(_process, _lifetime.Token), CancellationToken.None);
             _errorTask = Task.Run(() => DrainErrorAsync(_process, _lifetime.Token), CancellationToken.None);
             await SendRequestAsync("initialize", new
@@ -79,11 +82,11 @@ public sealed class CodexAppServerQuotaSource : IQuotaSource, IAsyncDisposable
         finally { _connectGate.Release(); }
     }
 
-    private Process StartProcess()
+    private Process StartProcess(string executable)
     {
         var info = new ProcessStartInfo
         {
-            FileName = _executable,
+            FileName = executable,
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -207,18 +210,8 @@ public sealed class CodexAppServerQuotaSource : IQuotaSource, IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured)) return configured;
         if (OperatingSystem.IsWindows())
         {
-            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var root = Path.Combine(local, "OpenAI", "Codex", "bin");
-            if (Directory.Exists(root))
-            {
-                try
-                {
-                    var candidate = new DirectoryInfo(root).EnumerateFiles("codex.exe", SearchOption.AllDirectories)
-                        .OrderByDescending(file => file.LastWriteTimeUtc).FirstOrDefault();
-                    if (candidate is not null) return candidate.FullName;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-            }
+            return new CodexExecutableResolver().ResolveWindows()
+                ?? throw new IOException("No installed Codex executable was found.");
         }
         if (OperatingSystem.IsMacOS())
         {

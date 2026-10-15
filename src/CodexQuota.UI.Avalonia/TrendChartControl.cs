@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using CodexQuota.Domain;
+using CodexQuota.Application;
 
 namespace CodexQuota.UI.Avalonia;
 
@@ -41,6 +42,7 @@ public sealed class TrendChartControl : Control
         get => _isDark;
         set { _isDark = value; InvalidateVisual(); }
     }
+    internal IBrush AccentBrush => UiPalette.For(AppTheme.System, IsDark).Mint;
 
     public TrendChartControl()
     {
@@ -72,18 +74,19 @@ public sealed class TrendChartControl : Control
         context.DrawRectangle(Brushes.Transparent, null, new Rect(Bounds.Size));
         // Keep a dedicated information band above the plot. The hover text is
         // fixed here so it can never cover either the actual or even-use line.
-        const double informationBandHeight = 25d;
+        const double informationBandHeight = 15d;
         var plot = new Rect(5, informationBandHeight + 2, Math.Max(1, Bounds.Width - 10),
             Math.Max(1, Bounds.Height - informationBandHeight - 10));
         _lastPlotBounds = plot;
-        var grid = UiPalette.B(_isDark ? "#26342E" : "#D7E1DC");
-        var actual = UiPalette.B(_isDark ? "#62DCAF" : "#168A67");
+        var palette = UiPalette.For(AppTheme.System, IsDark);
+        var grid = palette.Border;
+        var actual = AccentBrush;
         var guide = UiPalette.B(_isDark ? "#69847A" : "#789389");
         context.DrawLine(new Pen(grid, 1), new Point(plot.Left, plot.Bottom), new Point(plot.Right, plot.Bottom));
 
         if (_points.Count < 2)
         {
-            var empty = Text("—", 17, UiPalette.B(_isDark ? "#8FA198" : "#667A70"));
+            var empty = Text("—", 17, palette.TextMuted);
             context.DrawText(empty, new Point(plot.Center.X - empty.Width / 2, plot.Center.Y - empty.Height / 2));
             return;
         }
@@ -133,14 +136,14 @@ public sealed class TrendChartControl : Control
             ? $"{time.ToLocalTime():MM-dd HH:mm}  actual {actualPercent:0.#}%"
             : $"{time.ToLocalTime():MM-dd HH:mm}  actual {actualPercent:0.#}%  even {guidePercent:0.#}%";
         _lastHoverSample = new HoverSample(time, actualPercent, guidePercent);
-        var formatted = Text(label, 10.5, UiPalette.B(_isDark ? "#F2F4EF" : "#15211B"));
+        var formatted = Text(label, 9.5, UiPalette.For(AppTheme.System, IsDark).TextPrimary);
         var boxWidth = Math.Min(plot.Width, formatted.Width + 16);
         var left = Math.Clamp(plot.Right - boxWidth, plot.Left, plot.Right - boxWidth);
-        var box = new Rect(left, 1, boxWidth, Math.Min(informationBandHeight - 2, formatted.Height + 8));
+        var box = new Rect(left, 0, boxWidth, Math.Min(informationBandHeight, formatted.Height + 2));
         _lastHoverLabelBounds = box;
         context.DrawRectangle(UiPalette.B(_isDark ? "#E6151C19" : "#F2FFFFFF"),
             new Pen(grid, 1), box, 6, 6);
-        context.DrawText(formatted, new Point(box.Left + 8, box.Top + 4));
+        context.DrawText(formatted, new Point(box.Left + 8, box.Top + 1));
     }
 
     private static double InterpolateActualPercent(IReadOnlyList<QuotaHistoryPoint> ordered, DateTimeOffset time)

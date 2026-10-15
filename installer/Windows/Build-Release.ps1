@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.8.3',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.8.4',
     [string]$DotNetPath,
     [string]$DevenvPath,
     [string]$OutputDirectory,
@@ -96,6 +96,11 @@ Invoke-Step 'Build bilingual MSI from the same payload' {
 $builtMsi = Join-Path $installerDirectory "Release\CodexQuotaPanel-$Version-x64.msi"
 $transform = Join-Path $installerDirectory "Release\CodexQuotaPanel-$Version-en-us.mst"
 $setup = Join-Path $output "CodexQuotaPanel-$Version-Windows-Setup.exe"
+$validationOutput = Join-Path $repositoryRoot ("artifacts\installer-validation-v$Version-" + [guid]::NewGuid().ToString('N'))
+Invoke-Step 'Validate Chinese and English MSI payload extraction' {
+    & (Join-Path $installerDirectory 'Test-InstallerPayload.ps1') -MsiPath $builtMsi `
+        -EnglishTransformPath $transform -ExpectedExecutable $exe -OutputDirectory $validationOutput
+}
 $runtimeUrl = 'https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.exe'
 $runtimeSha512 = '694e0e0af26b2b8949b8eda8a3831ab31aeac79797d43d6ff8c8798eae642c0904852e641c47329d7d893408f25feab1530ca2b7a0c6ed0d991e0113466a4bf9'
 Invoke-Step 'Build Chinese-default web setup launcher' {

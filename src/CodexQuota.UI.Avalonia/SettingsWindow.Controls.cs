@@ -18,7 +18,7 @@ public sealed partial class SettingsWindow
         new Border { Height = 1, Background = _palette.Border, Margin = new Thickness(0, 0, 0, 3) }
     }};
 
-    private Control Scroll(Control content) => new ScrollViewer { Content = content,
+    private Control Scroll(Control content) => new ScrollViewer { Content = new Border { Padding = new Thickness(0, 0, 12, 6), Child = content },
         VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
 
@@ -28,11 +28,12 @@ public sealed partial class SettingsWindow
     private Control Row(string title, string description, Control control)
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 16 };
-        grid.Children.Add(new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Children =
+        var labels = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Children =
         {
-            UiElements.Text(title, 13.5, FontWeight.SemiBold, _palette.TextPrimary),
-            UiElements.Text(description, 10.5, FontWeight.Normal, _palette.TextMuted)
-        }});
+            UiElements.Text(title, 13.5, FontWeight.SemiBold, _palette.TextPrimary)
+        }};
+        if (!string.IsNullOrWhiteSpace(description)) labels.Children.Add(UiElements.Text(description, 10.5, FontWeight.Normal, _palette.TextMuted));
+        grid.Children.Add(labels);
         control.VerticalAlignment = VerticalAlignment.Center;
         control.HorizontalAlignment = HorizontalAlignment.Right;
         Grid.SetColumn(control, 1);
@@ -59,7 +60,7 @@ public sealed partial class SettingsWindow
             IsChecked = value,
             OnBrush = _palette.Mint,
             OffBrush = _palette.Border,
-            ThumbBrush = _palette.TextPrimary,
+            ThumbBrush = Brushes.White,
             FocusBrush = _palette.Blue,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -91,7 +92,7 @@ public sealed partial class SettingsWindow
             Width = 170,
             TrackBrush = _palette.Border,
             FillBrush = _palette.Mint,
-            ThumbBrush = _palette.TextPrimary,
+            ThumbBrush = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center
         };
         // Avalonia's macOS template reserves more horizontal space for the two
@@ -201,6 +202,9 @@ public sealed partial class SettingsWindow
         StartupViewMode.Orb => this.T("悬浮球", "Orb"),
         StartupViewMode.Details => this.T("详情面板", "Details"),
         StartupViewMode.TrayOnly => this.T("仅托盘", "Tray only"),
+        PanelCloseAction.Ask => this.T("每次询问", "Ask each time"),
+        PanelCloseAction.Tray => this.T("隐藏到托盘", "Hide to tray"),
+        PanelCloseAction.Exit => this.T("彻底退出", "Quit application"),
         AppLanguage.SimplifiedChinese => "简体中文",
         AppLanguage.English => "English",
         AppTheme.System => this.T("跟随系统", "Follow system"),

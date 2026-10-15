@@ -34,7 +34,13 @@ public sealed class DailyUsageChartControl : Control
     }
 
     public AppLanguage Language { get; set; } = AppLanguage.SimplifiedChinese;
-    public bool IsDark { get; set; } = true;
+    private bool _isDark = true;
+    public bool IsDark
+    {
+        get => _isDark;
+        set { _isDark = value; InvalidateVisual(); }
+    }
+    internal IBrush AccentBrush => UiPalette.For(AppTheme.System, IsDark).Mint;
     internal int RenderedDayCount => BuildSeries().Count;
     internal decimal RenderedMaximumCost => BuildSeries().Select(item => item.Cost).DefaultIfEmpty(0).Max();
     internal int RenderedValueLabelCount => BuildSeries().Count(item => item.Cost > 0);
@@ -58,11 +64,12 @@ public sealed class DailyUsageChartControl : Control
     {
         base.Render(context);
         var series = BuildSeries();
-        var muted = B(IsDark ? "#8FA198" : "#667A70");
-        var grid = B(IsDark ? "#27342F" : "#D7E1DB");
-        var mint = B(IsDark ? "#57D9AA" : "#168A67");
+        var palette = UiPalette.For(AppTheme.System, IsDark);
+        var muted = palette.TextMuted;
+        var grid = palette.Border;
+        var mint = AccentBrush;
         var mintSoft = B(IsDark ? "#2E775F" : "#74B9A2");
-        var text = B(IsDark ? "#F2F4EF" : "#15211B");
+        var text = palette.TextPrimary;
         var left = 8d;
         var right = Math.Max(left + 1, Bounds.Width - 8d);
         var top = 22d;

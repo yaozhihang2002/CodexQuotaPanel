@@ -16,13 +16,16 @@ public sealed record ResetCredit(
     string? Title = null,
     string? Description = null);
 
+public sealed record CreditBalance(decimal? Balance, bool Unlimited = false);
+
 public sealed record OfficialQuotaSnapshot(
     DateTimeOffset ObservedAt,
     IReadOnlyList<QuotaWindow> Windows,
     bool IsStale = false,
     string Source = "Local session",
     string? PlanType = null,
-    IReadOnlyList<ResetCredit>? ResetCredits = null)
+    IReadOnlyList<ResetCredit>? ResetCredits = null,
+    CreditBalance? Credits = null)
 {
     public IReadOnlyList<QuotaWindow> VisibleWindows => Windows
         .Where(window => window.WindowMinutes > 0)

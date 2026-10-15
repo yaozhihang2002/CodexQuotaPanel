@@ -58,7 +58,21 @@ public static class QuotaPayloadParser
         AddWindow(windows, limits, "primary", "primaryWindow", "primary_window");
         AddWindow(windows, limits, "secondary", "secondaryWindow", "secondary_window");
         return windows.Count == 0 ? null : new OfficialQuotaSnapshot(
-            observedAt, windows, false, source, planType, resetCredits);
+            observedAt, windows, false, source, planType, resetCredits, ReadCreditBalance(limits));
+    }
+
+    private static CreditBalance? ReadCreditBalance(JsonElement limits)
+    {
+        if (!TryGet(limits, "credits", out var credits) || credits.ValueKind != JsonValueKind.Object) return null;
+        var unlimited = TryGet(credits, "unlimited", out var flag) && flag.ValueKind == JsonValueKind.True;
+        decimal? balance = null;
+        if (TryGet(credits, "balance", out var value))
+        {
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number)) balance = number;
+            else if (value.ValueKind == JsonValueKind.String && decimal.TryParse(value.GetString(),
+                         NumberStyles.Float, CultureInfo.InvariantCulture, out number)) balance = number;
+        }
+        return balance is >= 0 || unlimited ? new CreditBalance(balance, unlimited) : null;
     }
 
     private static IReadOnlyList<ResetCredit>? ReadResetCredits(JsonElement root)

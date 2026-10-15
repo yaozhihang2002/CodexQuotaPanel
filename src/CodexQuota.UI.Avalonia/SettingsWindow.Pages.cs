@@ -13,13 +13,15 @@ public sealed partial class SettingsWindow
     private Control BuildGeneralPage()
     {
         var panel = Page(T("常规", "General"), T("启动方式、语言与主题", "Startup, language and theme"));
+        panel.Children.Add(Row(T("点击关闭按钮", "Close button"), T("随时修改记住的选择", "Change the remembered choice"),
+            Combo(Enum.GetValues<PanelCloseAction>(), _draft.CloseAction, value => Change(s => s with { CloseAction = value }))));
         panel.Children.Add(Row(T("随系统启动", "Start with system"), T("登录后在后台启动额度面板", "Launch after sign-in"),
             Check(_draft.StartWithSystem, value => Change(s => s with { StartWithSystem = value }))));
-        panel.Children.Add(Row(T("启动后显示", "Startup view"), T("恢复状态、悬浮球、详情或仅托盘", "Restore, orb, details or tray only"),
+        panel.Children.Add(Row(T("启动后显示", "Startup view"), "",
             Combo(Enum.GetValues<StartupViewMode>(), _draft.StartupView, value => Change(s => s with { StartupView = value }))));
         panel.Children.Add(Row(T("界面语言", "Language"), T("保存后用于所有窗口和托盘", "Used by all windows and tray after save"),
             Combo(Enum.GetValues<AppLanguage>(), _draft.Language, value => Change(s => s with { Language = value }))));
-        panel.Children.Add(Row(T("界面主题", "Theme"), T("跟随系统、深色或浅色", "System, dark or light"),
+        panel.Children.Add(Row(T("界面主题", "Theme"), "",
             Combo(Enum.GetValues<AppTheme>(), _draft.Theme, value => Change(s => s with { Theme = value }))));
         return Scroll(panel);
     }
@@ -33,7 +35,7 @@ public sealed partial class SettingsWindow
             InnerRingColor = Color.Parse(_draft.InnerRingColor), FeedbackEnabled = _draft.ConsumptionFeedbackEnabled,
             FeedbackStyle = _draft.ConsumptionFeedbackStyle, FeedbackIntensity = .55,
             AnimateFeedback = !_draft.ReducedMotion };
-        panel.Children.Add(Row(T("悬浮球即时预览", "Live orb preview"), T("默认保持黑底，避免浅色主题出现白边", "Black by default, without light-theme halo"), _orbPreview));
+        panel.Children.Add(Row(T("悬浮球预览", "Orb preview"), "", _orbPreview));
         panel.Children.Add(Row(T("悬浮球大小", "Orb size"), "56–192 px", NumberSlider(56, 192, _draft.OrbSize,
             value => Change(s => s with { OrbSize = value }))));
         panel.Children.Add(Row(T("设置与弹窗字体", "Interface scale"), "80–150%", NumberSlider(80, 150, _draft.InterfaceScalePercent,

@@ -3,7 +3,8 @@
     [string]$DevenvPath,
     [string]$Configuration = 'Release',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.8.3'
+    [string]$Version = '0.8.4',
+    [switch]$ReuseBuiltMsi
 )
 
 Set-StrictMode -Version Latest
@@ -23,6 +24,7 @@ $baseMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-x64.
 $englishMsi = Join-Path $installerDir "$Configuration-en-us\CodexQuotaPanel-$Version-en-us-x64.msi"
 $transformPath = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-en-us.mst"
 $validationMsi = Join-Path $installerDir '..\..\artifacts\stability-qa\installer-language-transform-validation.msi'
+$localizedMsi = Join-Path $installerDir "$Configuration\CodexQuotaPanel-$Version-localized.msi"
 
 function Invoke-InstallerBuild {
     param([string]$Solution)
@@ -182,8 +184,42 @@ function New-EnglishTransform {
     try
     {
         $installer = New-Object -ComObject WindowsInstaller.Installer
-        $englishDb = Invoke-ComMethod $installer 'OpenDatabase' @((Resolve-Path -LiteralPath $englishMsi).Path, 0)
+        # Build a language-only target from the base MSI. A whole-database diff
+        # between independent builds changes Media.Cabinet without transferring
+        # its embedded CAB stream, causing error 2356 in English installations.
+        Copy-Item -LiteralPath $baseMsi -Destination $localizedMsi -Force
+        $englishDb = Invoke-ComMethod $installer 'OpenDatabase' @((Resolve-Path -LiteralPath $localizedMsi).Path, 1)
         $baseDb = Invoke-ComMethod $installer 'OpenDatabase' @((Resolve-Path -LiteralPath $baseMsi).Path, 0)
+        $sourceDb = Invoke-ComMethod $installer 'OpenDatabase' @((Resolve-Path -LiteralPath $englishMsi).Path, 0)
+        $exportDir = Join-Path $installerDir "$Configuration\language-tables-v$Version"
+        New-Item -ItemType Directory -Path $exportDir -Force | Out-Null
+        try {
+            foreach ($table in @('ActionText','Error','UIText','Dialog','Control','ControlCondition',
+                    'ControlEvent','EventMapping','TextStyle','RadioButton','ListBox','ListView','ComboBox',
+                    'Billboard','BBControl','BBControlCondition','InstallUISequence','AdminUISequence')) {
+                $exists = Get-MsiScalar $sourceDb "SELECT ``Name`` FROM ``_Tables`` WHERE ``Name``='$table'"
+                if (-not $exists) { continue }
+                [void]$sourceDb.Export([string]$table, [string]$exportDir, [string]"$table.idt")
+                if (Get-MsiScalar $englishDb "SELECT ``Name`` FROM ``_Tables`` WHERE ``Name``='$table'") {
+                    $drop = Invoke-ComMethod $englishDb 'OpenView' @("DROP TABLE ``$table``")
+                    [void](Invoke-ComMethod $drop 'Execute')
+                    [void](Invoke-ComMethod $drop 'Close')
+                    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($drop)
+                }
+                [void]$englishDb.Import([string]$exportDir, [string]"$table.idt")
+            }
+            foreach ($property in @('ProductLanguage','ARPCOMMENTS')) {
+                $value = Get-MsiScalar $sourceDb "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$property'"
+                if ($null -eq $value) { continue }
+                $escaped = $value.Replace("'", "''")
+                $update = Invoke-ComMethod $englishDb 'OpenView' @("UPDATE ``Property`` SET ``Value``='$escaped' WHERE ``Property``='$property'")
+                [void](Invoke-ComMethod $update 'Execute')
+                [void](Invoke-ComMethod $update 'Close')
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($update)
+            }
+            [void](Invoke-ComMethod $englishDb 'Commit')
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($sourceDb) }
         $generated = $englishDb.GenerateTransform($baseDb, $transformPath)
         if (-not $generated -or -not (Test-Path -LiteralPath $transformPath))
         {
@@ -215,6 +251,32 @@ function Test-EnglishTransform {
         [void]$database.ApplyTransform((Resolve-Path -LiteralPath $transformPath).Path, 0)
         [void](Invoke-ComMethod $database 'Commit')
 
+        # Fail packaging when a transform points to a missing CAB, even if all
+        # translated dialogs look correct. Keep payload tables identical too.
+        $baseDatabase = Invoke-ComMethod $installer 'OpenDatabase' @((Resolve-Path -LiteralPath $baseMsi).Path, 0)
+        try {
+            foreach ($table in @('Media','File','Component','FeatureComponents','MsiFileHash','Directory')) {
+                $before = @(Get-MsiRows $baseDatabase $table)
+                $after = @(Get-MsiRows $database $table)
+                if (($before -join "`n") -cne ($after -join "`n")) { throw "Language transform changed payload table $table" }
+            }
+            $media = Invoke-ComMethod $database 'OpenView' @('SELECT `Cabinet` FROM `Media`')
+            [void](Invoke-ComMethod $media 'Execute')
+            while ($record = Invoke-ComMethod $media 'Fetch') {
+                $cab = $record.StringData(1)
+                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+                if ($cab.StartsWith('#')) {
+                    $name = $cab.Substring(1).Replace("'", "''")
+                    if (-not (Get-MsiScalar $database "SELECT ``Name`` FROM ``_Streams`` WHERE ``Name``='$name'")) {
+                        throw "Language transform refers to missing embedded CAB $cab"
+                    }
+                }
+            }
+            [void](Invoke-ComMethod $media 'Close')
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($media)
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($baseDatabase) }
+
         $language = Get-MsiScalar $database "SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductLanguage'"
         $options = Get-MsiScalar $database "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='CustomCheckA' AND ``Control``='BannerText'"
         $confirmation = Get-MsiScalar $database "SELECT ``Text`` FROM ``Control`` WHERE ``Dialog_``='ConfirmInstallForm' AND ``Control``='BannerText'"
@@ -233,14 +295,35 @@ function Test-EnglishTransform {
     }
 }
 
-$resolvedDevenv = (Resolve-Path -LiteralPath $DevenvPath).Path
-Build-UpgradeCoordinator
-New-EnglishProject
-Invoke-InstallerBuild $solutionPath
-& $postProcessor -MsiPath $baseMsi -IconPath $iconPath -UpgradeCoordinatorPath $upgradeCoordinatorBinary
+function Get-MsiRows($Database, [string]$Table) {
+    if (-not (Get-MsiScalar $Database "SELECT ``Name`` FROM ``_Tables`` WHERE ``Name``='$Table'")) { return }
+    $view = Invoke-ComMethod $Database 'OpenView' @("SELECT * FROM ``$Table``")
+    try {
+        [void](Invoke-ComMethod $view 'Execute')
+        $rows = @()
+        while ($record = Invoke-ComMethod $view 'Fetch') {
+            $count = $record.GetType().InvokeMember('FieldCount', [Reflection.BindingFlags]::GetProperty, $null, $record, $null)
+            $values = for ($i=1; $i -le $count; $i++) { $record.StringData($i) }
+            $rows += ConvertTo-Json -InputObject @($values) -Compress
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+        }
+        $rows | Sort-Object
+    }
+    finally {
+        [void](Invoke-ComMethod $view 'Close')
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
+    }
+}
 
-Invoke-InstallerBuild $generatedSolution
-& $postProcessor -MsiPath $englishMsi -IconPath $iconPath -UpgradeCoordinatorPath $upgradeCoordinatorBinary
+if (-not $ReuseBuiltMsi) {
+    $resolvedDevenv = (Resolve-Path -LiteralPath $DevenvPath).Path
+    Build-UpgradeCoordinator
+    New-EnglishProject
+    Invoke-InstallerBuild $solutionPath
+    & $postProcessor -MsiPath $baseMsi -IconPath $iconPath -UpgradeCoordinatorPath $upgradeCoordinatorBinary
+    Invoke-InstallerBuild $generatedSolution
+    & $postProcessor -MsiPath $englishMsi -IconPath $iconPath -UpgradeCoordinatorPath $upgradeCoordinatorBinary
+}
 
 New-EnglishTransform
 Test-EnglishTransform

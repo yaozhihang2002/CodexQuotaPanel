@@ -3,6 +3,15 @@ using CodexQuota.Domain;
 using CodexQuota.Infrastructure;
 using System.Text.Json;
 
+if (args.Contains("--discover"))
+{
+    Console.WriteLine("Normal discovery: " + new CodexExecutableResolver().ResolveWindows());
+    Console.WriteLine("Registered/running discovery (cache bypassed): " + new CodexExecutableResolver(
+        environment: key => key == "CODEX_CLI_PATH" ? null : Environment.GetEnvironmentVariable(key),
+        localData: Path.Combine(Path.GetTempPath(), "nonexistent-discovery-" + Guid.NewGuid().ToString("N"))).ResolveWindows());
+    return;
+}
+
 if (args.Contains("--pricing-live"))
 {
     using var liveClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
@@ -14,6 +23,18 @@ if (args.Contains("--pricing-live"))
     return;
 }
 
+DiscoveryChecks.Run();
+foreach (var (json, expected) in new (string, decimal?)[]
+{
+    ("{\"balance\":\"62309\",\"hasCredits\":true,\"unlimited\":false}", 62309m),
+    ("{\"balance\":125.5}", 125.5m), ("{\"balance\":0}", 0m),
+    ("{\"balance\":null}", null), ("{\"balance\":\"unknown\"}", null),
+    ("{\"balance\":-2}", null), ("null", null)
+})
+{
+    using var payload = JsonDocument.Parse("{\"rateLimits\":{\"primary\":{\"usedPercent\":10,\"windowDurationMins\":10080},\"credits\":" + json + "}}");
+    Check.Equal(expected, QuotaPayloadParser.ParseAppServerResult(payload.RootElement)?.Credits?.Balance, "credit balance parsing " + json);
+}
 var overrideResolver = new CodexHomeResolver(
     key => key == "CODEX_HOME" ? Path.Combine(Path.GetTempPath(), "custom-codex") : null,
     () => Path.Combine(Path.GetTempPath(), "home"));
@@ -79,10 +100,12 @@ try
     var trustedQuotaStore = new JsonTrustedQuotaSnapshotStore(trustedQuotaPath);
     var trustedQuota = new OfficialQuotaSnapshot(DateTimeOffset.UtcNow,
         [new QuotaWindow("7d", 10_080, 13d, DateTimeOffset.UtcNow.AddDays(5))],
-        Source: "App Server", PlanType: "pro");
+        Source: "App Server", PlanType: "pro", Credits: new CreditBalance(62309m));
     await trustedQuotaStore.WriteAsync(trustedQuota, CancellationToken.None);
     Check.SnapshotEqual(trustedQuota, await trustedQuotaStore.ReadAsync(CancellationToken.None),
         "trusted quota cache round trip");
+    Check.Equal(62309m, (await trustedQuotaStore.ReadAsync(CancellationToken.None))?.Credits?.Balance,
+        "credit balance persists in trusted quota cache");
     await trustedQuotaStore.WriteAsync(trustedQuota with
     {
         ObservedAt = trustedQuota.ObservedAt.AddMinutes(1),

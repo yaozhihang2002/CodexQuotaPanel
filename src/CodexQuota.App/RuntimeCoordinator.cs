@@ -200,7 +200,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             Menu = menu,
             IsVisible = true
         };
-        _tray.Clicked += (_, _) => _ = OpenDashboardAsync();
+        _tray.Clicked += (_, _) => _ = RestoreOrbFromTrayAsync();
     }
 
     private NativeMenuItem AddTrayItem(NativeMenu menu, string header, Action action)
@@ -295,6 +295,21 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
         if (_dashboard is not null) return;
         var dashboard = new DashboardWindow(_settings, IsSystemDark());
         _dashboard = dashboard;
+        var sizeSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        sizeSaveTimer.Tick += async (_, _) =>
+        {
+            sizeSaveTimer.Stop();
+            try { await _settingsStore.WriteAsync(_settings, _lifetime.Token); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException) { }
+        };
+        dashboard.UserSizeChanged += size =>
+        {
+            if (_shuttingDown || !ReferenceEquals(_dashboard, dashboard)) return;
+            _settings = _settings with { DashboardWidth = size.Width, DashboardHeight = size.Height };
+            sizeSaveTimer.Stop();
+            sizeSaveTimer.Start();
+        };
+        dashboard.Closed += (_, _) => sizeSaveTimer.Stop();
         if (OperatingSystem.IsWindows())
         {
             dashboard.InvisibleFrameInsetsProvider = () =>
@@ -335,6 +350,7 @@ internal sealed partial class RuntimeCoordinator : IAsyncDisposable
             if (ReferenceEquals(_dashboard, dashboard)) LogSurface("pointer-pressed", e.GetPosition(dashboard));
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
         _dashboard.CollapseRequested += async (_, _) => await CollapseDashboardAsync();
+        _dashboard.CloseRequested += async (_, _) => await CloseDashboardAsync();
         _dashboard.RefreshRequested += async (_, _) => await RefreshAsync();
         _dashboard.SettingsRequested += (_, _) => ShowSettings();
         _dashboard.UsageDetailsRequested += (_, _) => ShowUsageDetails();

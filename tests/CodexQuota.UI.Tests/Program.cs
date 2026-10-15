@@ -110,7 +110,8 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         [new QuotaWindow("5h", 300, 71, now.AddHours(3)),
          new QuotaWindow("7d", 10_080, 44, now.AddDays(4))],
         Source: "App Server", PlanType: "pro",
-        ResetCredits: [new ResetCredit("r1", "available", now.AddDays(2), "Full reset")]);
+        ResetCredits: [new ResetCredit("r1", "available", now.AddDays(2), "Full reset")],
+        Credits: new CreditBalance(62309m));
 
     foreach (var (themeName, palette) in new[]
              {
@@ -169,6 +170,19 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     };
     var formal = new (string Name, Window Window)[]
     {
+        ("light-A-white", LightPreview("#FFFFFF", "#F7F8FA")),
+        ("light-B-mist", LightPreview("#F2F4F7", "#FFFFFF")),
+        ("light-C-warm", LightPreview("#FAF8F3", "#FFFFFF")),
+        ("light-D-sage", LightPreview("#F0F6F3", "#FFFFFF")),
+        ("close-zh-light", new PanelCloseWindow(new AppSettings { Theme = AppTheme.Light }, false)),
+        ("close-zh-dark", new PanelCloseWindow(new AppSettings { Theme = AppTheme.Dark }, true)),
+        ("close-en-light", new PanelCloseWindow(new AppSettings { Theme = AppTheme.Light, Language = AppLanguage.English }, false)),
+        ("dashboard-zh-light-B", new DashboardWindow(new AppSettings { Theme = AppTheme.Light })),
+        ("dashboard-system-light", new DashboardWindow(new AppSettings { Theme = AppTheme.System }, false)),
+        ("dashboard-system-dark", new DashboardWindow(new AppSettings { Theme = AppTheme.System }, true)),
+        ("usage-system-light", new UsageDetailsWindow(new AppSettings { Theme = AppTheme.System }, false)),
+        ("usage-system-dark", new UsageDetailsWindow(new AppSettings { Theme = AppTheme.System }, true)),
+        ("dashboard-en-light-narrow", new DashboardWindow(new AppSettings { Theme = AppTheme.Light, Language = AppLanguage.English }) { Width = 420 }),
         ("dashboard-zh-dark", new DashboardWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese })),
         ("dashboard-zh-dark-single", new DashboardWindow(new AppSettings { Theme = AppTheme.Dark, Language = AppLanguage.SimplifiedChinese })),
         ("dashboard-en-light", new DashboardWindow(new AppSettings { Theme = AppTheme.Light, Language = AppLanguage.English })),
@@ -192,6 +206,9 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         ("clickthrough-en-light", new ClickThroughReminderWindow(new AppSettings
             { Theme = AppTheme.Light, Language = AppLanguage.English }))
     };
+    static DashboardWindow LightPreview(string canvas, string surface) => new(
+        new AppSettings { Theme = AppTheme.Light }, false,
+        UiPalette.For(AppTheme.Light) with { Canvas = UiPalette.B(canvas), Surface = UiPalette.B(surface) });
     foreach (var (name, window) in formal)
     {
         Console.WriteLine($"Formal rendering {name}...");
@@ -220,22 +237,135 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         Dispatcher.UIThread.RunJobs();
         if (window is DashboardWindow laidOutDashboard)
         {
+            var bars = laidOutDashboard.GetVisualDescendants().OfType<ProgressBar>().ToArray();
+            var chart = laidOutDashboard.GetVisualDescendants().OfType<DailyUsageChartControl>().Single();
+            var trend = laidOutDashboard.GetVisualDescendants().OfType<TrendChartControl>().Single();
+            var color = ((ISolidColorBrush)chart.AccentBrush).Color;
+            Check.True(bars.All(b => ((ISolidColorBrush)b.Foreground!).Color == color) &&
+                       ((ISolidColorBrush)trend.AccentBrush).Color == color,
+                "quota bars, daily columns and actual trend use the same theme accent");
+            if (name == "dashboard-system-light") Check.True(!chart.IsDark && !trend.IsDark, "system light resolves to light charts");
+            if (name == "dashboard-system-dark") Check.True(chart.IsDark && trend.IsDark, "system dark resolves to dark charts");
+            var icons = laidOutDashboard.GetVisualDescendants().OfType<Button>()
+                .Where(button => button.Content is global::Avalonia.Controls.Shapes.Path).ToArray();
+            Check.True(icons.Length == 2, "two header icons");
+            foreach (var button in icons)
+            {
+                var icon = (Control)button.Content!;
+                var origin = icon.TranslatePoint(default, button)!.Value;
+                Check.True(Math.Abs(origin.X + icon.Bounds.Width / 2 - button.Bounds.Width / 2) <= 1 &&
+                           Math.Abs(origin.Y + icon.Bounds.Height / 2 - button.Bounds.Height / 2) <= 1,
+                    "header icon horizontally and vertically centered within one DIP");
+            }
+            var firstIcon = icons[0].TranslatePoint(default, laidOutDashboard)!.Value;
+            var lastIcon = icons[1].TranslatePoint(default, laidOutDashboard)!.Value;
+            Check.True(Math.Abs(firstIcon.Y - lastIcon.Y) <= 1, "header icons share top edge");
+            Check.True(Math.Abs(lastIcon.X + icons[1].Bounds.Width - (laidOutDashboard.Bounds.Width - 19)) <= 1,
+                "header and cards share right inset");
+            Check.True(laidOutDashboard.CreditBalanceVisible && laidOutDashboard.CreditBalanceText == "62,309",
+                "positive live credits displayed without dollar conversion");
+            Check.True(!laidOutDashboard.SourceDetailVisible && laidOutDashboard.ConnectionTipText.Contains("App Server"),
+                "live source details move to connection tooltip");
+            Check.True(laidOutDashboard.ForecastDisplayText.Split('\n').Length == 2 &&
+                       !string.IsNullOrWhiteSpace(laidOutDashboard.ForecastTipText),
+                "forecast has two lines and retains confidence in tooltip");
+            foreach (var example in new[] { (62308.47879m, "62,308"), (12.50m, "12"), (1m, "1"), (.50m, "0.5"), (.001m, "0.001") })
+            {
+                laidOutDashboard.ApplyPresentation(presentation with { Snapshot = snapshot with { Credits = new CreditBalance(example.Item1) } });
+                Check.True(laidOutDashboard.CreditBalanceText == example.Item2, "credits display whole units above one and actual decimals below one");
+            }
+            foreach (var balance in new decimal?[] { 0m, null })
+            {
+                laidOutDashboard.ApplyPresentation(presentation with { Snapshot = snapshot with { Credits = new CreditBalance(balance) } });
+                Check.True(!laidOutDashboard.CreditBalanceVisible, "zero/missing credits hidden");
+            }
+            laidOutDashboard.ApplyPresentation(presentation with { ConnectionState = QuotaConnectionState.Stale });
+            Check.True(laidOutDashboard.SourceDetailVisible, "stale source details remain visible");
+            Check.True(!laidOutDashboard.CreditBalanceVisible, "stale balance hidden");
+            laidOutDashboard.ApplyPresentation(name.EndsWith("single", StringComparison.Ordinal)
+                ? presentation with { Snapshot = snapshot with { Windows = [snapshot.VisibleWindows[1]] } }
+                : presentation);
+            laidOutDashboard.UpdateLayout();
+            var compactScroll = laidOutDashboard.GetVisualDescendants().OfType<ScrollViewer>().First();
+            foreach (var bar in laidOutDashboard.GetVisualDescendants().OfType<ProgressBar>())
+            {
+                var parent = (Control)bar.Parent!;
+                Check.True(bar.Bounds.Left >= -1 && bar.Bounds.Right <= parent.Bounds.Width + 1,
+                    "quota progress bar stays inside padded content at narrow widths");
+            }
+            Check.True(compactScroll.Extent.Height <= compactScroll.Viewport.Height + 1,
+                $"{name}: default dashboard with credits fits without scrolling");
             var orbBounds = laidOutDashboard.SummaryOrbBoundsInWindow;
             Check.True(orbBounds.Width >= 109 && orbBounds.Height >= 109,
                 $"{name}: summary orb keeps its fixed layout slot");
             Check.True(orbBounds.Left >= 17 && orbBounds.Right <= laidOutDashboard.Bounds.Width - 17,
                 $"{name}: summary orb stays fully inside the dashboard client area");
         }
+        if (name.StartsWith("usage-system-"))
+        {
+            var chart = window.GetVisualDescendants().OfType<DailyUsageChartControl>().Single();
+            Check.True(chart.IsDark == name.EndsWith("dark"), "usage details resolve the system theme");
+        }
         using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException($"{name}: no rendered frame");
         Check.True(frame.PixelSize.Width >= 100, $"{name}: width");
         Check.True(frame.PixelSize.Height >= 100, $"{name}: height");
         await using var output = File.Create(Path.Combine(outputRoot, name + ".png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
-        window.Close();
+        if (window is DashboardWindow finishedDashboard) finishedDashboard.ClosePermanently();
+        else if (window is SettingsWindow finishedSettings) finishedSettings.ClosePermanently();
+        else window.Close();
         Console.WriteLine($"Formal rendered {name}");
     }
 
     Console.WriteLine("Formal settings interaction checks...");
+    var rememberedSize = AppSettings.Default with { DashboardWidth = 760, DashboardHeight = 820 };
+    var sizeJson = System.Text.Json.JsonSerializer.Serialize(rememberedSize);
+    var restoredSize = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(sizeJson)!;
+    var rebuiltPanel = new DashboardWindow(restoredSize);
+    Check.True(rebuiltPanel.Width == 760 && rebuiltPanel.Height == 820, "recreated panel restores persisted width and height");
+    var sizeRecovery = new WindowDisplayRecovery(rebuiltPanel);
+    sizeRecovery.Fit(new PixelRect(0, 0, 600, 700), 1);
+    Check.True(rebuiltPanel.Width <= 600 && rebuiltPanel.Height <= 700, "small screen temporarily constrains remembered size");
+    sizeRecovery.Fit(new PixelRect(0, 0, 1920, 1080), 1);
+    Check.True(rebuiltPanel.Width == 760 && rebuiltPanel.Height == 820, "large screen restores preferred dimensions");
+    rebuiltPanel.ClosePermanently();
+    Check.True((AppSettings.Default with { DashboardWidth = double.NaN, DashboardHeight = -1 }).Normalize()
+        is { DashboardWidth: null, DashboardHeight: null }, "invalid saved dimensions fall back to defaults");
+    var closeOwner = new DashboardWindow(AppSettings.Default);
+    Check.True(closeOwner.CanResize && double.IsPositiveInfinity(closeOwner.MaxWidth), "dashboard width is no longer capped at 580");
+    var resizeSize = new Size(452, 640);
+    foreach (var hit in new[]
+    {
+        (new Point(4, 300), WindowEdge.West), (new Point(448, 300), WindowEdge.East),
+        (new Point(200, 4), WindowEdge.North), (new Point(200, 636), WindowEdge.South),
+        (new Point(8, 8), WindowEdge.NorthWest), (new Point(444, 8), WindowEdge.NorthEast),
+        (new Point(8, 632), WindowEdge.SouthWest), (new Point(444, 632), WindowEdge.SouthEast)
+    }) Check.True(DashboardWindow.ResizeEdgeAt(hit.Item1, resizeSize) == hit.Item2, "all eight resize directions are reachable");
+    Check.True(DashboardWindow.ResizeEdgeAt(new Point(410, 32), resizeSize) is null &&
+               DashboardWindow.ResizeEdgeAt(new Point(200, 300), resizeSize) is null,
+        "header buttons and content do not trigger resizing");
+    closeOwner.Show();
+    var closeRequests = 0;
+    closeOwner.CloseRequested += (_, _) => closeRequests++;
+    closeOwner.Close();
+    Check.True(closeRequests == 1 && closeOwner.IsVisible, "native close requests choice without hiding");
+    foreach (var choice in new[] { ("隐藏到托盘", PanelCloseAction.Tray), ("退出应用", PanelCloseAction.Exit), ("×", PanelCloseAction.Ask) })
+    {
+        var prompt = new PanelCloseWindow(AppSettings.Default, true);
+        var result = prompt.ShowDialog<PanelCloseAction>(closeOwner);
+        prompt.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        Check.True(!prompt.RememberChoice, "remember is unchecked by default");
+        Check.True(prompt.GetVisualDescendants().OfType<Button>().All(b => !Equals(b.Content, "取消")), "cancel is available through close icon only");
+        prompt.GetVisualDescendants().OfType<CheckBox>().Single().IsChecked = true;
+        Check.True(prompt.RememberChoice, "remember can be checked");
+        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, choice.Item1))
+            .RaiseEvent(new global::Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Check.True(await result == choice.Item2, "close dialog returns selected action");
+    }
+    closeOwner.ClosePermanently();
+    Console.WriteLine("PASS: close request, three dialog choices and remember checkbox.");
+    if (args.Length > 2 && args[2] == "close-preview") return;
     ProductivityChecks.Run(outputRoot);
     var settingsInteraction = new SettingsWindow(new AppSettings
     {
@@ -665,6 +795,9 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Check.True(hoverChart.HoverLabelBounds is { } labelBounds &&
                labelBounds.Bottom <= hoverChart.PlotBounds.Top,
         "trend hover label stays in the fixed information band outside the plot");
+    Check.True(Math.Abs(hoverChart.PlotBounds.Top - 17) < .01 &&
+               Math.Abs(hoverChart.PlotBounds.Bottom - (hoverChart.Bounds.Height - 8)) < .01,
+        "trend top moves up five DIP while the zero-percent baseline stays fixed");
     hoverHost.Close();
 
     var compactDualRow = new StackPanel

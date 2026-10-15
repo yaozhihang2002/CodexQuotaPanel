@@ -10,6 +10,36 @@ using CodexQuota.UI.Avalonia;
 if (!OperatingSystem.IsWindows()) return;
 
 AppBuilder.Configure<ThemeProbeApp>().UsePlatformDetect().SetupWithoutStarting();
+if (args.Length == 1 && args[0] == "--panel")
+{
+    var panel = new DashboardWindow(AppSettings.Default);
+    panel.WindowStartupLocation = WindowStartupLocation.Manual;
+    panel.Position = new PixelPoint(30000, 30000);
+    panel.ShowActivated = false;
+    panel.Show();
+    Dispatcher.UIThread.RunJobs();
+    var panelHandle = panel.TryGetPlatformHandle()!.Handle;
+    if ((GetWindowLongW(panelHandle, -16) & 0x00C00000) != 0)
+        throw new InvalidOperationException("Panel still has a native title bar.");
+    if (panel.ActualTransparencyLevel != WindowTransparencyLevel.Transparent)
+        throw new InvalidOperationException("Panel transparency for rounded corners is unavailable.");
+    panel.Width = 800;
+    panel.Height = 700;
+    Dispatcher.UIThread.RunJobs();
+    if (Math.Abs(panel.ClientSize.Width - 800) > 2 || Math.Abs(panel.ClientSize.Height - 700) > 2)
+        throw new InvalidOperationException("Native panel size is still constrained.");
+    panel.ClosePermanently();
+    var prompt = new PanelCloseWindow(AppSettings.Default, true) { ShowActivated = false,
+        WindowStartupLocation = WindowStartupLocation.Manual, Position = new PixelPoint(30000, 30000) };
+    prompt.Show();
+    Dispatcher.UIThread.RunJobs();
+    var promptStyle = GetWindowLongW(prompt.TryGetPlatformHandle()!.Handle, -16);
+    if ((promptStyle & (0x00C00000 | 0x00020000 | 0x00010000)) != 0)
+        throw new InvalidOperationException("Close dialog retains native caption/minimize/maximize buttons.");
+    prompt.Close();
+    Console.WriteLine("PASS: native panel has no title bar and supports transparent rounded corners.");
+    return;
+}
 if (args.Length == 1 && args[0] == "--edge-bounds")
 {
     EdgeBoundsProbe.Run();
@@ -130,6 +160,8 @@ static extern int DwmGetWindowAttribute(nint hwnd, int attribute, ref int value,
 
 [DllImport("user32.dll")]
 static extern bool GetWindowRect(nint hwnd, out NativeRect rect);
+[DllImport("user32.dll")]
+static extern int GetWindowLongW(nint hwnd, int index);
 [DllImport("user32.dll")]
 static extern nint WindowFromPoint(NativePoint point);
 

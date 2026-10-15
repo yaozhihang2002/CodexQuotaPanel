@@ -1,6 +1,8 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -12,6 +14,33 @@ namespace CodexQuota.UI.Avalonia;
 
 public sealed class DashboardWindow : Window
 {
+    public event Action<Size>? UserSizeChanged;
+    private static readonly Dictionary<WindowEdge, Cursor> ResizeCursors = new()
+    {
+        [WindowEdge.North] = new(StandardCursorType.SizeNorthSouth),
+        [WindowEdge.South] = new(StandardCursorType.SizeNorthSouth),
+        [WindowEdge.East] = new(StandardCursorType.SizeWestEast),
+        [WindowEdge.West] = new(StandardCursorType.SizeWestEast),
+        [WindowEdge.NorthWest] = new(StandardCursorType.TopLeftCorner),
+        [WindowEdge.NorthEast] = new(StandardCursorType.TopRightCorner),
+        [WindowEdge.SouthWest] = new(StandardCursorType.BottomLeftCorner),
+        [WindowEdge.SouthEast] = new(StandardCursorType.BottomRightCorner)
+    };
+
+    internal static WindowEdge? ResizeEdgeAt(Point p, Size size)
+    {
+        if (p.X < 0 || p.Y < 0 || p.X > size.Width || p.Y > size.Height) return null;
+        if (p.X <= 12 && p.Y <= 12) return WindowEdge.NorthWest;
+        if (p.X >= size.Width - 12 && p.Y <= 12) return WindowEdge.NorthEast;
+        if (p.X <= 12 && p.Y >= size.Height - 12) return WindowEdge.SouthWest;
+        if (p.X >= size.Width - 12 && p.Y >= size.Height - 12) return WindowEdge.SouthEast;
+        if (p.X <= 6) return WindowEdge.West;
+        if (p.X >= size.Width - 6) return WindowEdge.East;
+        if (p.Y <= 6) return WindowEdge.North;
+        if (p.Y >= size.Height - 6) return WindowEdge.South;
+        return null;
+    }
+
     private readonly UiPalette _palette;
     private readonly AppSettings _settings;
     private readonly OrbControl _summaryOrb;
@@ -28,6 +57,8 @@ public sealed class DashboardWindow : Window
     private readonly TextBlock _creditBadge;
     private readonly TextBlock _credit;
     private readonly TextBlock _creditMeta;
+    private readonly Border _balanceCard;
+    private readonly TextBlock _balance;
     private readonly TextBlock _tokenTotal;
     private readonly Control _transitionSurface;
     private readonly DispatcherTimer _placementTimer;
@@ -42,6 +73,7 @@ public sealed class DashboardWindow : Window
     public event Action? DisplayRecovered;
 
     public event EventHandler? CollapseRequested;
+    public event EventHandler? CloseRequested;
     public event EventHandler? RefreshRequested;
     public event EventHandler? SettingsRequested;
     public event EventHandler? UsageDetailsRequested;
@@ -60,8 +92,13 @@ public sealed class DashboardWindow : Window
     internal int DailyChartDayCount => _dailyUsage.RenderedDayCount;
     internal string ConnectionBadgeText => _connectionText.Text ?? string.Empty;
     internal string ForecastDisplayText => _forecast.Text ?? string.Empty;
+    internal bool SourceDetailVisible => _source.IsVisible;
+    internal string ConnectionTipText => ToolTip.GetTip(_connectionBadge)?.ToString() ?? string.Empty;
+    internal string ForecastTipText => ToolTip.GetTip(_forecast)?.ToString() ?? string.Empty;
     internal string ResetCreditDisplayText => _credit.Text ?? string.Empty;
     internal string ResetCreditMetaText => _creditMeta.Text ?? string.Empty;
+    internal bool CreditBalanceVisible => _balanceCard.IsVisible;
+    internal string CreditBalanceText => _balance.Text ?? string.Empty;
     internal bool ResetCreditIsProminent => ReferenceEquals(_creditCard.BorderBrush, _palette.Amber);
     internal int SummaryRingCount => double.IsFinite(_summaryOrb.SecondaryRemainingPercent) ? 2 :
         string.IsNullOrWhiteSpace(_summaryOrb.PrimaryLabel) ? 0 : 1;
@@ -76,22 +113,38 @@ public sealed class DashboardWindow : Window
     internal void EnablePlacementTrackingForTest() => _trackPlacement = true;
     internal void CommitPlacementForTest() { _placementDirty = true; FlushPlacement(); }
 
-    public DashboardWindow(AppSettings settings, bool systemDark = true)
+    public DashboardWindow(AppSettings settings, bool systemDark = true, UiPalette? previewPalette = null)
     {
         _settings = settings.Normalize();
-        _palette = UiPalette.For(_settings.Theme, systemDark);
+        _palette = previewPalette ?? UiPalette.For(_settings.Theme, systemDark);
         Title = _settings.Language == AppLanguage.SimplifiedChinese ? "Codex 额度详情" : "Codex quota details";
         var scale = _settings.InterfaceScalePercent / 100d;
         var englishWidthAllowance = _settings.Language == AppLanguage.English
             ? Math.Clamp(8 + (_settings.InterfaceScalePercent - 100) * .44, 8, 30)
             : 0;
         Width = Math.Clamp(452 * (.65 + .35 * scale) + englishWidthAllowance, 420, 580);
-        Height = Math.Clamp(690 * (.72 + .28 * scale), 620, 780);
+        Height = Math.Clamp(640 * (.72 + .28 * scale), 600, 780);
         MinWidth = 420;
         MinHeight = 570;
-        MaxWidth = 580;
-        Background = _palette.Canvas;
+        var savedSize = settings.Normalize();
+        Width = savedSize.DashboardWidth ?? Width;
+        Height = savedSize.DashboardHeight ?? Height;
+        WindowDecorations = WindowDecorations.None;
+        TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
+        Background = Brushes.Transparent;
         CanResize = true;
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed &&
+                ResizeEdgeAt(e.GetPosition(this), Bounds.Size) is { } edge)
+            {
+                e.Handled = true;
+                BeginResizeDrag(edge, e);
+            }
+        }, RoutingStrategies.Tunnel);
+        PointerMoved += (_, e) => Cursor = ResizeEdgeAt(e.GetPosition(this), Bounds.Size) is { } edge
+            ? ResizeCursors[edge] : null;
+        PointerExited += (_, _) => Cursor = null;
         // This is a tray utility surface. Set the Avalonia hint before the
         // native HWND is created; changing it during first-show prewarm is too
         // late for Explorer on some Windows configurations.
@@ -106,6 +159,7 @@ public sealed class DashboardWindow : Window
             MinWidth = 110,
             MinHeight = 110,
             HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
             ClipToBounds = false
         };
         _plan = UiElements.Text("—", 11, FontWeight.Bold, _palette.Mint);
@@ -130,13 +184,13 @@ public sealed class DashboardWindow : Window
             RowSpacing = 8,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        _trend = new TrendChartControl { Height = 46, IsDark = _settings.Theme != AppTheme.Light };
+        _trend = new TrendChartControl { Height = 40, IsDark = UiPalette.IsDarkTheme(_settings.Theme, systemDark) };
         ToolTip.SetTip(_trend, T("在绘图区移动鼠标可对照实际与均匀额度", "Move across the plot to compare actual and even-use quota"));
         _dailyUsage = new DailyUsageChartControl
         {
-            Height = 70,
+            Height = 90,
             Language = _settings.Language,
-            IsDark = _settings.Theme != AppTheme.Light
+            IsDark = UiPalette.IsDarkTheme(_settings.Theme, systemDark)
         };
         _creditBadge = UiElements.Text(T("重置卡", "RESET"), 9.2, FontWeight.Bold, _palette.TextMuted,
             TextWrapping.NoWrap);
@@ -144,8 +198,19 @@ public sealed class DashboardWindow : Window
             FontWeight.Bold, _palette.TextSecondary);
         _creditMeta = UiElements.Text(T("等待 Codex 返回可用重置卡", "Waiting for available reset credits from Codex"),
             9, FontWeight.Normal, _palette.TextMuted);
+        _balance = UiElements.Text(string.Empty, 13, FontWeight.Bold, _palette.Mint);
+        _balanceCard = new Border { BorderThickness = new Thickness(1, 0, 0, 0), BorderBrush = _palette.Border,
+            Margin = new Thickness(10, 0, 0, 0), Padding = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center, Child = new StackPanel { Spacing = 2, Children =
+            {
+                UiElements.Text("Credits", 10, FontWeight.SemiBold, _palette.TextSecondary), _balance
+            }} };
+        _balanceCard.IsVisible = false;
+        // Construct after the balance controls: both belong to one compact row.
         _creditCard = BuildResetCreditCard();
-        _tokenTotal = UiElements.Text(T("本周期 API 估算：—", "Cycle API estimate: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
+        _tokenTotal = UiElements.Text(T("API 估算：—", "API estimate: —"), 11.5, FontWeight.SemiBold, _palette.TextSecondary);
+        ToolTip.SetTip(_tokenTotal, T("当前周期按公开 API 价格估算的等价美元；不是订阅账单或实际扣费。柱顶显示每日估算金额。",
+            "Current-cycle API-equivalent USD at public prices, not subscription billing or actual charges. Bar labels show daily estimates."));
         _placementTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(320) };
         _placementTimer.Tick += (_, _) => FlushPlacement();
         _transitionSurface = BuildContent();
@@ -154,13 +219,14 @@ public sealed class DashboardWindow : Window
         Content = _transitionSurface;
         _displayRecovery = new WindowDisplayRecovery(this, () => IsPresented,
             () => DisplayRecovered?.Invoke());
+        _displayRecovery.UserSizeChanged += size => UserSizeChanged?.Invoke(size);
         Closing += (_, e) =>
         {
             // OS/application shutdown must close the window, not start an
             // asynchronous collapse that may try to reopen an already closed orb.
             if (_allowClose || e.CloseReason != WindowCloseReason.WindowClosing) return;
             e.Cancel = true;
-            CollapseRequested?.Invoke(this, EventArgs.Empty);
+            CloseRequested?.Invoke(this, EventArgs.Empty);
         };
         PositionChanged += (_, _) =>
         {
@@ -219,6 +285,8 @@ public sealed class DashboardWindow : Window
             : $"{presentation.Snapshot?.Source ?? T("尚未连接", "Not connected")} · {T("更新于", "Updated")} " +
               (presentation.UpdatedAt == DateTimeOffset.MinValue ? "—" : presentation.UpdatedAt.ToLocalTime().ToString("HH:mm:ss"));
         ApplyConnectionState(presentation);
+        _source.IsVisible = presentation.ConnectionState != QuotaConnectionState.Live ||
+                            presentation.Snapshot?.IsStale == true || presentation.Error is not null;
 
         _windowCards.Children.Clear();
         _windowCards.ColumnDefinitions.Clear();
@@ -253,6 +321,16 @@ public sealed class DashboardWindow : Window
         _dailyUsage.CycleStart = cycleStart;
         _dailyUsage.CycleEnd = selected?.ResetsAt;
         var reset = presentation.Snapshot?.SoonestAvailableResetCredit;
+        var credits = presentation.Snapshot?.Credits;
+        // Do not display old balances as current, unknown as zero, or mix them
+        // with reset-card counts and estimated API dollars.
+        _balanceCard.IsVisible = presentation.ConnectionState == QuotaConnectionState.Live &&
+                                 presentation.Snapshot?.IsStale == false && credits is { Balance: > 0, Unlimited: false };
+        _balance.Text = _balanceCard.IsVisible
+            ? credits!.Balance!.Value < 1m
+                ? credits.Balance.Value.ToString("0.############################", CultureInfo.InvariantCulture)
+                : decimal.Truncate(credits.Balance.Value).ToString("#,##0", CultureInfo.InvariantCulture)
+            : string.Empty;
         if (reset?.ExpiresAt is { } expiry)
         {
             var reference = presentation.UpdatedAt == DateTimeOffset.MinValue
@@ -262,11 +340,11 @@ public sealed class DashboardWindow : Window
             var availableCount = presentation.Snapshot?.ResetCredits?.Count(credit =>
                 credit.Status.Equals("available", StringComparison.OrdinalIgnoreCase) &&
                 credit.ExpiresAt > reference) ?? 0;
-            _creditBadge.Text = T("重置卡 · 可用", "RESET · AVAILABLE");
+            _creditBadge.Text = T($"重置卡 · {availableCount} 张可用", $"RESET · {availableCount} AVAILABLE");
             _creditBadge.Foreground = _palette.Amber;
             _credit.Text = remaining > TimeSpan.Zero
-                ? T($"最早一张将在 {FormatDuration(remaining)} 后到期",
-                    $"Earliest card expires in {FormatDuration(remaining)}")
+                ? T($"最早 {FormatDuration(remaining)} 后到期",
+                    $"Earliest expires in {FormatDuration(remaining)}")
                 : T("最早一张重置卡即将到期", "The earliest reset credit is expiring now");
             _credit.Foreground = _palette.TextPrimary;
             _creditMeta.Text = $"{T($"{availableCount} 张可用", $"{availableCount} available")} · " +
@@ -284,7 +362,7 @@ public sealed class DashboardWindow : Window
         }
         var estimatedCost = days.Sum(day => day.EstimatedApiUsd);
         var unpriced = days.Sum(day => day.UnpricedEventCount);
-        _tokenTotal.Text = $"{T("本周期 API 估算", "Cycle API estimate")}：${estimatedCost:0.00}" +
+        _tokenTotal.Text = $"{T("API 估算", "API estimate")}：${estimatedCost:0.00}" +
                            (unpriced > 0 ? T(" + 未定价", " + unpriced") : string.Empty);
     }
 
@@ -440,34 +518,63 @@ public sealed class DashboardWindow : Window
 
     private Control BuildContent()
     {
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Background = _palette.Canvas };
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8,
-            Margin = new Thickness(18, 12, 14, 8) };
-        header.Children.Add(new StackPanel { Spacing = 1, Children =
-        {
-            UiElements.Text("CODEX · " + T("额度", "QUOTA"), 19, FontWeight.Bold, _palette.TextPrimary),
-            UiElements.Text(T("实时额度限制", "Live quota limits"), 10.5, FontWeight.Normal, _palette.TextMuted)
-        }});
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), ColumnSpacing = 10,
+            Margin = new Thickness(18, 12, 18, 8) };
+        header.Children.Add(UiElements.Text("CODEX · " + T("额度", "QUOTA"), 19, FontWeight.Bold, _palette.TextPrimary));
         Grid.SetColumn(_connectionBadge, 1);
         header.Children.Add(_connectionBadge);
-        var settings = UiElements.Button("⋯", _palette);
-        settings.Width = 42;
+        var settings = UiElements.Button("⚙", _palette);
+        settings.Width = 34;
+        settings.Height = 38;
+        settings.VerticalAlignment = VerticalAlignment.Center;
+        settings.Padding = new Thickness(0);
+        settings.FontSize = 21;
+        settings.Content = new global::Avalonia.Controls.Shapes.Path
+        {
+            Width = 20, Height = 20, Stretch = Stretch.Uniform,
+            Stroke = _palette.TextPrimary, StrokeThickness = 1.6,
+            Data = Geometry.Parse("M9 2 L15 2 L16 5 L19 6 L22 9 L20 12 L22 15 L19 18 L16 19 L15 22 L9 22 L8 19 L5 18 L2 15 L4 12 L2 9 L5 6 L8 5 Z M16 12 A4 4 0 1 1 8 12 A4 4 0 1 1 16 12")
+        };
+        ToolTip.SetTip(settings, T("设置", "Settings"));
+        global::Avalonia.Automation.AutomationProperties.SetName(settings, T("设置", "Settings"));
         settings.Click += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         Grid.SetColumn(settings, 2);
         header.Children.Add(settings);
+        var close = UiElements.Button("×", _palette);
+        close.Width = 34;
+        close.Height = 38;
+        close.VerticalAlignment = VerticalAlignment.Center;
+        close.Padding = new Thickness(0);
+        close.FontSize = 23;
+        close.Content = new global::Avalonia.Controls.Shapes.Path
+        {
+            Width = 12, Height = 12, Stretch = Stretch.Uniform,
+            Stroke = _palette.TextPrimary, StrokeThickness = 1.6,
+            Data = Geometry.Parse("M0 0 L12 12 M12 0 L0 12")
+        };
+        ToolTip.SetTip(close, T("关闭", "Close"));
+        global::Avalonia.Automation.AutomationProperties.SetName(close, T("关闭", "Close"));
+        close.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
+        Grid.SetColumn(close, 3);
+        header.Children.Add(close);
+        header.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) BeginMoveDrag(e);
+        };
         root.Children.Add(header);
 
-        var scrollContent = new StackPanel { Spacing = 7, Margin = new Thickness(18, 0, 18, 8),
+        var scrollContent = new StackPanel { Spacing = 5, Margin = new Thickness(18, 0, 18, 5),
             HorizontalAlignment = HorizontalAlignment.Stretch };
         var hero = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("110,*"),
-            ColumnSpacing = 10,
+            ColumnSpacing = 14,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ClipToBounds = false
         };
         hero.Children.Add(_summaryOrb);
-        var copy = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center,
+        var copy = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center,
             Children = { _plan, _headline, _forecast, _source } };
         Grid.SetColumn(copy, 1);
         hero.Children.Add(copy);
@@ -475,33 +582,32 @@ public sealed class DashboardWindow : Window
         scrollContent.Children.Add(_creditCard);
         scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 5, Children =
         {
-            UiElements.Text(T("额度窗口与 24 小时节奏", "QUOTA WINDOWS · 24-HOUR PACE"), 12.5,
+            UiElements.Text(T("额度与趋势", "QUOTA & TREND"), 12.5,
                 FontWeight.SemiBold, _palette.TextPrimary),
             _windowCards,
             new Border { Height = 1, Background = _palette.Border, Margin = new Thickness(0, 1) },
             _trend
         }}, _palette, new Thickness(12, 9)));
-        var dailyHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        dailyHeader.Children.Add(UiElements.Text(T("本周期每日消耗", "DAILY USAGE · CURRENT CYCLE"), 12.5,
+        var dailyHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), ColumnSpacing = 6 };
+        dailyHeader.Children.Add(UiElements.Text(T("每日消耗", "DAILY USAGE"), 12.5,
             FontWeight.SemiBold, _palette.TextPrimary));
         _tokenTotal.FontSize = 10.5 * UiElements.ScaleFactor;
         _tokenTotal.HorizontalAlignment = HorizontalAlignment.Right;
-        Grid.SetColumn(_tokenTotal, 1);
+        Grid.SetColumn(_tokenTotal, 3);
         dailyHeader.Children.Add(_tokenTotal);
-        var usage = UiElements.Button(T("查看使用明细", "Usage details"), _palette);
-        usage.MinHeight = 34;
-        usage.Padding = new Thickness(12, 6);
+        var usage = UiElements.Button(T("查看明细", "Details"), _palette);
+        usage.MinHeight = 26;
+        usage.FontSize = 10.5 * UiElements.ScaleFactor;
+        usage.Padding = new Thickness(8, 4);
+        usage.VerticalAlignment = VerticalAlignment.Center;
+        ToolTip.SetTip(usage, T("查看使用明细", "View usage details"));
         usage.Click += (_, _) => UsageDetailsRequested?.Invoke(this, EventArgs.Empty);
-        var dailyFooter = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
-        dailyFooter.Children.Add(UiElements.Text(T("柱顶为 API 等价美元", "Bar labels show API-equivalent USD"),
-            9.5, FontWeight.Normal, _palette.TextMuted));
         Grid.SetColumn(usage, 1);
-        dailyFooter.Children.Add(usage);
+        dailyHeader.Children.Add(usage);
         scrollContent.Children.Add(UiElements.Card(new StackPanel { Spacing = 5, Children =
         {
             dailyHeader,
-            _dailyUsage,
-            dailyFooter
+            _dailyUsage
         }}, _palette, new Thickness(12, 9)));
         var scroll = new ScrollViewer { Content = scrollContent,
             VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
@@ -530,7 +636,9 @@ public sealed class DashboardWindow : Window
         footer.Children.Add(collapse);
         Grid.SetRow(footer, 2);
         root.Children.Add(footer);
-        return root;
+        return new Border { Background = _palette.Canvas, CornerRadius = new CornerRadius(16),
+            BorderBrush = _palette.Border, BorderThickness = new Thickness(1), ClipToBounds = true,
+            Child = root };
     }
 
     private Border BuildResetCreditCard()
@@ -542,13 +650,11 @@ public sealed class DashboardWindow : Window
             CornerRadius = new CornerRadius(999),
             Margin = new Thickness(0, 1, 9, 1)
         };
-        var summary = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 9 };
-        summary.Children.Add(_creditBadge);
-        Grid.SetColumn(_credit, 1);
-        summary.Children.Add(_credit);
-        var copy = new StackPanel { Spacing = 1, Children = { summary, _creditMeta } };
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Children = { accent, copy } };
+        var copy = new StackPanel { Spacing = 1, Children = { _creditBadge, _credit } };
+        ToolTip.SetTip(copy, _creditMeta);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Children = { accent, copy, _balanceCard } };
         Grid.SetColumn(copy, 1);
+        Grid.SetColumn(_balanceCard, 2);
         return new Border
         {
             Background = _palette.Surface,
@@ -568,6 +674,7 @@ public sealed class DashboardWindow : Window
         Grid.SetColumn(percent, 1);
         header.Children.Add(percent);
         var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = window.ClampedRemainingPercent, Height = 4,
+            MinWidth = 0, HorizontalAlignment = HorizontalAlignment.Stretch,
             Foreground = _palette.Mint, Background = _palette.Border };
         return new Border
         {
@@ -587,8 +694,10 @@ public sealed class DashboardWindow : Window
         DateTimeOffset updatedAt)
     {
         if (forecast is null)
-            return T("续航预测：等待更多样本\n预计可用时长：尚无法判断",
-                "Forecast: collecting more samples\nEstimated availability: not enough data");
+        {
+            ToolTip.SetTip(_forecast, null);
+            return T("续航预测：等待更多样本", "Forecast: collecting more samples");
+        }
         var state = forecast.State switch
         {
             ForecastState.Sustainable => T("可持续到重置", "On track to reset"),
@@ -604,6 +713,7 @@ public sealed class DashboardWindow : Window
             _ => T("置信度不足", "confidence unavailable")
         };
         var reference = updatedAt == DateTimeOffset.MinValue ? DateTimeOffset.Now : updatedAt;
+        ToolTip.SetTip(_forecast, $"{state} · {confidence}");
         var resetAt = windows.FirstOrDefault(window => window.Id == forecast.WindowId)?.ResetsAt;
         string availability;
         if (forecast.State == ForecastState.Exhausted)
@@ -617,14 +727,14 @@ public sealed class DashboardWindow : Window
         }
         else if (forecast.ExhaustsAt is { } exhaustsAt && exhaustsAt > reference)
         {
-            availability = T($"预计可用 {FormatDuration(exhaustsAt - reference)} · {exhaustsAt.ToLocalTime():MM-dd HH:mm} 见底",
+            availability = T($"预计可用 {FormatDuration(exhaustsAt - reference)} · {exhaustsAt.ToLocalTime():MM-dd HH:mm} 耗尽",
                 $"~{FormatDuration(exhaustsAt - reference)} available · empty {exhaustsAt.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.InvariantCulture)}");
         }
         else
         {
             availability = T("预计可用时长：尚无法判断", "Estimated availability: not enough data");
         }
-        return $"{state} · {confidence}\n{availability}\n{T("当前", "Pace")} {forecast.PercentPerHour:0.##}%/h · {T("安全", "sustainable")} {forecast.SustainablePercentPerHour:0.##}%/h";
+        return $"{availability}\n{T("当前", "Pace")} {forecast.PercentPerHour:0.##}%/h · {T("可持续", "sustainable")} {forecast.SustainablePercentPerHour:0.##}%/h";
     }
 
     private string DashboardWindowLabel(QuotaWindow window)
@@ -659,7 +769,8 @@ public sealed class DashboardWindow : Window
         _connectionText.Text = label;
         _connectionText.Foreground = color;
         _connectionBadge.Background = background;
-        ToolTip.SetTip(_connectionBadge, presentation.ConnectionDetail ?? _source.Text);
+        ToolTip.SetTip(_connectionBadge, string.IsNullOrWhiteSpace(presentation.ConnectionDetail)
+            ? _source.Text : $"{presentation.ConnectionDetail}\n{_source.Text}");
     }
 
     private async Task AnimateAsync(double fromOpacity, double toOpacity, double sx0, double sx1, double sy0, double sy1, int ms)

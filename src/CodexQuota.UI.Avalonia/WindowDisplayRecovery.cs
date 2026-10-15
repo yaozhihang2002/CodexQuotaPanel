@@ -18,6 +18,7 @@ public sealed class WindowDisplayRecovery
     private Size _preferredSize;
     private bool _fitting;
     private bool _closed;
+    public event Action<Size>? UserSizeChanged;
     // Optional platform measurement, in physical pixels (not logical DIPs).
     public Func<Thickness>? InvisibleFrameInsetsProvider { get; set; }
 
@@ -46,7 +47,10 @@ public sealed class WindowDisplayRecovery
         window.Resized += (_, e) =>
         {
             if (!_fitting && e.Reason == WindowResizeReason.User)
+            {
                 _preferredSize = window.ClientSize;
+                UserSizeChanged?.Invoke(_preferredSize);
+            }
         };
         window.Closed += (_, _) =>
         {

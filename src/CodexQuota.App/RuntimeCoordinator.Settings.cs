@@ -65,7 +65,8 @@ internal sealed partial class RuntimeCoordinator
         _platform.SetStartWithSystem(draft.StartWithSystem);
         var visualShellChanged = draft.Theme != _settings.Theme || draft.Language != _settings.Language ||
                                  draft.InterfaceScalePercent != _settings.InterfaceScalePercent;
-        _settings = draft with { AlertedUntil = _settings.AlertedUntil };
+        _settings = draft with { AlertedUntil = _settings.AlertedUntil,
+            DashboardWidth = _settings.DashboardWidth, DashboardHeight = _settings.DashboardHeight };
         if (!_settings.AlertsEnabled) _quotaAlert?.Close();
         await _settingsStore.WriteAsync(_settings, _lifetime.Token).ConfigureAwait(true);
         ApplyApplicationTheme(_settings);
