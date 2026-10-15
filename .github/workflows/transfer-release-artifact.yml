@@ -1,0 +1,27 @@
+name: Transfer prepared macOS release asset
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source run and draft, then upload existing package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GH_REPO/actions/runs/38748289795 --jq .head_sha)" = bcfb7acc0461e07b88b510facd9df0d8ab290ec4
+          test "$(gh api repos/$GH_REPO/actions/runs/38748289795 --jq .conclusion)" = success
+          test "$(gh api repos/$GH_REPO/releases/413884738 --jq .draft)" = true
+          gh run download 38748289795 --name CodexQuotaPanel-0.8.4-macOS-DMG --dir package
+          test -f package/CodexQuotaPanel-0.8.4-macOS.dmg
+          sha256sum package/CodexQuotaPanel-0.8.4-macOS.dmg
+          gh release upload v0.8.4 package/CodexQuotaPanel-0.8.4-macOS.dmg

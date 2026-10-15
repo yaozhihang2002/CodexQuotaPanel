@@ -94,7 +94,7 @@ foreach (var (name, scenario, scale) in scenarios)
         $"{name}: adaptive ring count");
 
     var outputPath = Path.Combine(outputRoot, name + ".png");
-    await using (var output = File.Create(outputPath))
+    using (var output = File.Create(outputPath))
         frame.Save(output, PngBitmapEncoderOptions.Default);
     window.Close();
     Console.WriteLine($"Rendered {name}");
@@ -148,7 +148,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         using (var frame = stateWindow.CaptureRenderedFrame() ??
                            throw new InvalidOperationException($"{themeName} button states: no rendered frame"))
         {
-            await using var output = File.Create(Path.Combine(outputRoot, $"button-states-{themeName}.png"));
+            using var output = File.Create(Path.Combine(outputRoot, $"button-states-{themeName}.png"));
             frame.Save(output, PngBitmapEncoderOptions.Default);
         }
         stateWindow.Close();
@@ -309,7 +309,9 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException($"{name}: no rendered frame");
         Check.True(frame.PixelSize.Width >= 100, $"{name}: width");
         Check.True(frame.PixelSize.Height >= 100, $"{name}: height");
-        await using var output = File.Create(Path.Combine(outputRoot, name + ".png"));
+        // The headless harness has no continuously running dispatcher loop.
+        // DisposeAsync may yield while flushing and strand its continuation on macOS.
+        using var output = File.Create(Path.Combine(outputRoot, name + ".png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
         if (window is DashboardWindow finishedDashboard) finishedDashboard.ClosePermanently();
         else if (window is SettingsWindow finishedSettings) finishedSettings.ClosePermanently();
@@ -463,7 +465,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     {
         Check.True(largeSettings.Bounds.Width >= 1000 && largeSettings.VisiblePageCount == 1,
             "large-font settings layout");
-        await using var output = File.Create(Path.Combine(outputRoot, "settings-zh-dark-font150.png"));
+        using var output = File.Create(Path.Combine(outputRoot, "settings-zh-dark-font150.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     largeSettings.ClosePermanently();
@@ -483,7 +485,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
         Check.True(largeDashboard.Bounds.Width >= 555, "large-font English dashboard adds localization width");
         Check.True(!largeDashboard.ForecastDisplayText.Contains("Estimated availability", StringComparison.Ordinal),
             "large-font English forecast uses compact copy");
-        await using var output = File.Create(Path.Combine(outputRoot, "dashboard-en-light-font150.png"));
+        using var output = File.Create(Path.Combine(outputRoot, "dashboard-en-light-font150.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     largeDashboard.ClosePermanently();
@@ -739,7 +741,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     Dispatcher.UIThread.RunJobs();
     using (var frame = usageCycle.CaptureRenderedFrame() ?? throw new InvalidOperationException("usage hover: no rendered frame"))
     {
-        await using var output = File.Create(Path.Combine(outputRoot, "usage-zh-dark-hover.png"));
+        using var output = File.Create(Path.Combine(outputRoot, "usage-zh-dark-hover.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     usageCycle.Close();
@@ -850,7 +852,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     using (var frame = compactDualWindow.CaptureRenderedFrame() ??
                        throw new InvalidOperationException("compact dual orb: no rendered frame"))
     {
-        await using var output = File.Create(Path.Combine(outputRoot, "orb-dual-minimum-legibility.png"));
+        using var output = File.Create(Path.Combine(outputRoot, "orb-dual-minimum-legibility.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     compactDualWindow.Close();
@@ -921,7 +923,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
     using (var frame = feedbackWindow.CaptureRenderedFrame() ?? throw new InvalidOperationException("feedback matrix: no rendered frame"))
     {
-        await using var output = File.Create(Path.Combine(outputRoot, "feedback-matrix.png"));
+        using var output = File.Create(Path.Combine(outputRoot, "feedback-matrix.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     feedbackWindow.Close();
@@ -959,7 +961,7 @@ if (string.IsNullOrWhiteSpace(requestedScenario) || formalOnly)
     using (var frame = compactFeedbackWindow.CaptureRenderedFrame() ??
                        throw new InvalidOperationException("compact feedback matrix: no rendered frame"))
     {
-        await using var output = File.Create(Path.Combine(outputRoot, "feedback-matrix-56px.png"));
+        using var output = File.Create(Path.Combine(outputRoot, "feedback-matrix-56px.png"));
         frame.Save(output, PngBitmapEncoderOptions.Default);
     }
     compactFeedbackWindow.Close();
