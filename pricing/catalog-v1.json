@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "revision": 2026093001,
-  "checkedAt": "2026-09-30",
+  "revision": 2026102901,
+  "checkedAt": "2026-10-29",
   "models": [
     {
       "model": "gpt-6-astra",
@@ -23,6 +23,19 @@
       "cachedInput": 0.1,
       "output": 10,
       "basisDate": "2026-09-30",
+      "fastMultiplier": 2,
+      "cacheWriteMultiplier": 1.25,
+      "longContextThreshold": 272000,
+      "longInputMultiplier": 2,
+      "longOutputMultiplier": 1.5
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "displayName": "GPT-6.1 Terra",
+      "input": 1,
+      "cachedInput": 0.05,
+      "output": 5,
+      "basisDate": "2026-10-29",
       "fastMultiplier": 2,
       "cacheWriteMultiplier": 1.25,
       "longContextThreshold": 272000,
