@@ -1,8 +1,34 @@
 {
   "schemaVersion": 1,
-  "revision": 2026102901,
-  "checkedAt": "2026-10-29",
+  "revision": 2026111801,
+  "checkedAt": "2026-11-18",
   "models": [
+    {
+      "model": "gpt-6.2-astra",
+      "displayName": "GPT-6.2 Astra",
+      "input": 8,
+      "cachedInput": 0.4,
+      "output": 40,
+      "basisDate": "2026-11-18",
+      "fastMultiplier": 2,
+      "cacheWriteMultiplier": 1.25,
+      "longContextThreshold": 272000,
+      "longInputMultiplier": 2,
+      "longOutputMultiplier": 1.5
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "displayName": "GPT-6.2 Sol",
+      "input": 2,
+      "cachedInput": 0.1,
+      "output": 10,
+      "basisDate": "2026-11-18",
+      "fastMultiplier": 2,
+      "cacheWriteMultiplier": 1.25,
+      "longContextThreshold": 272000,
+      "longInputMultiplier": 2,
+      "longOutputMultiplier": 1.5
+    },
     {
       "model": "gpt-6-astra",
       "displayName": "GPT-6 Astra",
